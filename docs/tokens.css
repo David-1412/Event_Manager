@@ -1,0 +1,221 @@
+/* ============================================================================
+   Event Manager - design tokens (single source of truth)
+   ----------------------------------------------------------------------------
+   Tailwind v4: import AFTER `@import "tailwindcss";` in app/globals.css.
+   Namespace mapping Tailwind v4 generates utilities from:
+     --color-brand-600 -> bg-brand-600 / text-brand-600 / border-brand-600
+     --text-h3         -> text-h3
+     --radius-md       -> rounded-md
+     --shadow-float    -> shadow-float
+     --ease-default    -> ease-default
+     --spacing: 4px    -> p-3 == 12px, gap-4 == 16px
+   ============================================================================ */
+
+@theme {
+  /* palette (light values; overridden under .dark further down) */
+  --color-bg: oklch(0.99 0.002 250);
+  --color-surface: oklch(1 0 0);
+  --color-surface-2: oklch(0.97 0.004 250);
+  --color-fg: oklch(0.24 0.02 255);
+  --color-fg-muted: oklch(0.53 0.02 255);
+  --color-border: oklch(0.9 0.006 250);
+  --color-brand-50: oklch(0.97 0.03 155);
+  --color-brand-100: oklch(0.95 0.04 155);
+  --color-brand-500: oklch(0.63 0.17 155);
+  --color-brand-600: oklch(0.55 0.17 155);
+  --color-brand-700: oklch(0.47 0.15 155);
+  --color-brand-fg: oklch(1 0 0);
+  --color-warn: oklch(0.72 0.16 80);
+  --color-warn-tint: oklch(0.96 0.05 80);
+  --color-danger: oklch(0.58 0.2 25);
+  --color-danger-tint: oklch(0.96 0.04 25);
+  --color-info: oklch(0.6 0.14 250);
+  --color-info-tint: oklch(0.96 0.03 250);
+
+  /* type */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --text-hero: 1.875rem;
+  --text-hero--line-height: 2.25rem;
+  --text-hero--font-weight: 700;
+  --text-h2: 1.375rem;
+  --text-h2--line-height: 1.75rem;
+  --text-h2--font-weight: 700;
+  --text-h3: 1.0625rem;
+  --text-h3--line-height: 1.5rem;
+  --text-h3--font-weight: 600;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.375rem;
+  --text-meta: 0.8125rem;
+  --text-meta--line-height: 1.125rem;
+  --text-meta--font-weight: 500;
+  --text-count: 1.25rem;
+  --text-count--line-height: 1.5rem;
+  --text-count--font-weight: 700;
+  --text-count--font-variant-numeric: tabular-nums;
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 0.875rem;
+  --text-micro--font-weight: 600;
+  --text-micro--letter-spacing: 0.04em;
+  --text-micro--text-transform: uppercase;
+
+  /* spacing: 4px base -> p-3 = 12px, gap-4 = 16px */
+  --spacing: 4px;
+
+  /* radius */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
+  /* elevation - deliberately few */
+  --shadow-raise: 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-float: 0 8px 24px oklch(0 0 0 / 0.12);
+
+  /* motion */
+  --ease-default: cubic-bezier(0.2, 0, 0, 1);
+  --duration-1: 120ms;
+  --duration-2: 200ms;
+}
+
+/* class-based dark mode: set .dark on <html> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* semantic aliases consumed by raw CSS and by docs/design-system.html */
+:root {
+  --page: var(--color-bg);
+  --surface: var(--color-surface);
+  --surface-2: var(--color-surface-2);
+  --fg: var(--color-fg);
+  --fg-muted: var(--color-fg-muted);
+  --border: var(--color-border);
+  --brand: var(--color-brand-600);
+  --brand-strong: var(--color-brand-700);
+  --brand-tint: var(--color-brand-100);
+  --brand-fg: var(--color-brand-fg);
+  --warn: var(--color-warn);
+  --warn-tint: var(--color-warn-tint);
+  --danger: var(--color-danger);
+  --danger-tint: var(--color-danger-tint);
+  --info: var(--color-info);
+  --info-tint: var(--color-info-tint);
+  --focus-ring: var(--color-brand-600);
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-full: 9999px;
+  --shadow-raise: 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-float: 0 8px 24px oklch(0 0 0 / 0.12);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  color-scheme: light;
+}
+
+.dark {
+  --color-bg: oklch(0.17 0.012 260);
+  --color-surface: oklch(0.22 0.014 260);
+  --color-surface-2: oklch(0.27 0.016 260);
+  --color-fg: oklch(0.95 0.006 250);
+  --color-fg-muted: oklch(0.7 0.015 250);
+  --color-border: oklch(0.34 0.02 260);
+  --color-brand-500: oklch(0.78 0.15 155);
+  --color-brand-600: oklch(0.72 0.16 155);
+  --color-brand-700: oklch(0.65 0.15 155);
+  --color-brand-100: oklch(0.28 0.06 155);
+  --color-brand-fg: oklch(0.18 0.02 155);
+  --color-warn: oklch(0.78 0.15 80);
+  --color-warn-tint: oklch(0.3 0.07 80);
+  --color-danger: oklch(0.66 0.19 25);
+  --color-danger-tint: oklch(0.3 0.07 25);
+  --color-info: oklch(0.72 0.13 250);
+  --color-info-tint: oklch(0.3 0.06 250);
+  --shadow-raise: 0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-float: 0 8px 24px oklch(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------------------
+   Global contracts. Not utilities: they belong in a layer so a component can
+   never forget them.
+   --------------------------------------------------------------------------- */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    background: var(--page);
+    color: var(--fg);
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.9375rem;
+    line-height: 1.375rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* counts and times must not reflow when digits change (2/4 -> 10/12) */
+  [data-count],
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Named recipes for the patterns reused 10+ times. Utilities everywhere else.
+   In the preview HTML these use the semantic aliases; in the app they become
+   Tailwind @apply recipes in app/globals.css. */
+@layer components {
+  .surface-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+  .tint-brand {
+    background: var(--brand-tint);
+    color: var(--brand);
+  }
+  .tint-warn {
+    background: var(--warn-tint);
+    color: var(--warn);
+  }
+  .tint-danger {
+    background: var(--danger-tint);
+    color: var(--danger);
+  }
+  .tint-info {
+    background: var(--info-tint);
+    color: var(--info);
+  }
+  .press {
+    transition: transform var(--dur-1) var(--ease),
+      box-shadow var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+  }
+  .press:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  /* the 2/4 -> 3/4 nudge; JS sets data-changed then clears it after 200ms */
+  .count-shift {
+    transition: transform var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
+  }
+  .count-shift[data-changed] {
+    transform: translateY(-4px);
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+

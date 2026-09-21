@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Event Manager - UI style guide</title>
+    <style>
+      @import "tokens.css";
+    </style>
+    <style>
+      /* preview-only chrome (not part of the design system) */
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 32px 20px 96px;
+      }
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+      }
+      section {
+        margin: 44px 0;
+      }
+      h1 {
+        font-size: 1.875rem;
+        line-height: 2.25rem;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 1.0625rem;
+        margin: 0 0 14px;
+      }
+      .lead {
+        color: var(--fg-muted);
+        margin: 0 0 28px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      }
+      .swatches {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      }
+      .swatch {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        font-size: 0.75rem;
+      }
+      .swatch i {
+        display: block;
+        height: 46px;
+      }
+      .swatch span {
+        display: block;
+        padding: 7px 9px;
+        color: var(--fg-muted);
+      }
+      .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 0;
+        background: var(--page);
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 8px;
+      }
+      code {
+        font-size: 0.75rem;
+        color: var(--fg-muted);
+      }
+      /* ---------- components under test ---------- */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        height: 44px; padding: 0 16px; border-radius: var(--radius-md);
+        border: 1px solid transparent; font: inherit; font-weight: 600; cursor: pointer;
+      }
+      .btn-primary { background: var(--brand); color: var(--brand-fg); }
+      .btn-primary:hover { background: var(--brand-strong); }
+      .btn-secondary { background: var(--surface); color: var(--fg); border-color: var(--border); }
+      .btn-secondary:hover { background: var(--surface-2); }
+      .btn-ghost { background: transparent; color: var(--brand); }
+      .btn-danger { background: var(--danger); color: #fff; }
+      .btn-sm { height: 36px; font-size: 0.8125rem; }
+      .btn-lg { height: 48px; width: 100%; font-size: 1rem; }
+      .btn:disabled {
+        background: var(--surface-2); color: var(--fg-muted);
+        border-color: var(--border); cursor: not-allowed;
+      }
+      /* spinner replaces the label at held width - the sticky footer must not jump */
+      .btn[data-loading] { color: transparent; position: relative; pointer-events: none; }
+      .btn[data-loading]::after {
+        content: ""; position: absolute; width: 16px; height: 16px;
+        border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%;
+        color: var(--brand-fg); animation: spin 0.7s linear infinite;
+      }
+      .btn-secondary[data-loading]::after { color: var(--fg); }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .chip {
+        display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
+        border-radius: var(--radius-full); border: 1px solid var(--border);
+        background: var(--surface); color: var(--fg); font-size: 0.8125rem;
+        font-weight: 500; cursor: pointer;
+      }
+      .chip[aria-pressed="true"] {
+        background: var(--brand-tint); color: var(--brand); border-color: transparent;
+      }
+      .chip[aria-pressed="true"]::before { content: "\2713"; }
+      .badge {
+        display: inline-flex; height: 20px; align-items: center; padding: 0 8px;
+        border-radius: var(--radius-full); font-size: 0.6875rem; font-weight: 600;
+        letter-spacing: 0.04em; text-transform: uppercase;
+      }
+      .card { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+      .card:hover { box-shadow: var(--shadow-raise); transform: translateY(-1px); }
+      .card[data-variant="mine"] { border-left: 3px solid var(--brand); }
+      .card[data-variant="cancelled"], .card[data-variant="past"] { color: var(--fg-muted); }
+      .sport {
+        display: flex; align-items: center; gap: 8px; font-size: 0.8125rem;
+        color: var(--fg-muted); font-weight: 500;
+      }
+      .title { font-size: 1.0625rem; line-height: 1.5rem; font-weight: 600; }
+      .meta { font-size: 0.8125rem; color: var(--fg-muted); }
+      .foot { display: flex; align-items: center; gap: 12px; margin-top: 2px; }
+      .count { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .card[data-variant="one-spot"] .count { color: var(--warn); }
+      .card[data-variant="full"] .count { color: var(--danger); }
+      .card[data-variant="joined"] .foot {
+        background: var(--brand-tint); border-radius: var(--radius-sm); padding: 6px 8px;
+      }
+      .card[data-variant="joined"] .count { color: var(--brand); }
+      .field { display: grid; gap: 6px; }
+      .field label { font-size: 0.8125rem; font-weight: 600; }
+      .control {
+        height: 44px; padding: 0 12px; border-radius: var(--radius-sm);
+        border: 1px solid var(--border); background: var(--surface); color: var(--fg);
+        font: inherit; width: 100%;
+      }
+      .control[aria-invalid="true"] { border-color: var(--danger); }
+      .hint { font-size: 0.75rem; color: var(--fg-muted); }
+      .err { font-size: 0.75rem; color: var(--danger); }
+      select.control {
+        appearance: none;
+        background-image: linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
+          linear-gradient(135deg, var(--fg-muted) 50%, transparent 50%);
+        background-position: calc(100% - 16px) 19px, calc(100% - 11px) 19px;
+        background-size: 5px 5px; background-repeat: no-repeat;
+      }
+      .skel {
+        border-radius: var(--radius-sm);
+        background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 37%, var(--surface-2) 63%);
+        background-size: 400% 100%; animation: shimmer 1.4s ease-in-out infinite;
+      }
+      @keyframes shimmer { to { background-position: -135% 0; } }
+      .avatar {
+        width: 36px; height: 36px; border-radius: 50%; background: var(--surface-2);
+        display: inline-grid; place-items: center; font-size: 0.8125rem;
+        font-weight: 600; color: var(--fg-muted);
+      }
+      .stack .avatar { margin-left: -8px; border: 2px solid var(--surface); }
+      .stack .avatar:first-child { margin-left: 0; }
+      .map {
+        position: relative; height: 260px; border-radius: var(--radius-md);
+        border: 1px solid var(--border); overflow: hidden;
+        background: repeating-linear-gradient(45deg, var(--surface-2) 0 12px, transparent 12px 24px), var(--surface);
+      }
+      .pin {
+        position: absolute; transform: translate(-50%, -100%); background: var(--surface);
+        border: 1px solid var(--border); border-radius: var(--radius-full); padding: 4px 9px;
+        font-size: 0.75rem; font-weight: 600; box-shadow: var(--shadow-raise);
+      }
+      .pin[data-selected="true"] {
+        transform: translate(-50%, -100%) scale(1.15);
+        box-shadow: var(--shadow-float); border-color: var(--brand);
+      }
+      .info-win {
+        position: absolute; left: 12px; bottom: 12px; width: 216px; padding: 12px;
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-md); box-shadow: var(--shadow-float);
+        display: grid; gap: 6px;
+      }
+      .pill {
+        position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-full); padding: 8px 14px; font-size: 0.8125rem;
+        font-weight: 600; box-shadow: var(--shadow-float);
+      }
+      .live {
+        position: fixed; right: 20px; bottom: 20px; background: var(--fg); color: var(--page);
+        padding: 10px 14px; border-radius: var(--radius-md); box-shadow: var(--shadow-float);
+        font-size: 0.8125rem; opacity: 0; transition: opacity var(--dur-2) var(--ease);
+      }
+      .live[data-show] { opacity: 1; }
+
+
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="toolbar">
+        <strong>Event Manager UI</strong>
+        <code>no build step - edit tokens.css and this page updates</code>
+        <button class="btn btn-secondary btn-sm" id="theme" style="margin-left: auto">Toggle dark</button>
+        <button class="btn btn-secondary btn-sm" id="demoJoin">Demo Join</button>
+      </div>
+
+      <h1>Style guide</h1>
+      <p class="lead">
+        Every token and component state from <code>UIUX_DESIGN_SPEC.md</code>, rendered live from
+        <code>tokens.css</code>.
+      </p>
+
+      <section>
+        <h2>Colour</h2>
+        <div class="swatches" id="swatches"></div>
+      </section>
+
+      <section>
+        <h2>Type scale</h2>
+        <p style="font-size:1.875rem;line-height:2.25rem;font-weight:700;margin:0 0 6px">text-hero - Badminton Monday</p>
+        <p style="font-size:1.375rem;line-height:1.75rem;font-weight:700;margin:0 0 6px">text-h2 - Glen Waverley Badminton Centre</p>
+        <p style="font-size:1.0625rem;line-height:1.5rem;font-weight:600;margin:0 0 6px">text-h3 - Monday night badminton, doubles</p>
+        <p style="margin:0 0 6px">text-body - Two courts booked 6-8pm. Bring your own racket, shuttlecocks provided.</p>
+        <p class="meta" style="margin:0 0 6px">text-meta - Mon 12 Oct 6PM · 3 km away · $15</p>
+        <p class="count" style="margin:0 0 6px">text-count - 2/4</p>
+        <span class="badge tint-info">text-micro / badge</span>
+      </section>
+
+      <section>
+        <h2>Buttons</h2>
+        <div class="row">
+          <button class="btn btn-primary">Join</button>
+          <button class="btn btn-secondary">Joined ✓</button>
+          <button class="btn btn-ghost">Leave event</button>
+          <button class="btn btn-danger">Cancel event</button>
+          <button class="btn btn-primary" data-loading>Join</button>
+          <button class="btn btn-primary" disabled>Full</button>
+          <button class="btn btn-primary btn-sm">Small</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Chips &amp; badges</h2>
+        <div class="row">
+          <button class="chip" aria-pressed="true">🏸 Badminton</button>
+          <button class="chip" aria-pressed="false">🏀 Basketball</button>
+          <button class="chip" aria-pressed="false">🏃 Running</button>
+          <button class="chip" aria-pressed="false" disabled>Soccer</button>
+          <span class="badge tint-warn">1 spot left</span>
+          <span class="badge tint-danger">Full</span>
+          <span class="badge tint-info">Cancelled</span>
+          <span class="badge tint-brand">You're hosting</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>EventCard - every variant</h2>
+        <div class="grid" id="cards"></div>
+      </section>
+
+      <section>
+        <h2>Form fields</h2>
+        <div class="grid">
+          <div class="field">
+            <label for="f1">Event name</label>
+            <input class="control" id="f1" value="Badminton Monday" />
+            <span class="hint">Max 80 characters.</span>
+          </div>
+          <div class="field">
+            <label for="f2">Max participants</label>
+            <input class="control" id="f2" aria-invalid="true" value="1" />
+            <span class="err">Must be at least 2.</span>
+          </div>
+          <div class="field">
+            <label for="f3">Skill level</label>
+            <select class="control" id="f3"><option>Intermediate</option><option>Beginner</option><option>Advanced</option></select>
+          </div>
+          <div class="field">
+            <label for="f4">Start time</label>
+            <input class="control" id="f4" type="time" value="18:00" />
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Loading, empty, error</h2>
+        <div class="grid" id="states"></div>
+      </section>
+
+      <section>
+        <h2>Avatars</h2>
+        <div class="row stack">
+          <span class="avatar">DP</span><span class="avatar">LK</span><span class="avatar">MR</span><span class="avatar">+3</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>Map &amp; info window</h2>
+        <div class="map">
+          <span class="pin" style="left:22%;top:40%">🏸 2/4</span>
+          <span class="pin" data-selected="true" style="left:55%;top:62%">🏀 5/6</span>
+          <span class="pin" style="left:78%;top:32%">🏃 1/8</span>
+          <div class="info-win">
+            <span class="sport">🏸 Badminton</span>
+            <span class="title">Badminton Monday</span>
+            <span class="meta"><span class="count" id="liveCount" data-count>2/4</span> · Tonight 6PM</span>
+            <button class="btn btn-primary btn-sm" id="joinSmall">Join</button>
+          </div>
+          <span class="pill">Search this area</span>
+        </div>
+      </section>
+    </div>
+
+    <div class="live" id="toast" role="status" aria-live="polite"></div>
+    <script src="design-system.js"></script>
+
+  </body>
+</html>

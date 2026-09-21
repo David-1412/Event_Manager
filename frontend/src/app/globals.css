@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Duration tokens are @theme variables (--duration-1/--duration-2), so the
+   utilities are duration-1 / duration-2 with no extra config needed. */
+
+/* The dark palette in tokens.css lands on :root-scoped custom properties.
+   They cascade, so `bg-surface` / `border-border` / `text-fg` flip inside `.dark`
+   automatically; `color-scheme` is set there for native form controls. */
+
+/* Component recipes the spec reuses 10+ times. Written as utilities so every
+   value resolves through @theme tokens - no raw hex/px anywhere in components. */
+@layer components {
+  .press {
+    @apply transition-[transform,box-shadow,background-color,color,border-color] duration-1 ease-default;
+
+  }
+
+  /* count nudge: [data-count] elements opt in, JS toggles data-changed for 200ms
+     so 2/4 -> 3/4 registers without the animation being the point (spec §5) */
+  .count-shift {
+    @apply transition-[transform,color] duration-2 ease-default;
+  }
+  .count-shift[data-changed] {
+    transform: translateY(-4px);
+  }
+}
