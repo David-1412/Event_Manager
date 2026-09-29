@@ -1,6 +1,6 @@
 import type { EventListItem } from "@/types/events";
-import { formatCardWhen, formatTimeRange } from "@/lib/format";
-import { sportMeta } from "@/lib/sports";
+import { formatCardWhen, formatTagLine, formatTimeRange } from "@/lib/format";
+
 
 /**
  * Stand-in for the map when no API key is configured or the script fails.
@@ -11,17 +11,22 @@ import { sportMeta } from "@/lib/sports";
 export function MapFallback({
   className,
   height,
-  message = "Map unavailable — the list below has every event.",
+  message = "Map unavailable - the list below has every event.",
 }: {
   className?: string;
   height?: number;
   message?: string;
 }) {
+  const sizing = className?.includes("h-")
+    ? className
+    : `${className ?? ""} ${height ? `h-[${height}px]` : "h-full min-h-48"}`;
   return (
     <div
-      className={"flex w-full items-center justify-center bg-surface-2 p-4 " + (className ?? "")}
+      data-map-fallback
+      className={"flex w-full items-center justify-center bg-surface-2 p-4 " + sizing}
       style={height ? { height } : undefined}
-      role="region"
+      role="alert"
+      tabIndex={-1}
       aria-label="Map unavailable"
     >
       <p className="max-w-60 text-center text-meta text-fg-muted">{message}</p>
@@ -34,8 +39,8 @@ export function MapInfoCard({ event }: { event: EventListItem }) {
   return (
     <div className="flex w-52 flex-col gap-1 p-1 text-fg">
       <span className="flex items-center gap-1 text-meta text-fg-muted">
-        <span aria-hidden>{event.sportIcon ?? sportMeta(event.sport).icon}</span>
-        {sportMeta(event.sport).label}
+        <span aria-hidden>{event.sportIcon ?? "\u{1F4C5}"}</span>
+        {formatTagLine(event.tags) || "Untagged"}
       </span>
       <span className="text-h3">{event.title}</span>
       <span className="text-meta text-fg-muted">

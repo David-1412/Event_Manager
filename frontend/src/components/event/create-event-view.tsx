@@ -1,20 +1,40 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { EventCard } from "@/components/event/event-card";
 import { type VenueSelection } from "@/components/event/venue-picker";
 import { toast } from "@/components/ui/toast";
 import { ApiError, request, usingFixtures } from "@/lib/api";
+import { useAuth } from "@/lib/auth/auth-provider";
+import { updateDraft, getDraft, approveDraft } from "@/lib/drafts";
+import { refreshDraftQueue } from "@/features/create/use-drafts";
+import { payloadToFormValues, payloadToVenue } from "@/features/create/use-draft-to-form";
+import {
+  clearLocalDraftEdit,
+  loadLocalDraftEdit,
+  parseLocalDraftEdit,
+  saveLocalDraftEdit,
+} from "@/features/create/draft-autosave";
+import { DraftsPastePanel } from "@/components/event/drafts-paste-panel";
+import { DraftsSection, DraftBanner } from "@/components/event/drafts-section";
+import { ConfirmDialog } from "@/components/ui/dialog";
+
+
+import { signInReturnTo } from "@/lib/auth/types";
 import {
   CREATE_EVENT_DEFAULTS,
   createEventSchema,
   toCreateEventPayload,
+  type CreateEventPayload,
   type CreateEventValues,
 } from "@/features/create/create-event-schema";
 import { melbourneDateInputValue } from "@/lib/format";
+import { normalizeTags } from "@/lib/sports";
 import { CreateEventGroups } from "@/components/event/create-event-groups";
 import { CreateEventFooter } from "@/components/event/create-event-footer";
 import { previewOf } from "@/components/event/create-event-preview";
@@ -27,6 +47,9 @@ import { previewOf } from "@/components/event/create-event-preview";
  */
 export function CreateEventView() {
   const router = useRouter();
+  const { user, loading } = useAuth();
+  const uid = user?.uid ?? null;
+
   const [venue, setVenue] = useState<VenueSelection | null>(null);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const [submitFailed, setSubmitFailed] = useState(false);
@@ -41,19 +64,167 @@ export function CreateEventView() {
   // performance advisory rather than a defect - `/create` is one screen and the
   // preview re-render is the whole point. `useWatch` was tried and widened every
   // field to optional, pushing `undefined` handling into the preview and groups.
-  // eslint-disable-next-line react-hooks/incompatible-library
+   
   const values = form.watch();
+
+  // Draft review wiring. A draft opened via ?draftId= populates the form; the
+  // reviewer edits it, autosaves it back (localStorage on every change, the API
+  // on exit/manual save) and publishes it through approve — the authenticated
+  // user becomes the event's host. Missing fields and confidence are review
+  // guidance, not blockers, so the form is always editable and saveable.
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [draftMissing, setDraftMissing] = useState<string[]>([]);
+  const [draftConfidence, setDraftConfidence] = useState<number | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [promptExit, setPromptExit] = useState(false);
+  const exitPathRef = useRef<string | null>(null);
+  const publishedRef = useRef(false);
+  const draftRef = useRef<string | null>(null);
+  const hydratedRef = useRef(false);
+  const latestRef = useRef<{ values: CreateEventValues; venue: VenueSelection | null }>({
+    values,
+    venue: null,
+  });
+
+
+  // `/create` is listed as auth-required (plan §13). Firebase never put the
+  // session in a cookie, so middleware can't see it and the guard has to live
+  // here — but it waits for `loading`, or a session that is still restoring
+  // would be bounced to the login page on a hard refresh.
+  useEffect(() => {
+    if (!loading && !user) router.replace(signInReturnTo("/create"));
+  }, [loading, user, router]);
 
   const errorFor = (name: keyof CreateEventValues) =>
     form.formState.errors[name]?.message ?? serverErrors[name];
 
+  // Open a draft for review (?draftId=): pull it, map its payload into the form,
+  // and start clean (populating is not a user edit). A newer local autosave wins
+  // over the server copy — it is the edit this browser made after the last PUT,
+  // and silently discarding it on revisit is the failure autosave exists for.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("draftId");
+    if (!id) return;
+    let active = true;
+    draftRef.current = id;
+    setDraftId(id);
+    void getDraft(id)
+      .then((draft) => {
+        if (!active) return;
+        const serverValues = payloadToFormValues(draft.payload);
+        const edit = loadLocalDraftEdit(id);
+        const local = parseLocalDraftEdit<CreateEventValues>(edit);
+        // The local copy only supersedes the server when it was written after the
+        // draft was last touched server-side; reviewedAt/createdAt are the closest
+        // stamps the DTO carries, and createdAt is the honest floor.
+        const serverTouched = draft.reviewedAt ?? draft.createdAt;
+        const useLocal = local != null && edit != null && (!serverTouched || edit.savedAt > serverTouched);
+        const chosen = useLocal ? { ...serverValues, ...local } : serverValues;
+
+        form.reset({ ...chosen, date: chosen.date || melbourneDateInputValue() });
+        setVenue(payloadToVenue(draft.payload));
+        setDraftMissing(draft.missingFields);
+        setDraftConfidence(draft.confidence);
+        hydratedRef.current = true;
+        setIsDirty(false);
+        if (useLocal) toast("Restored your unsaved edits for this draft");
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        const message =
+          error instanceof ApiError && error.status === 401
+            ? "Sign in to review this draft."
+            : "Could not load that draft.";
+        toast(message);
+      });
+
+    return () => {
+      active = false;
+    };
+    // form/reset is stable for the life of the view; run once for the URL's draftId.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Track edits for the exit prompt and autosave. Every keystroke writes the
+  // localStorage copy (cheap, synchronous, survives a dead tab); the API save
+  // happens on the in-app Exit dialog's "Save and exit".
+  useEffect(() => {
+    // React Compiler cannot memoize react-hook-form's watch() callback; the
+    // directive sits here, on the callback, exactly where the rule fires.
+    // eslint-disable-next-line react-hooks/incompatible-library
+    const sub = form.watch((next) => {
+      latestRef.current = { values: next as CreateEventValues, venue: latestRef.current.venue };
+      setIsDirty(true);
+      if (draftRef.current && hydratedRef.current) {
+        saveLocalDraftEdit(draftRef.current, next);
+      }
+    });
+    return () => sub.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Forceful exit (tab closed / reload): the browser can only show a native
+  // "Leave site?" confirmation — it cannot run an async write. The autosaved
+  // localStorage copy covers the data; this makes the hard-unload visible so the
+  // reviewer is never silently dropped without a chance to keep their edits.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  async function persistDraft(): Promise<boolean> {
+    if (!draftId) return false;
+    setSaving(true);
+    try {
+      // Autosave persists whatever the reviewer has, validated or not — a draft
+      // is expected to be incomplete, and the server only records the shape it
+      // can parse (buildDraftPayload leaves an unparseable date/time out rather
+      // than inventing one).
+      await updateDraft(
+        draftId,
+        buildDraftPayload(latestRef.current.values, latestRef.current.venue),
+      );
+      clearLocalDraftEdit(draftId);
+      setIsDirty(false);
+      refreshDraftQueue(uid);
+      return true;
+    } catch {
+      toast("Could not save the draft");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Manual exit: save (if editing a draft) then navigate, or prompt if unsaved
+  // changes. The local autosave already holds the bytes; this is the chance to
+  // push them to the server so they survive a different device.
+  function attemptExit(path: string) {
+    if (!draftId || !isDirty) {
+      router.push(path);
+      return;
+    }
+    exitPathRef.current = path;
+    setPromptExit(true);
+  }
+
+
+
   function applyVenue(next: VenueSelection | null) {
     setVenue(next);
+    latestRef.current = { values: latestRef.current.values, venue: next };
     form.setValue("venueName", next?.venueName ?? "", { shouldValidate: true });
     form.setValue("address", next?.address ?? "");
     form.setValue("latitude", next?.latitude ?? 0);
     form.setValue("longitude", next?.longitude ?? 0);
   }
+
 
   async function onSubmit(draft: CreateEventValues) {
     setSubmitFailed(false);
@@ -75,9 +246,23 @@ export function CreateEventView() {
       setSubmitFailed(true);
       return;
     }
+    const payload = toCreateEventPayload({ ...parsed.data, ...venue });
     try {
-      const created = await postEvent(toCreateEventPayload({ ...parsed.data, ...venue }));
+      // A draft publishes through approve — the draft closes, the approving user
+      // becomes the host, and it leaves the queue; a plain create posts normally.
+      const created =
+        draftId && !usingFixtures
+          ? await approveDraft(draftId, payload)
+          : await postEvent(payload);
+      // The event is published; navigating away is no longer an unsaved-draft exit.
+      publishedRef.current = true;
+      if (draftId) {
+        clearLocalDraftEdit(draftId);
+        refreshDraftQueue(uid);
+      }
+      setIsDirty(false);
       toast("Event created", "success");
+
       router.push(`/events/${created.id}`);
     } catch (error) {
       if (error instanceof ApiError && Object.keys(error.errors).length > 0) {
@@ -111,12 +296,17 @@ export function CreateEventView() {
             Some fields need attention - see the highlights below.
           </p>
         )}
+        {draftId && (
+          <DraftBanner title={values.title} confidence={draftConfidence} missingFields={draftMissing} />
+        )}
+        <DraftsPastePanel />
         <CreateEventGroups
+
           values={values}
           venue={venue}
           errorFor={errorFor}
           register={form.register}
-          onSelectSport={(sport) => form.setValue("sport", sport, { shouldValidate: true })}
+          onTags={(tags) => form.setValue("tags", tags, { shouldValidate: true })}
           onVenue={applyVenue}
         />
       </div>
@@ -129,7 +319,40 @@ export function CreateEventView() {
         </div>
       </aside>
 
-      <CreateEventFooter submitting={form.formState.isSubmitting} />
+      <CreateEventFooter
+        submitting={form.formState.isSubmitting}
+        submittingLabel={draftId ? "Publish draft" : "Create event"}
+        onCancel={draftId ? () => attemptExit("/create") : undefined}
+        onSave={draftId ? () => void persistDraft().then((ok) => ok && toast("Draft saved", "success")) : undefined}
+        saveBusy={saving}
+      />
+
+      {/* The queue lives under the form: review happens here, and a reviewer
+          finishing one draft should see the next without leaving the page. */}
+      <div className="lg:col-span-2 flex flex-col gap-4 border-t border-border pt-6">
+        <DraftsSection />
+      </div>
+
+
+      <ConfirmDialog
+        open={promptExit}
+        titleId="draft-exit-title"
+        title="Save changes to this draft?"
+        body={<span>You have unsaved edits. Save them to this draft before leaving?</span>}
+        confirmLabel="Save and exit"
+        busy={saving}
+        onConfirm={async () => {
+          const path = exitPathRef.current ?? "/";
+          setPromptExit(false);
+          const ok = await persistDraft();
+          if (ok) router.push(path);
+        }}
+        onClose={() => {
+          setPromptExit(false);
+          exitPathRef.current = null;
+        }}
+      />
+
     </form>
   );
 }
@@ -164,4 +387,47 @@ async function postEvent(
   }
   return request<{ id: string }>("/api/events", { method: "POST", body: payload });
 }
-
+
+/**
+ * Build the autosave payload from the form's *current* values — deliberately
+ * not `toCreateEventPayload`, which requires a schema-valid form: autosave runs
+ * on half-filled forms by design, and the whole draft contract is that gaps are
+ * legal. Each field converts independently so one unparsable input (a cleared
+ * date, say) drops that field rather than the whole save, and the server's
+ * missing-field recomputation reports it again on the next load.
+ */
+function buildDraftPayload(
+  v: CreateEventValues,
+  venue: VenueSelection | null,
+): CreateEventPayload {
+  const start = parseWallClock(v.date, v.startTime);
+  const end = parseWallClock(v.date, v.endTime);
+  const spots = Number(v.maxParticipants);
+  const cost = Number(v.cost);
+  const lat = venue?.latitude ?? v.latitude;
+  const lng = venue?.longitude ?? v.longitude;
+
+  return {
+    title: v.title?.trim() || "",
+    tags: normalizeTags(v.tags ?? []),
+    startAt: start ? start.toISOString() : new Date().toISOString(),
+    endAt: end ? end.toISOString() : new Date().toISOString(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Melbourne",
+    venueName: venue?.venueName ?? v.venueName ?? "",
+    address: venue?.address ?? v.address ?? "",
+    latitude: Number.isFinite(lat) ? lat : 0,
+    longitude: Number.isFinite(lng) ? lng : 0,
+    maxParticipants: Number.isFinite(spots) ? Math.trunc(spots) : 4,
+    cost: v.cost && v.cost.trim() && Number.isFinite(cost) ? cost : null,
+    description: v.description?.trim() ? v.description.trim() : null,
+  };
+}
+
+/** `date` + `HH:mm` wall-clock inputs to an instant, or null when either is
+ * empty or unparseable — the autosave path's only date rule. */
+function parseWallClock(date: string | undefined, time: string | undefined): Date | null {
+  if (!date || !time) return null;
+  const parsed = new Date(`${date}T${time}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+

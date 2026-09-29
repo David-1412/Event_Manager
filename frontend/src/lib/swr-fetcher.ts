@@ -1,12 +1,25 @@
 import { ApiError, type ProblemDetails } from "@/lib/api";
+import { getAccessToken } from "@/lib/auth/token-store";
 
 /**
  * Single fetch entry point for SWR. SWR passes the key (a full URL) straight
  * through, so `eventsKey()`/`detailKey()` must already be absolute whenever the
  * real API is configured.
+ *
+ * The bearer token is read at call time rather than baked into the cache key:
+ * the browse list is identical signed-in and signed-out, and keying every read
+ * on the token would throw the cache away on each hourly refresh. Detail
+ * endpoints, which do carry `isHost`/`isJoined`, are revalidated by the caller
+ * when the session changes.
  */
 export async function fetcher<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const token = getAccessToken();
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
   const text = await response.text();
   const payload: unknown = text ? tryParse(text) : null;
 

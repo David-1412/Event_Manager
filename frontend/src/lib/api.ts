@@ -1,5 +1,6 @@
 export type { ProblemDetails } from "@/types/events";
 import type { ProblemDetails, JoinFailure } from "@/types/events";
+import { getAccessToken } from "@/lib/auth/token-store";
 
 /**
  * Transport layer. `NEXT_PUBLIC_API_BASE_URL` unset => the fixture adapter in
@@ -40,10 +41,14 @@ export const usingFixtures = API_BASE_URL === "";
 const TIMEOUT_MS = 10_000;
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
-  /** Auth header for the session; ignored while fixtures are active. */
+  /**
+   * Explicit auth header for the session. Leave it out and the current session
+   * token from `lib/auth/token-store` is attached automatically; pass
+   * `token: null` to force an anonymous call. Ignored while fixtures are active.
+   */
   token?: string | null;
 }
 
@@ -60,6 +65,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;
 
+  const token = options.token === undefined ? getAccessToken() : options.token;
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
@@ -68,7 +75,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       headers: {
         Accept: "application/json",
         ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
-        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     });

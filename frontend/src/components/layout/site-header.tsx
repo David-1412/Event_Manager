@@ -1,5 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Avatar } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { useAuth } from "@/lib/auth/auth-provider";
+import { cn } from "@/lib/cn";
 
 const links = [
   { href: "/", label: "Browse" },
@@ -7,7 +13,18 @@ const links = [
   { href: "/create", label: "Create" },
 ] as const;
 
+/**
+ * The header is a client component now that it renders the session. The mark
+ * and nav markup are unchanged, so server rendering still produces them —
+ * `AuthProvider` resolves on the client and only the account control changes
+ * after hydration.
+ *
+ * `aria-current="page"` replaces what a server-side active-link helper would
+ * have done: `usePathname` gives the same answer one commit later, and the
+ * nav's three destinations are not worth a server component boundary.
+ */
 export function SiteHeader() {
+  const pathname = usePathname();
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface shadow-raise">
       <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-4 px-4">
@@ -28,7 +45,11 @@ export function SiteHeader() {
             <Link
               key={l.href}
               href={l.href}
-              className="press rounded-md px-3 py-2 text-meta font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
+              aria-current={pathname === l.href ? "page" : undefined}
+              className={cn(
+                "press rounded-md px-3 py-2 text-meta font-medium hover:bg-surface-2 hover:text-fg",
+                pathname === l.href ? "bg-surface-2 text-fg" : "text-fg-muted",
+              )}
             >
               {l.label}
             </Link>
@@ -37,15 +58,47 @@ export function SiteHeader() {
 
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
-          <Link
-            href="/login"
-            className="press hidden h-9 items-center rounded-md border border-border bg-surface px-4 text-meta font-medium text-fg hover:bg-surface-2 sm:inline-flex"
-          >
-            Sign in
-          </Link>
+          <AccountControl />
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Sign-in link, or the signed-in identity. Keeps the same footprint in both
+ * states so the header can't shift when a session restores (spec §11), and the
+ * control is a link to `/account` rather than a dropdown: with two destinations
+ * a menu is one extra tap and a focus-trap to get wrong.
+ */
+function AccountControl() {
+  const { user, loading } = useAuth();
+
+  // Same box as both alternatives while the session restores, so the header
+  // never renders a "Sign in" link to a logged-in user and then swaps it.
+  if (loading)
+    return <span aria-hidden className="hidden h-9 w-[92px] animate-pulse rounded-md bg-surface-2 sm:inline-block" />;
+
+  if (!user)
+    return (
+      <Link
+        href="/login"
+        className="press hidden h-9 items-center rounded-md border border-border bg-surface px-4 text-meta font-medium text-fg hover:bg-surface-2 sm:inline-flex"
+      >
+        Sign in
+      </Link>
+    );
+
+  const firstName = user.displayName.split(" ")[0] || user.displayName;
+  return (
+    <Link
+      href="/account"
+      className="press inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface pl-1.5 pr-3 text-meta font-medium text-fg hover:bg-surface-2"
+      aria-label={`Account — ${user.displayName}`}
+    >
+      <Avatar name={user.displayName} src={user.photoURL} size="sm" />
+      <span className="hidden max-w-[10ch] truncate sm:inline">{firstName}</span>
+    </Link>
   );
 }
 

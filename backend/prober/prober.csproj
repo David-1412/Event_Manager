@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Healthcheck probe for the API container: GET the health endpoint, exit 0
+       on 2xx, 1 otherwise. The aspnet base image ships no curl or wget, and
+       fetching a third-party prober at build time (Docker.HealthCheck) proved
+       unbuildable behind this network's TLS-intercepting proxy. The .NET runtime
+       is already in the runtime image, so the probe compiles from source during
+       the image build and needs no package beyond the framework reference.
+
+       Deliberately outside SportMeet.slnx: it has no stake in the app's
+       analyzers, and `dotnet build` restores it with no PackageReferences. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

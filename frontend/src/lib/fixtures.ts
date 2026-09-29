@@ -1,4 +1,4 @@
-import type { EventDetail, EventListItem, Paged, SkillLevel, SportKey } from "@/types/events";
+import type { DraftQueue, EventDetail, EventDraft, EventListItem, Paged, PopularTag, SkillLevel, Tag } from "@/types/events";
 import { MELBOURNE_CBD } from "@/lib/sports";
 
 /**
@@ -20,7 +20,7 @@ function at(daysFromNow: number, hour: number, minute = 0): string {
 type Seed = {
   id: string;
   title: string;
-  sport: SportKey;
+  tags: Tag[];
   icon: string;
   skill: SkillLevel;
   start: string;
@@ -40,7 +40,7 @@ const seeds: Seed[] = [
   {
     id: "evt-badminton-monday",
     title: "Badminton Monday",
-    sport: "badminton",
+    tags: ["badminton"],
     icon: "🏸",
     skill: "Intermediate",
     start: at(0, 18),
@@ -58,7 +58,7 @@ const seeds: Seed[] = [
   {
     id: "evt-thursday-run",
     title: "Thursday Run at the Track",
-    sport: "running",
+    tags: ["running"],
     icon: "🏃",
     skill: "Beginner",
     start: at(1, 7),
@@ -75,7 +75,7 @@ const seeds: Seed[] = [
   {
     id: "evt-social-soccer",
     title: "Social Soccer",
-    sport: "soccer",
+    tags: ["soccer"],
     icon: "⚽",
     skill: "Intermediate",
     start: at(3, 16),
@@ -92,7 +92,7 @@ const seeds: Seed[] = [
   {
     id: "evt-basketball-thursday",
     title: "Basketball Thursday",
-    sport: "basketball",
+    tags: ["basketball"],
     icon: "🏀",
     skill: "Advanced",
     start: at(1, 20),
@@ -109,7 +109,7 @@ const seeds: Seed[] = [
   {
     id: "evt-badminton-wednesday",
     title: "Badminton Wednesday",
-    sport: "badminton",
+    tags: ["badminton"],
     icon: "🏸",
     skill: "Intermediate",
     start: at(2, 18),
@@ -126,7 +126,7 @@ const seeds: Seed[] = [
   {
     id: "evt-sunday-cricket",
     title: "Sunday Cricket",
-    sport: "cricket",
+    tags: ["cricket"],
     icon: "🏏",
     skill: "Beginner",
     start: at(6, 11),
@@ -144,7 +144,7 @@ const seeds: Seed[] = [
   {
     id: "evt-tennis-saturday",
     title: "Tennis Saturday",
-    sport: "tennis",
+    tags: ["tennis"],
     icon: "🎾",
     skill: "Advanced",
     start: at(5, 9),
@@ -161,7 +161,7 @@ const seeds: Seed[] = [
   {
     id: "evt-netball-tuesday",
     title: "Netball Tuesday",
-    sport: "netball",
+    tags: ["netball"],
     icon: "🥎",
     skill: "Beginner",
     start: at(8, 19),
@@ -213,7 +213,7 @@ function toListItem(seed: Seed, distanceKm: number): EventListItem {
   return {
     id: seed.id,
     title: seed.title,
-    sport: seed.sport,
+    tags: seed.tags,
     sportIcon: seed.icon,
     skillLevel: seed.skill,
     startAt: seed.start,
@@ -254,3 +254,161 @@ export function fixturePaged(): Paged<EventListItem> {
   const items = fixtureList();
   return { items, page: 1, pageSize: items.length, totalCount: items.length };
 }
+
+/** Mirrors `GET /api/tags/popular`: each tag with how many fixture events carry
+ * it, most-used first. The home page's filter chips read this under fixtures. */
+export function fixturePopularTags(): PopularTag[] {
+  const counts = new Map<string, number>();
+  for (const event of fixtureList()) {
+    for (const tag of event.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/**
+ * Draft fixtures (used when VITE_/NEXT_PUBLIC_USE_FIXTURES=1) so the review flow
+ * renders and Vitest/Playwright can exercise paste → draft → edit → publish.
+ * Shaped exactly like the backend's EventDraftDto (flat source fields, ISO
+ * instants in the payload) — the fixtures mirror the contract, they do not
+ * replace it.
+ */
+const DRAFTS: EventDraft[] = [
+  {
+    id: "draft-1001",
+    userId: "demo-user",
+    status: "pending",
+    payload: {
+      title: "Thursday Night Netball",
+      description: "Social netball, all levels. Bring a bib if you have one.",
+      startAt: at(4, 20),
+      endAt: at(4, 21, 30),
+      timezone: "Australia/Melbourne",
+      venueName: "Keilor Village Recreation Reserve",
+      address: "45 Crane Rd, Keilor Village VIC 3036",
+      latitude: -37.7229,
+      longitude: 144.8225,
+      maxParticipants: 12,
+      cost: 10,
+      tags: ["netball"],
+    },
+    confidence: 0.9,
+    missingFields: [],
+    subject: "Netball social this Thu?",
+    fromAddr: "priya@example.com",
+    sentAt: at(-1, 6, 30),
+    bodyText: "Netball social this Thursday 8-9:30pm at Keilor Village Rec Reserve. $10 a head.",
+    createdAt: at(-1, 6, 31),
+    eventId: null,
+    duplicateOfEventId: null,
+    reviewNote: null,
+    reviewedAt: null,
+  },
+  {
+    id: "draft-1002",
+    userId: "demo-user",
+    status: "pending",
+    payload: {
+      title: "Community Cleanup & Social",
+      venueName: "Yarra Bend Park",
+    },
+    confidence: 0.4,
+    missingFields: ["startAt", "endAt", "maxParticipants", "cost"],
+    subject: "Cleanup day (details TBC)",
+    fromAddr: "hello@greenthicket.org",
+    sentAt: at(-2, 19, 5),
+    bodyText: "Park cleanup followed by a barbecue at Yarra Bend Park. Date and time still TBC.",
+    createdAt: at(-2, 19, 6),
+    eventId: null,
+    duplicateOfEventId: null,
+    reviewNote: null,
+    reviewedAt: null,
+  },
+  {
+    id: "draft-1003",
+    userId: "demo-user",
+    status: "pending",
+    payload: {
+      title: "Friday Social Badminton",
+      description: "Same courts, all levels welcome.",
+      startAt: at(5, 20),
+      endAt: at(5, 22),
+      timezone: "Australia/Melbourne",
+      venueName: "Burwood East Community Badminton Club",
+      address: "48 Burwood Hwy, Burwood East VIC 3151",
+      latitude: -37.8313,
+      longitude: 145.1722,
+      maxParticipants: 8,
+      cost: 7,
+      tags: ["badminton", "social"],
+    },
+    confidence: 0.78,
+    missingFields: [],
+    subject: "Badminton Friday",
+    fromAddr: "wei@example.com",
+    sentAt: at(-3, 9, 12),
+    bodyText: "Friday social badminton — Burwood East courts, 8pm-10pm, $7 a head.",
+    createdAt: at(-3, 9, 13),
+    eventId: null,
+    duplicateOfEventId: "evt-1003",
+    reviewNote: null,
+    reviewedAt: null,
+  },
+];
+
+let draftsStore = DRAFTS.map((d) => ({ ...d }));
+
+export function fixtureDraftQueue(): DraftQueue {
+  const pending = draftsStore.filter((d) => d.status === "pending");
+  return {
+    items: [...pending].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((d) => ({ ...d })),
+    totalCount: pending.length,
+  };
+}
+
+export function fixtureDraft(id: string): EventDraft | undefined {
+  return draftsStore.find((d) => d.id === id);
+}
+
+export function fixtureSaveDraft(
+  id: string,
+  payload: Partial<EventDraft["payload"]>,
+): EventDraft | undefined {
+  const draft = draftsStore.find((d) => d.id === id);
+  if (!draft) return undefined;
+  draft.payload = { ...draft.payload, ...payload };
+  draft.missingFields = draft.missingFields.filter((f) => {
+    const value = payload[f as keyof EventDraft["payload"]];
+    return value == null || value === "";
+  });
+  return { ...draft };
+}
+
+export function fixtureDeleteDraft(id: string): void {
+  draftsStore = draftsStore.filter((d) => d.id !== id);
+}
+
+export function fixtureAddDraft(payload: EventDraft["payload"]): EventDraft {
+  const now = new Date().toISOString();
+  const created: EventDraft = {
+    id: `draft-${Date.now()}`,
+    userId: "demo-user",
+    status: "pending",
+    payload,
+    confidence: 0.55,
+    missingFields: payload.startAt ? [] : ["startAt", "endAt"],
+    subject: payload.title ?? "Pasted message",
+    fromAddr: "you@example.com",
+    sentAt: now,
+    bodyText: "",
+    createdAt: now,
+    eventId: null,
+    duplicateOfEventId: null,
+    reviewNote: null,
+    reviewedAt: null,
+  };
+  draftsStore = [created, ...draftsStore];
+  return { ...created };
+}
+

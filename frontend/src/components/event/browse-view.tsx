@@ -1,33 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { EventCard } from "@/components/event/event-card";
+import { CardActions } from "@/components/event/card-actions";
 import { FilterBar } from "@/components/event/filter-bar";
 import { EventMap } from "@/components/map/event-map";
 import { EmptyState, ErrorState } from "@/components/state/empty-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EventCardListSkeleton } from "@/components/ui/skeleton";
-import { useEvents } from "@/features/events/use-events";
+import { useEvents, useJoinedEvents, usePopularTags } from "@/features/events/use-events";
 import { useGeolocation } from "@/features/events/use-geolocation";
-import { patchQuery, readQuery, writeQuery } from "@/lib/query-nav";
+import { patchQuery, writeQuery } from "@/lib/query-nav";
+import { parseQuery, useSearchParamsValue } from "@/lib/query";
 import type { EventQuery } from "@/types/events";
 
 /**
  * `/` Browse (spec §8): FilterBar, then `EventCardList | EventMap`.
- *  - `>= lg`: 420px list column + map filling the rest, each scrolling on its
- *    own inside `100dvh` (spec §6).
+ *  - `>= lg`: 60% list column + 40% map, each scrolling on its own inside
+ *    `100dvh` (spec §6). The split is percentage-based rather than the spec's
+ *    original `420px` column so the list keeps pace with wide displays.
  *  - `< md`: card list + a collapsed map sheet that expands to 60vh.
  *  - first paint: filter bar + 6 skeletons + map placeholder (never a spinner).
  *  - geolocation denied -> Melbourne CBD + a one-line note, never a modal.
+ *
+ * The URL is the only place filter state lives. `useSearchParamsValue` subscribes
+ * to `popstate`, so a chip tap, a Reset, and the browser Back button all arrive
+ * through the same path — an earlier version took `searchParams` as a server prop
+ * and never re-read it, which made every filter change a no-op.
  */
-export function BrowseView({ search }: { search: string }) {
-  const query = useMemo(() => readQuery(new URLSearchParams(search)), [search]);
+export function BrowseView() {
+  const params = useSearchParamsValue();
+  const query = parseQuery(params);
   const [isPending, startTransition] = useTransition();
-  const { items, totalCount, error, isLoading, mutate } = useEvents(
-    new URLSearchParams(search),
-  );
+  const { items, totalCount, error, isLoading, mutate } = useEvents(params);
+  const joined = useJoinedEvents();
+  const { tags: popularTags } = usePopularTags();
   const geo = useGeolocation();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [mapSheetOpen, setMapSheetOpen] = useState(false);
@@ -85,6 +94,8 @@ export function BrowseView({ search }: { search: string }) {
             event={event}
             selected={event.id === selectedEventId}
             onSelect={setSelectedEventId}
+            isJoined={joined.isJoined(event.id)}
+            action={<CardActions eventId={event.id} />}
           />
         </div>
       ))}
@@ -99,9 +110,9 @@ export function BrowseView({ search }: { search: string }) {
 
   return (
     <div className="flex flex-1 flex-col lg:h-[calc(100dvh-3.5rem)] lg:flex-row lg:overflow-hidden">
-      <div className="flex flex-col lg:w-[420px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-border">
+      <div className="flex flex-col lg:w-3/5 lg:min-w-0 lg:overflow-y-auto lg:border-r lg:border-border">
         <h1 className="sr-only">{heading}</h1>
-        <FilterBar query={query} onPatch={patch} onReset={reset} />
+        <FilterBar query={query} onPatch={patch} onReset={reset} popularTags={popularTags} />
         {geo.status === "denied" && (
           <p className="px-4 py-2 text-meta text-fg-muted" role="status">
             Turn on location to sort by distance.
@@ -110,8 +121,8 @@ export function BrowseView({ search }: { search: string }) {
         <div className="flex flex-col gap-4 pb-8 pt-4">{listBody}</div>
       </div>
 
-      {/* Desktop map fills the rest and scrolls independently (spec §6). */}
-      <div className="hidden lg:block lg:min-w-0 lg:flex-1">
+      {/* Desktop map takes the remaining 40% and scrolls independently (spec §6). */}
+      <div className="hidden lg:block lg:w-2/5 lg:min-w-0 lg:flex-1">
         <EventMap
           events={items ?? []}
           selectedEventId={selectedEventId}
@@ -157,7 +168,7 @@ export function BrowseView({ search }: { search: string }) {
 
 /** The empty-state sentence must echo the active filters (spec §7/§9). */
 function headingFor(query: EventQuery): string {
-  const bits: string[] = [query.sport ? query.sport : "events"];
+  const bits: string[] = [query.tag ? `#${query.tag}` : "events"];
   if (query.radiusKm) bits.push(`within ${query.radiusKm}km`);
   if (query.date === "today") bits.push("today");
   else if (query.date === "week") bits.push("this week");

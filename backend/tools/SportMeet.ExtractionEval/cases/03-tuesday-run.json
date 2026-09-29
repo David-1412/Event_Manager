@@ -1,0 +1,18 @@
+{
+    "id":  "03-tuesday-run",
+    "kind":  "social-invite",
+    "subject":  "Tuesday run",
+    "from":  "runcrew@example.com",
+    "receivedAt":  "2026-09-22T07:05:00+10:00",
+    "body":  "Easy 5k next Tuesday at 6:30am, meeting at the fountain in Royal Park, Melbourne.\nNo pace dropped, everyone finishes together. Bring water.",
+    "expectOutcome":  "event",
+    "expected":  {
+                     "title":  "Tuesday run",
+                     "startAt":  "2026-09-29T06:30:00+10:00",
+                     "tags":  [
+                                  "running",
+                                  "run"
+                              ]
+                 },
+    "timeSensitive":  true
+}

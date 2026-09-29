@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Domain holds entities and invariants only. It must stay free of EF,
+       Npgsql and ASP.NET references (IMPLEMENTATION_PLAN.md §1): that is what
+       keeps EventService unit-testable and lets the persistence layer change
+       without moving business rules. -->
+
+</Project>

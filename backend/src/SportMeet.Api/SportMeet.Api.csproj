@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SportMeet.Application\SportMeet.Application.csproj" />
+    <ProjectReference Include="..\SportMeet.Infrastructure\SportMeet.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+  </ItemGroup>
+
+  <!-- Lets SportMeet.IntegrationTests reach Program without making it public. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SportMeet.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

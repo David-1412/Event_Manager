@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Not in the solution build: this is a developer tool with side effects (it spends
+         API key quota), so it should only ever run when named explicitly. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The production extractor and the production parser are what gets scored. Referenced
+         as a project, not copied, so a prompt change cannot leave the evaluator measuring
+         an older copy of the mapping. -->
+    <ProjectReference Include="..\..\src\SportMeet.Infrastructure\SportMeet.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+  </ItemGroup>
+
+  <!-- Golden set travels with the tool. Copied rather than read from the source tree so a
+       published/CI copy still finds it. -->
+  <ItemGroup>
+    <None Update="cases\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

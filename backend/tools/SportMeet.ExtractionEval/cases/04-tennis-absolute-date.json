@@ -1,0 +1,17 @@
+{
+    "id":  "04-tennis-absolute-date",
+    "kind":  "social-invite",
+    "subject":  "Tennis - Wed 30 Sept, Court 4",
+    "from":  "netclub@example.org",
+    "receivedAt":  "2026-09-26T12:00:00+10:00",
+    "body":  "Court 4 is free on Wednesday 30 September from 6:00pm until 8:00pm, Fitz Tennis Club, 12 Alexandra Ave, Fitzroy.\nTwo of us confirmed, need two more. Racquets available.",
+    "expectOutcome":  "event",
+    "expected":  {
+                     "title":  "Tennis - Wed 30 Sept, Court 4",
+                     "startAt":  "2026-09-30T18:00:00+10:00",
+                     "endAt":  "2026-09-30T20:00:00+10:00",
+                     "tags":  [
+                                  "tennis"
+                              ]
+                 }
+}

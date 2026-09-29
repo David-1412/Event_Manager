@@ -6,9 +6,9 @@ import {
   formatCardWhen,
   formatCost,
   formatDistance,
+  formatTagLine,
   spotsTakenSentence,
 } from "@/lib/format";
-import { iconFor, sportMeta } from "@/lib/sports";
 import type { EventListItem } from "@/types/events";
 
 export type EventCardVariant =
@@ -61,8 +61,11 @@ export function EventCard({
 }: EventCardProps) {
   const kind = variant ?? eventCardVariant(event, { isJoined, isHost });
   const availability = availabilityOf(event.participantCount, event.maxParticipants);
-  const icon = iconFor(event.sport, event.sportIcon);
-  const skill = sportMeta(event.sport);
+  // Sport is decoration only now: null when the event has no sport row, and the
+  // glyph slot collapses rather than falling back to a generic emoji.
+  const icon = event.sportIcon;
+  const tagLine = formatTagLine(event.tags);
+
 
   if (kind === "past") {
     return (
@@ -72,7 +75,7 @@ export function EventCard({
       >
         <span aria-hidden>{icon}</span>
         <span className="truncate">
-          {skill.label} · {formatCardWhen(event)}
+          {tagLine} · {formatCardWhen(event)}
         </span>
         {/* reserved slot for the post-MVP rating control (spec §8) */}
         <span aria-hidden className="ml-auto text-micro uppercase">
@@ -104,10 +107,13 @@ export function EventCard({
       onClick={onSelect ? () => onSelect(event.id) : undefined}
     >
       <div className="flex items-center gap-2 text-meta text-fg-muted">
-        <span aria-hidden>{icon}</span>
-        <span>{skill.label}</span>
-        <Badge className="ml-auto">{event.skillLevel}</Badge>
+        {icon && <span aria-hidden>{icon}</span>}
+        <span className="truncate">{tagLine}</span>
+        {/* SkillLevel is nullable and the create form no longer collects it, so a
+            null renders nothing at all rather than an empty pill. */}
+        {event.skillLevel && <Badge className="ml-auto">{event.skillLevel}</Badge>}
       </div>
+
 
       <h3 className="mt-2 text-h3 text-fg">
         <Link

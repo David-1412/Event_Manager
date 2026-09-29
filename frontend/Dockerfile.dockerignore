@@ -1,0 +1,30 @@
+# Ignore rules for `docker build -f frontend/Dockerfile .` — BuildKit uses
+# `<dockerfile>.dockerignore` when it exists. The context is the repo root, so
+# everything outside frontend/ is excluded, plus the frontend's own build
+# artifacts and dependencies: `npm ci` recreates node_modules and `next build`
+# recreates .next, and shipping ~36k host files into the image would both slow
+# the build and leak a host-treed tree over the container's install.
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/.venv
+frontend/*.tsbuildinfo
+frontend/dev.log
+frontend/coverage
+frontend/.env*
+backend
+ClarityLMS
+docs
+infra
+.config
+.migbak
+.github
+.git
+**/bin
+**/obj
+**/Dockerfile
+**/*.dockerignore
+docker-compose.yml
+*.md
+*.slnx
+package-lock.json

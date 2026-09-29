@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SportMeet.Domain\SportMeet.Domain.csproj" />
+    <ProjectReference Include="..\SportMeet.Application\SportMeet.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- All three pinned to the EF Core 8 / Npgsql 8 line to match net8.0. -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
+    <PackageReference Include="EFCore.NamingConventions" Version="8.0.3" />
+    <!-- Configure<T>(IConfigurationSection), used for the Demo section. The
+         Web SDK brings it in transitively; Infrastructure is a plain library, so
+         it is declared rather than assumed. -->
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+    <!-- Microsoft Graph mail reader. Pinned to the 5.x line rather than 6.x on purpose:
+         Microsoft.Graph 6.x depends on Microsoft.Identity 8.x / IdentityModel 8.x,
+         which target net9.0 and would leave this net8.0 library resolving a package
+         line it is not built against. 5.x also matches the EF/Npgsql decision to stay
+         on the net8-compatible major. Requires Azure.Identity below; both must be
+         restored before building (`dotnet restore backend/src/SportMeet.Api`), since
+         packages.lock.json is enforced in locked mode in CI and container builds. -->
+    <PackageReference Include="Microsoft.Graph" Version="5.99.0" />
+    <!-- 1.11.x is the last Azure.Identity line whose MSAL dependency (4.61+) still
+         targets netstandard2.0. From 1.12 it pulls IdentityModel 8.x, which is net9.0
+         or newer — the same reason Microsoft.Graph is held at 5.x above. -->
+    <PackageReference Include="Azure.Identity" Version="1.11.4" />
+    <!-- BackgroundService / IServiceScopeFactory for EmailPollingHostedService.
+         Abstractions only: it declares the host contract without pulling the host
+         implementation into a library, which the Api already has from the Web SDK. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
+    <!-- IHttpClientFactory + AddHttpClient for LlmEventExtractor. Declared because
+         Infrastructure is a plain library: the Web SDK would only supply this transitively
+         to SportMeet.Api. The extractor talks to the chat-completions endpoint directly
+         rather than through the OpenAI SDK, whose source generator collides with the
+         [GeneratedRegex] members in this assembly on net8.0. -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+    <!-- Firebase ID-token bearer authentication. Same version as the Microsoft.IdentityModel.Tokens
+         the shared framework already ships for net8.0, and the whole Microsoft.IdentityModel.*
+         family it needs is in the offline restore cache (see Directory.Build.props on locked
+         mode) — so adding it costs no new package line at runtime. The Api wires the handler
+         through AddFirebaseJwtBearer; Infrastructure owns the type reference because the
+         verification code lives here. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
+
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

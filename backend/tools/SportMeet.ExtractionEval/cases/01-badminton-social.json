@@ -1,0 +1,20 @@
+{
+    "id":  "01-badminton-social",
+    "kind":  "social-invite",
+    "subject":  "Badminton Friday 7:30pm",
+    "from":  "jo@example.club",
+    "receivedAt":  "2026-09-21T09:15:00+10:00",
+    "body":  "Hi all,\n\nBadminton this Friday 7:30pm - 9:30pm at Seddon Park, 42 Railway Ave, Seddon.\nShuttles provided. Beginners welcome - maximum 12 to make it work.\nCost is  a head.\n\nCheers,\nJo",
+    "expectOutcome":  "event",
+    "expected":  {
+                     "title":  "Badminton Friday 7:30pm",
+                     "startAt":  "2026-09-25T19:30:00+10:00",
+                     "endAt":  "2026-09-25T21:30:00+10:00",
+                     "maxParticipants":  12,
+                     "cost":  5,
+                     "skillLevel":  "Beginner",
+                     "tags":  [
+                                  "badminton"
+                              ]
+                 }
+}

@@ -1,0 +1,31 @@
+<Project>
+
+  <!-- Single place that pins the framework for every backend project.
+       IMPLEMENTATION_PLAN.md §1 proposes net10.0; ASP.NET Core 10 is Standard
+       Term Support (retires ~Nov 2026, no LTS until .NET 12 in Nov 2027) and the
+       three Milestone-1 endpoints need nothing from it, so we stay on LTS.
+       Bump this one line when .NET 12 LTS lands. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- NU190x (vulnerable transitive) stays a warning so a dependency advisory
+         cannot silently break every CI run; review them instead. -->
+    <WarningsNotAsErrors>NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Pin the exact dependency graph in a committed packages.lock.json per
+         project. Container restores run in NuGet locked mode and therefore
+         resolve exactly these versions instead of re-resolving against whatever
+         registry is reachable, which is what keeps a build behind a filtering
+         proxy from drifting (and from hitting NU1603 when a cache holds only
+         newer transitives).
+         Regenerate a lock file after editing any PackageReference:
+           dotnet restore backend/src/SportMeet.Api
+         which is enough now that RestorePackagesWithLockFile is on. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+</Project>

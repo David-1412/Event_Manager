@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/backend/" />
+  <Folder Name="/backend/src/">
+    <Project Path="backend/src/SportMeet.Api/SportMeet.Api.csproj" />
+    <Project Path="backend/src/SportMeet.Application/SportMeet.Application.csproj" />
+    <Project Path="backend/src/SportMeet.Domain/SportMeet.Domain.csproj" />
+    <Project Path="backend/src/SportMeet.Infrastructure/SportMeet.Infrastructure.csproj" />
+  </Folder>
+</Solution>

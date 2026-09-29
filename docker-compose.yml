@@ -1,0 +1,153 @@
+# Builds the API and the web app into containers as well, so `docker compose up`
+# alone brings the whole stack up:
+#   http://localhost:3000  -> web    (production Next.js build)
+#   http://localhost:5000  -> api    (Swagger at /swagger in Development)
+#   localhost:5432         -> postgres (unchanged; keeps the existing volume)
+#
+# If 3000 or 5000 is already taken on the host, override the host side without
+# editing this file (PowerShell: `$env:WEB_PORT = "3100"; docker compose up`):
+#   WEB_PORT / API_PORT   host ports for web / api
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sportmeet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sportmeet
+      POSTGRES_USER: sportmeet
+      # Dev-only credential. Deliberately not secret-managed: this database only
+      # ever holds throwaway local data, and real deployments get their
+      # connection string from Key Vault (IMPLEMENTATION_PLAN.md §7).
+      POSTGRES_PASSWORD: sportmeet
+      # Force UTC so the container clock matches the API host clock. Seeded demo
+      # events are generated relative to "now", and a zone mismatch would shift
+      # every event by the offset (e.g. Melbourne AEST is UTC+10).
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - sportmeet-pgdata:/var/lib/postgresql/data
+      # Intentionally no infra/seed bind-mount. EF Core migrations own the
+      # schema and the API seeds demo data at startup (Database:SeedDemoData);
+      # a second SQL definition here could drift, and its role statements failed
+      # on a fresh volume because EF's history table is unqualified ("__EFMigrationsHistory"),
+      # not ef_modulardb as IMPLEMENTATION_PLAN.md §2 claimed.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sportmeet -d sportmeet"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    # Defaults to the compose-generated local name; CI overrides these with
+    # fully-qualified GHCR names, because an unprefixed name like
+    # `event_manager-api` cannot be pushed to a registry.
+    image: ${API_IMAGE:-event_manager-api}
+    build:
+      # Root context so both images build from the same place; the per-Dockerfile
+      # ignore files (backend/Dockerfile.dockerignore) keep each context small.
+      context: .
+      dockerfile: backend/Dockerfile
+      secrets:
+        - corp-ca
+      # `offline` gives backend/Dockerfile's restore the host NuGet folder as an
+      # extra package source, alongside the BuildKit package cache (see the
+      # Dockerfile header for why the cache is the store that ends up complete).
+      # NUGET_PACKAGES_PATH is set by scripts/build.ps1; unset, the context is
+      # empty and the build restores from the registry alone.
+      additional_contexts:
+        - offline=${NUGET_PACKAGES_PATH:-scripts/empty-cache}
+    container_name: sportmeet-api
+    restart: unless-stopped
+    # Development, not Production: this stack is the local demo. Development is
+    # what enables AutoMigrate + SeedDemoData (appsettings.Development.json) and
+    # Swagger, and it skips the HTTPS redirect the container can't terminate.
+    # ConnectionStrings__Default overrides appsettings: inside the network the
+    # database is `postgres`, not `localhost`.
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=sportmeet;Username=sportmeet;Password=sportmeet"
+      # Firebase ID-token verification. Set Firebase__ProjectId (e.g. via .env)
+      # to turn per-user draft ownership on; unset, the API keeps the configured
+      # demo identity and the draft endpoints honestly answer 401.
+      Firebase__ProjectId: ${FIREBASE_PROJECT_ID:-}
+      # Graph mailbox polling. Everything stays empty (and inert) unless filled;
+      # MailboxOwner is the user polled invitations become private drafts for.
+      Ingestion__Enabled: ${INGESTION_ENABLED:-false}
+      Ingestion__MailboxOwner__Address: ${INGESTION_MAILBOX_OWNER_ADDRESS:-}
+      Ingestion__MailboxOwner__Name: ${INGESTION_MAILBOX_OWNER_NAME:-}
+      AzureAd__TenantId: ${AZUREAD_TENANT_ID:-}
+      AzureAd__ClientId: ${AZUREAD_CLIENT_ID:-}
+      AzureAd__ClientSecret: ${AZUREAD_CLIENT_SECRET:-}
+      AzureAd__MailboxAddress: ${AZUREAD_MAILBOX_ADDRESS:-}
+      # LLM extraction; unset, the deterministic heuristic extractor is used.
+      OpenAi__ApiKey: ${OPENAI_API_KEY:-}
+    ports:
+      - "${API_PORT:-5000}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # /probe/prober.dll, built by backend/Dockerfile: the aspnet base image has
+      # no curl or wget, and the runtime is already in the image.
+      test: ["CMD", "dotnet", "/probe/prober.dll", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  web:
+    image: ${WEB_IMAGE:-event_manager-web}
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      secrets:
+        - corp-ca
+      # NEXT_PUBLIC_* are compiled into the client bundle at build time, so they
+      # have to be build args. Compose interpolates these from the shell or a
+      # root `.env` file; unset ones expand to the empty string and the ARG
+      # defaults in frontend/Dockerfile keep the map/auth fallbacks working, so
+      # a build without them succeeds with the map and sign-in degraded.
+      # NEXT_PUBLIC_API_BASE_URL is what the browser uses to reach the API, so
+      # it must be a browser-reachable origin (http://localhost:5000), never the
+      # docker hostname `api`.
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:5000}
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
+        NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: ${NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID:-}
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+        NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID:-}
+    container_name: sportmeet-web
+    restart: unless-stopped
+    # Only the host side is configurable: the image always listens on 3000
+    # (ENV PORT=3000 in frontend/Dockerfile), so a busy host port is handled here
+    # with `WEB_PORT=3100 docker compose up` rather than by rebuilding. The
+    # container-internal 3000 is what NEXT_PUBLIC_* and any container-to-container
+    # traffic target, so it stays fixed.
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+# Build-only CA bundle for TLS-intercepting corporate proxies. Both Dockerfiles
+# mount it as `corp-ca` with required=false, so the build is unaffected on an
+# ordinary network. It is a secret rather than a COPY so the certificate never
+# lands in an image layer or in `docker history`.
+#
+# On such a network, restore the chain with `powershell -File scripts/export-corp-ca.ps1`
+# (writes ./corp-ca.pem, which is what `file:` points at); nothing else to do,
+# the builds pick it up. Compose fails the build if the file is absent, hence the
+# committed placeholder and the required=false mounts in the Dockerfiles.
+secrets:
+  corp-ca:
+    file: ./corp-ca.pem
+
+volumes:
+  sportmeet-pgdata:

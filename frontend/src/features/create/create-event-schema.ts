@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { SKILL_LEVELS, SPORTS } from "@/lib/sports";
-import type { SkillLevel, SportKey } from "@/types/events";
+import { TAG_MAX_PER_EVENT, normalizeTags } from "@/lib/sports";
+import type { Tag } from "@/types/events";
+
 
 /**
  * Client validation mirrors the API's (spec §8) so the two never disagree:
@@ -18,13 +19,15 @@ export const createEventSchema = z
       .trim()
       .min(3, "Give the event a name of at least 3 characters")
       .max(80, "Keep the name under 80 characters"),
-    sport: z.enum(SPORTS.map((s) => s.key) as [SportKey, ...SportKey[]], {
-      message: "Pick a sport",
-    }),
-    skillLevel: z.enum(SKILL_LEVELS as [SkillLevel, ...SkillLevel[]], {
-      message: "Pick a skill level",
-    }),
+    /**
+     * Free tags. Optional and empty by default. Entries are normalized in
+     * superRefine, which both rejects a malformed one (the same rule the server
+     * applies) and writes the normalized set back, so what the user typed and what
+     * gets POSTed cannot disagree.
+     */
+    tags: z.array(z.string()).max(TAG_MAX_PER_EVENT, `Use at most ${TAG_MAX_PER_EVENT} tags`).optional(),
     date: z.string().min(1, "Pick a date"),
+
     startTime: z.string().min(1, "Pick a start time"),
     endTime: z.string().min(1, "Pick an end time"),
     venueName: z.string().trim().min(1, "Search for a venue").max(120),
@@ -71,8 +74,7 @@ export type CreateEventValues = z.input<typeof createEventSchema>;
 
 export const CREATE_EVENT_DEFAULTS: CreateEventValues = {
   title: "",
-  sport: "badminton",
-  skillLevel: "Beginner",
+  tags: [],
   date: "",
   startTime: "18:00",
   endTime: "20:00",
@@ -85,15 +87,25 @@ export const CREATE_EVENT_DEFAULTS: CreateEventValues = {
   description: "",
 };
 
-/** What the API expects: `cost` null when empty, dates as ISO UTC. */
+/**
+ * What the API expects: `cost` null when empty, dates as ISO UTC, tags normalized.
+ *
+ * Tags are normalized here rather than in the schema because superRefine cannot
+ * rewrite a value; the tag input already stores normalized chips, so this is a
+ * final dedupe/cap against a pasted or programmatically-set value and must apply
+ * the identical rule the server enforces.
+ *
+ * `skillLevel` is omitted entirely: the form dropped its selector, and the API
+ * treats a missing skill as null and hides the badge.
+ */
 export function toCreateEventPayload(values: z.output<typeof createEventSchema>) {
   const start = new Date(`${values.date}T${values.startTime}`);
   const end = new Date(`${values.date}T${values.endTime}`);
   const cost = values.cost && values.cost.trim() ? Number(values.cost) : null;
+  const tags: Tag[] = normalizeTags(values.tags ?? []);
   return {
     title: values.title,
-    sport: values.sport,
-    skillLevel: values.skillLevel,
+    tags,
     startAt: start.toISOString(),
     endAt: end.toISOString(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Melbourne",
@@ -106,5 +118,6 @@ export function toCreateEventPayload(values: z.output<typeof createEventSchema>)
     description: values.description?.trim() ? values.description.trim() : null,
   };
 }
+
 
 export type CreateEventPayload = ReturnType<typeof toCreateEventPayload>;

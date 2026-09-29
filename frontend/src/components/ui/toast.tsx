@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 
@@ -22,9 +22,17 @@ export function toast(text: string, tone: ToastMessage["tone"] = "success") {
 const MAX_VISIBLE = 2;
 const LIFETIME_MS = 2400;
 
+const emptySubscribe = () => () => {};
+const getServerSnapshot = () => false;
+const getClientSnapshot = () => true;
+
 export function Toaster() {
   const [items, setItems] = useState<ToastMessage[]>([]);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  // The portal must not render during hydration (its markup has no server
+  // counterpart; React used to discard the whole tree over it). Gated on the
+  // client snapshot, it appears one commit after hydration completes.
+  const mounted = useSyncExternalStore(emptySubscribe, getClientSnapshot, getServerSnapshot);
 
   const dismiss = useCallback((id: number) => {
     setItems((prev) => prev.filter((t) => t.id !== id));
@@ -56,7 +64,7 @@ export function Toaster() {
     };
   }, [add]);
 
-  if (typeof document === "undefined") return null;
+  if (!mounted || typeof document === "undefined") return null;
 
   return createPortal(
     <div

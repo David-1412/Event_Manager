@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { JoinButton, deriveJoinState, type JoinState } from "@/components/event/join-button";
 import { EventMap } from "@/components/map/event-map";
@@ -11,8 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { SkeletonBlock } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
+import { useAuth } from "@/lib/auth/auth-provider";
+import { signInReturnTo } from "@/lib/auth/types";
 import { useNow } from "@/lib/use-now";
 import { StickyFooter } from "@/components/layout/site-header";
+import { CardActions } from "@/components/event/card-actions";
 import { useEventDetail, useJoinEvent } from "@/features/events/use-events";
 import {
   formatCost,
@@ -21,7 +24,6 @@ import {
   formatTimeRange,
   spotsTakenSentence,
 } from "@/lib/format";
-import { iconFor, sportMeta } from "@/lib/sports";
 import type { EventDetail } from "@/types/events";
 
 /**
@@ -39,7 +41,11 @@ export function EventDetailPage() {
   if (error && !event) {
     return (
       <div className="mx-auto w-full max-w-[680px] p-4">
-        <ErrorState detail={String(error)} onRetry={() => void mutate()} />
+        <ErrorState
+          message="This event could not be loaded - try again, or head back to Browse."
+          detail={String(error)}
+          onRetry={() => void mutate()}
+        />
       </div>
     );
   }
@@ -59,6 +65,9 @@ export function EventDetailPage() {
 
 function DetailBody({ event }: { event: EventDetail }) {
   const join = useJoinEvent(event);
+  const { user } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
   const now = useNow();
   const [confirmCancel, setConfirmCancel] = useState(false);
 
@@ -87,6 +96,13 @@ function DetailBody({ event }: { event: EventDetail }) {
       : derived;
 
   async function handleJoin() {
+    // Sign-in first: joining is the one write a visitor is likely to attempt,
+    // and sending them to `/login?next=` here means they come straight back to
+    // the event they wanted rather than to the browse page.
+    if (!user) {
+      router.push(signInReturnTo(pathname));
+      return;
+    }
     const result = await join.join();
     if (result.ok) toast("You're in", "success");
   }
@@ -95,7 +111,6 @@ function DetailBody({ event }: { event: EventDetail }) {
     if (result.ok) toast("You've left this event", "success");
   }
 
-  const sport = sportMeta(event.sport);
   const joinButton = (fullWidth: boolean) => (
     <JoinButton
       state={state}
@@ -115,7 +130,6 @@ function DetailBody({ event }: { event: EventDetail }) {
     <>
       <DetailHeader
         event={event}
-        sport={sport}
         menu={
           event.isHost ? (
             <HostMenu eventId={event.id} onCancelRequest={() => setConfirmCancel(true)} />
@@ -146,6 +160,23 @@ function DetailBody({ event }: { event: EventDetail }) {
           </p>
         </section>
       )}
+
+      <section className="mt-6" aria-labelledby="interest-heading">
+        <h2 id="interest-heading" className="text-h3 text-fg">
+          Interested
+        </h2>
+        <p className="mt-1 text-meta text-fg-muted">
+          Keep this event in your list, or take a spot now.
+        </p>
+        <div className="mt-3">
+          <CardActions
+            eventId={event.id}
+            isHost={event.isHost}
+            isCancelled={event.isCancelled}
+            size="md"
+          />
+        </div>
+      </section>
 
       <section className="mt-6" aria-labelledby="who-heading">
         <h2 id="who-heading" className="text-h3 text-fg">
@@ -219,14 +250,12 @@ function DetailSkeleton() {
   );
 }
 
-/** Back link, title, sport/skill/cancelled chips and the meta grid (spec §8). */
+/** Back link, title, tag/skill/cancelled chips and the meta grid (spec §8). */
 function DetailHeader({
   event,
-  sport,
   menu,
 }: {
   event: EventDetail;
-  sport: { label: string; icon: string };
   menu: React.ReactNode;
 }) {
   return (
@@ -240,16 +269,20 @@ function DetailHeader({
 
       <div className="mt-3 flex items-start gap-2">
         <h1 className="text-h1 text-fg">
-          <span aria-hidden>{iconFor(event.sport, event.sportIcon)}</span> {event.title}
+          {event.sportIcon && <span aria-hidden>{event.sportIcon}</span>} {event.title}
         </h1>
         {menu}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Badge tone="brand">
-          <span aria-hidden>{sport.icon}</span> {sport.label}
-        </Badge>
-        <Badge>{event.skillLevel}</Badge>
+        {/* One badge per tag rather than the old single sport badge; hidden when
+            the event has none instead of showing an empty pill. */}
+        {event.tags.map((tag) => (
+          <Badge key={tag} tone="brand">
+            #{tag}
+          </Badge>
+        ))}
+        {event.skillLevel && <Badge>{event.skillLevel}</Badge>}
         {event.isCancelled && <Badge tone="info">Cancelled</Badge>}
       </div>
 

@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "One file per email. Copy, rename, and edit.",
+    "Anything left out of expected{} is a claim that the email does NOT state it:",
+    "producing a value there scores as a hallucination, not as unmeasured.",
+    "receivedAt is what makes relative dates ('next Friday') have one right answer.",
+    "expectOutcome: 'event' | 'no_event' | 'either'. Use no_event for newsletters,",
+    "receipts, out-of-office and so on, with expected{} left empty."
+  ],
+  "id": "template-descriptive-name",
+  "kind": "social-invite",
+  "subject": "Badminton Friday 7:30pm",
+  "from": "club@example.com",
+  "receivedAt": "2026-09-28T09:15:00+10:00",
+  "body": "Hi all,\n\nBadminton this Friday 7:30pm-9:30pm at Seddon Park, 42 Railway Ave, Seddon.\n$5 a head, badminton provided. Beginners welcome - we need about 12 to make it work.\n\nCheers,\nJo",
+  "expectOutcome": "event",
+  "expected": {
+    "title": "Badminton",
+    "startAt": "2026-10-02T19:30:00+10:00",
+    "endAt": "2026-10-02T21:30:00+10:00",
+    "venueName": "Seddon Park",
+    "address": "42 Railway Ave, Seddon",
+    "maxParticipants": 12,
+    "cost": 5,
+    "skillLevel": "Beginner",
+    "tags": ["badminton"]
+  }
+}

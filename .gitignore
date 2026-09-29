@@ -1,0 +1,22 @@
+# Compose interpolation values for local runs. `.env.example` is the committed
+# template; `.env` holds this machine's values and stays local (Compose has no
+# way to read frontend/.env.local during a build, so this file is what supplies
+# the browser-bound NEXT_PUBLIC_* build args - see docker-compose.yml).
+.env
+
+# Local scratch and tooling directories that must never be pushed:
+# node_modules_broken/ is a ~113MB moved-aside install, ClarityLMS/ is an
+# unrelated nested repository with its own git history.
+node_modules_broken/
+ClarityLMS/
+
+# Ad-hoc logs written to the repo root by local runs of the api/web servers.
+*.log
+
+# EF Core build artifacts.
+bin/
+obj/
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db

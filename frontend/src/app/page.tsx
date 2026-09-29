@@ -6,24 +6,6 @@ import { BrowseView } from "@/components/event/browse-view";
  * source of filter truth. It is intentionally not `dynamic = "force-dynamic"`:
  * Next still streams the shell, and SWR owns the data.
  */
-export default function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  return <BrowseViewWrapper searchParams={searchParams} />;
-}
-
-async function BrowseViewWrapper({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const params = await searchParams;
-  const search = new URLSearchParams(
-    Object.entries(params).flatMap(([key, value]) =>
-      value === undefined ? [] : Array.isArray(value) ? value.map((v) => [key, v]) : [[key, value]],
-    ),
-  ).toString();
-  return <BrowseView search={search} />;
+export default function HomePage() {
+  return <BrowseView />;
 }

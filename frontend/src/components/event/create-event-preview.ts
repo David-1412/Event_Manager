@@ -1,7 +1,7 @@
 import type { EventListItem } from "@/types/events";
 import type { VenueSelection } from "@/components/event/venue-picker";
 import type { CreateEventValues } from "@/features/create/create-event-schema";
-import { sportMeta } from "@/lib/sports";
+import { normalizeTags } from "@/lib/sports";
 
 /** Fields can arrive `undefined` while `useWatch` hydrates, so every read here
  *  is total - the preview must never render `undefined`, `NaN` or an empty date
@@ -10,15 +10,17 @@ type Draft = Partial<CreateEventValues>;
 
 /** The preview needs an `EventListItem`; synthesize one from the draft. */
 export function previewOf(values: Draft, venue: VenueSelection | null): EventListItem {
-  const sport: NonNullable<Draft["sport"]> = values.sport ?? "badminton";
   const spots = Number(values.maxParticipants);
   const cost = Number(values.cost);
   return {
     id: "preview",
     title: (values.title ?? "").trim() || "Your event name",
-    sport,
-    sportIcon: sportMeta(sport).icon,
-    skillLevel: values.skillLevel ?? "Beginner",
+    tags: normalizeTags(values.tags ?? []),
+    // null, not a guessed glyph: the draft has no sport row, and inventing one is
+    // what made the old preview show 🏸 on an event the user never picked.
+    sportIcon: null,
+    skillLevel: null,
+
     startAt: toIso(values.date, values.startTime),
     endAt: toIso(values.date, values.endTime),
     timezone: "Australia/Melbourne",

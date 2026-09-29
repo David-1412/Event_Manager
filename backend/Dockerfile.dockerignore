@@ -1,0 +1,26 @@
+# Ignore rules for `docker build -f backend/Dockerfile .` — BuildKit uses
+# `<dockerfile>.dockerignore` when it exists. The context is the repo root,
+# which also holds the frontend (node_modules and .next alone are ~36k files)
+# and an unrelated project (ClarityLMS); excluding them keeps the context the
+# daemon has to pack on every build down to the backend sources.
+backend/tests
+frontend
+ClarityLMS
+docs
+infra
+.config
+.migbak
+.github
+.git
+**/bin
+**/obj
+**/node_modules
+**/.next
+**/*.log
+**/.env*
+**/Dockerfile
+**/*.dockerignore
+docker-compose.yml
+*.md
+*.slnx
+package-lock.json

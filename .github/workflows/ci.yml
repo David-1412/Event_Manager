@@ -1,0 +1,191 @@
+# CI gates every push/PR on the same checks `npm run verify` runs locally, then
+# builds both container images. Images are pushed to GHCR only on the main
+# branch: a pull request still gets a full build (so a broken Dockerfile fails
+# the check) but never receives registry credentials, which keeps them
+# unavailable to workflows from forks.
+#
+# Deploy reads those images from GHCR, so it runs only after a main-branch build
+# succeeds. See the deploy job for what still has to be filled in.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `ci` rather than `install` so a package.json that has drifted from the
+      # committed lock file fails here instead of silently resolving new versions.
+      - run: npm ci
+
+      # check:encoding, type-check, lint, vitest, next build.
+      - name: Verify
+        run: npm run verify
+
+      # Fail on any npm audit finding above moderate. Advisory data shifts
+      # daily, so this can go red with no code change; that is the intent, and
+      # `npm audit fix` is the usual answer.
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # global.json is intentionally absent: the projects target net8.0 and
+      # `dotnet build` picks the newest installed SDK to compile them with.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      # Lock files are committed and RestorePackagesWithLockFile is on, so
+      # --locked-mode proves the graph has not drifted from what is committed.
+      - name: Restore
+        run: dotnet restore SportMeet.slnx --locked-mode
+
+      - name: Build
+        run: dotnet build SportMeet.slnx -c Release --no-restore
+
+      # No backend test project exists yet (SportMeet.slnx contains only the four
+      # src projects), so there is nothing for `dotnet test` to run here. When one
+      # is added, put it in the solution and re-enable:
+      #   dotnet test SportMeet.slnx -c Release --no-build
+
+  # Builds both images with the registry/cache configuration the repo relies on,
+  # then publishes them on main. `docker buildx bake` reads docker-compose.yml, so
+  # CI builds exactly what `docker compose up --build` builds locally. The image
+  # names come from the API_IMAGE/WEB_IMAGE variables the compose file declares,
+  # so CI and the deploy host agree on one name rather than guessing tags.
+  images:
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    permissions:
+      contents: read
+      packages: write
+    env:
+      API_IMAGE: ghcr.io/${{ github.repository_owner }}/sportmeet-api
+      WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/sportmeet-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags: `latest` plus the commit SHA, so a deploy can pin an exact build.
+      - name: Build and push
+        uses: docker/bake-action@v6
+        env:
+          API_IMAGE: ${{ env.API_IMAGE }}
+          WEB_IMAGE: ${{ env.WEB_IMAGE }}
+        with:
+          files: docker-compose.yml
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
+            api.tags=${{ env.API_IMAGE }}:latest,${{ env.API_IMAGE }}:${{ github.sha }}
+            web.tags=${{ env.WEB_IMAGE }}:latest,${{ env.WEB_IMAGE }}:${{ github.sha }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+
+      # Records what was produced so a failed deploy is traceable to a build.
+      - name: Report image tags
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Pushed:"
+          echo "  $API_IMAGE:latest and :$GITHUB_SHA"
+          echo "  $WEB_IMAGE:latest and :$GITHUB_SHA"
+
+  # Gate for the publish step: the published images must actually run, talk to
+  # postgres, and serve the frontend before anything ships. This catches a bad
+  # image that `dotnet build` and `next build` cannot.
+  smoke:
+    runs-on: ubuntu-latest
+    needs: [images]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: read
+    env:
+      API_IMAGE: ghcr.io/${{ github.repository_owner }}/sportmeet-api
+      WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/sportmeet-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pulls rather than builds, so what gets tested is the artifact CI produced.
+      - name: Run stack from published images
+        run: |
+          docker compose pull api web
+          docker compose up -d
+          for i in $(seq 1 36); do
+            if curl -fsS http://localhost:5000/healthz; then ok=1; break; fi
+            echo "waiting for api ($i/36)"; sleep 5
+          done
+          [ "${ok:-}" = 1 ] || { docker compose logs api web; exit 1; }
+          docker compose ps
+
+      # Exercises the DB path: /api/events returns a paged envelope, so this
+      # proves migrations and seed data ran against postgres. The field names are
+      # the real contract: {"items":[{"title":"Netball Tuesday",...}]}
+      - name: Check API data
+        run: |
+          body=$(curl -fsS http://localhost:5000/api/events)
+          echo "$body" | head -c 400
+          echo "$body" | grep -q '"items"' || { echo "no items envelope"; exit 1; }
+          echo "$body" | grep -q '"title"' || { echo "no seeded events in response"; exit 1; }
+
+      # Proves the frontend serves. The API origin is read from
+      # NEXT_PUBLIC_API_BASE_URL at runtime inside the bundle rather than appearing
+      # in the HTML shell, so this checks the page renders, not the origin string.
+      - name: Check web serving
+        run: |
+          html=$(curl -fsS http://localhost:3000)
+          echo "$html" | grep -qi '<html' || { echo "web did not serve HTML"; exit 1; }
+          echo "web served $(echo "$html" | wc -c) bytes of HTML"
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [smoke]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Deploy
+        run: |
+          echo "Add the deploy step for the chosen target here."
+          echo "Pull $REGISTRY/$IMAGE_NAMESPACE/sportmeet-api and sportmeet-web"
+          echo "on the host that runs the production compose file."
+          exit 1

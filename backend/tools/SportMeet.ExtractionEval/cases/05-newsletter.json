@@ -1,0 +1,13 @@
+{
+    "id":  "05-newsletter",
+    "kind":  "not-an-event",
+    "note":  "KNOWN FAILURE, kept deliberately. The heuristic pre-filter matches the activity word \u0027event\u0027 inside this newsletter and then titles the draft from the subject, so it proposes an event where there is none. A title-only draft can never be approved (CreateEventDtoValidator requires StartAt, EndAt and VenueName), so the practical cost is one wasted review rather than a wrong publish - but it is a real false positive and the report should keep showing it. Do not \u0027fix\u0027 the key to make the number look better.",
+    "subject":  "September club newsletter",
+    "from":  "news@clubsport.example",
+    "receivedAt":  "2026-09-24T08:00:00+10:00",
+    "body":  "September newsletter\n\nHello members,\n\nThanks to everyone who came along last month. This month we are pleased to welcome two new sponsors, and our social page has photos from the June event.\n\nCommittee",
+    "expectOutcome":  "no_event",
+    "expected":  {
+
+                 }
+}

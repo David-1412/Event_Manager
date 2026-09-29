@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SportMeet.Domain\SportMeet.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Registers validators via assembly scanning without the Api having to
+         know which assembly they live in. -->
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
+    <!-- Options binding for IngestionOptions. Declared explicitly rather than taken
+         transitively from the package above: IOptions<T> appears in a public
+         constructor here, so an upgrade that dropped the transitive reference would
+         break this layer. Run `dotnet restore backend/src/SportMeet.Api` before
+         building, since the lock file is enforced in locked mode in CI and in the
+         container build. -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
+    <!-- ILogger<T> in EmailProcessor. Declared for the same reason as Options above:
+         it appears in a public constructor, and Application is a plain library with no
+         Web SDK to bring it in transitively. Logging.Abstractions carries no providers
+         and no configuration, so this does not give the layer a logging dependency
+         beyond the abstraction it is meant to hold. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,18 @@
+{
+    "id":  "02-saturday-social-soccer",
+    "kind":  "social-invite",
+    "subject":  "Social Soccer Saturday",
+    "from":  "captain@examplefc.org",
+    "receivedAt":  "2026-09-29T18:40:00+10:00",
+    "body":  "Boys, we are short for Saturday.\n\nKickoff 9:00am at Epping Park, Stewart St, Epping. Two goals each side, no keepers.\n per person on the day. Bring boots and a white shirt.\n\nSocial standard, all abilities - nobody is keeping score.",
+    "expectOutcome":  "event",
+    "expected":  {
+                     "title":  "Social Soccer Saturday",
+                     "startAt":  "2026-10-03T09:00:00+10:00",
+                     "cost":  10,
+                     "skillLevel":  "Beginner",
+                     "tags":  [
+                                  "soccer"
+                              ]
+                 }
+}

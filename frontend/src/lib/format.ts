@@ -1,9 +1,23 @@
-import type { EventListItem } from "@/types/events";
+import type { EventListItem, Tag } from "@/types/events";
 
 /**
- * The only place date/time/cost/distance strings are built (spec principle 6).
+ * The only place date/time/cost/distance/tag strings are built (spec principle 6).
  * Everything is Australia/Melbourne-aware and never emits `Invalid Date`.
  */
+
+/**
+ * Tags as a compact card line: "#tennis · #club". Empty string when the event has
+ * no tags, which is the normal state for events created before tags existed and
+ * for every demo event (the seed creates none) - callers rely on this being
+ * whitespace-safe rather than rendering "null" or a bare separator.
+ */
+export function formatTagLine(tags: readonly Tag[] | null | undefined, max = 3): string {
+  if (!tags || tags.length === 0) return "";
+  const shown = tags.slice(0, max).map((t) => `#${t}`);
+  const extra = tags.length - shown.length;
+  return extra > 0 ? `${shown.join(" · ")} +${extra}` : shown.join(" · ");
+}
+
 
 const TIME_FMT = new Intl.DateTimeFormat("en-AU", {
   hour: "numeric",
@@ -211,4 +225,26 @@ export function formatSpotsTaken(current: number, max: number): string {
 /** `YYYY-MM-DD` for `<input type="date">` values and minima, in Melbourne. */
 export function melbourneDateInputValue(value = new Date()): string {
   return parts(value).key;
+}
+
+/**
+ * The Melbourne wall-clock `HH:mm` a native time input shows for an instant —
+ * the exact inverse of the `date`+`startTime` strings `toCreateEventPayload`
+ * reads back. Draft review needs it: a payload stores ISO instants, the form
+ * edits wall-clock strings, and getting the pair wrong shifts every extracted
+ * time by the zone offset.
+ */
+export function melbourneTimeInputValue(value: string | Date): string {
+  const at = new Date(value);
+  if (!isValidDate(at)) return "";
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Australia/Melbourne",
+  }).formatToParts(at);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const hour = get("hour");
+  return `${hour === "24" ? "00" : hour}:${get("minute")}`;
 }

@@ -1,12 +1,11 @@
 "use client";
 
-import { Chip, ChipRow } from "@/components/ui/chip";
-import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { Field, Input, Textarea } from "@/components/ui/field";
+import { TagInput } from "@/components/event/tag-input";
 import { VenueChips, VenuePicker } from "@/components/event/venue-picker";
 import type { VenueSelection } from "@/components/event/venue-picker";
 import type { CreateEventValues } from "@/features/create/create-event-schema";
-import { SKILL_LEVELS, SPORTS } from "@/lib/sports";
-import type { SportKey } from "@/types/events";
+import type { Tag } from "@/types/events";
 
 /**
  * The five groups of `/create` (spec §8), each a `fieldset` with a `legend` so
@@ -19,7 +18,8 @@ export interface CreateGroupsProps {
   venue: VenueSelection | null;
   errorFor: (name: keyof CreateEventValues) => string | undefined;
   register: <K extends keyof CreateEventValues>(name: K) => object;
-  onSelectSport: (sport: SportKey) => void;
+  /** Tags are a controlled array, not a registerable native input. */
+  onTags: (tags: Tag[]) => void;
   onVenue: (venue: VenueSelection | null) => void;
 }
 
@@ -35,7 +35,7 @@ export function CreateEventGroups(props: CreateGroupsProps) {
   );
 }
 
-function WhatGroup({ values, errorFor, register, onSelectSport }: CreateGroupsProps) {
+function WhatGroup({ values, errorFor, register, onTags }: CreateGroupsProps) {
   return (
     <fieldset className="flex flex-col gap-4">
       <legend className="text-h3 text-fg">What</legend>
@@ -52,42 +52,23 @@ function WhatGroup({ values, errorFor, register, onSelectSport }: CreateGroupsPr
         )}
       </Field>
 
-      <Field label="Sport" error={errorFor("sport")} required>
-        {() => (
-          <ChipRow className="flex-wrap">
-            {SPORTS.map((sport) => (
-              <Chip
-                key={sport.key}
-                selected={values.sport === sport.key}
-                onClick={() => onSelectSport(sport.key)}
-              >
-                <span aria-hidden>{sport.icon}</span>
-                {sport.label}
-              </Chip>
-            ))}
-          </ChipRow>
-        )}
-      </Field>
-
-      <Field label="Skill level" error={errorFor("skillLevel")} required>
-        {({ id, describedBy, invalid }) => (
-          <Select
+      {/* Replaces the sport chips and the skill select. Tags are free text, so
+          nothing here needs a redeploy to accept a new activity; skill left the
+          form entirely because an un-chosen level renders as no badge at all. */}
+      <Field label="Tags" error={errorFor("tags")}>
+        {({ id }) => (
+          <TagInput
             id={id}
-            aria-describedby={describedBy}
-            aria-invalid={invalid || undefined}
-            {...register("skillLevel")}
-          >
-            {SKILL_LEVELS.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </Select>
+            tags={values.tags ?? []}
+            onChange={onTags}
+            error={errorFor("tags")}
+          />
         )}
       </Field>
     </fieldset>
   );
 }
+
 
 function WhenGroup({ errorFor, register }: CreateGroupsProps) {
   const pair = { sm: "grid-cols-1 gap-4 sm:grid-cols-3" };
@@ -139,7 +120,7 @@ function WhereGroup({ venue, errorFor, onVenue }: CreateGroupsProps) {
       <legend className="text-h3 text-fg">Where</legend>
       <Field
         label="Venue"
-        hint="Pick from the list so the map lands on the right spot."
+        hint="Tap a spot on the map or search an address - the pin is the location."
         error={errorFor("venueName")}
         required
       >

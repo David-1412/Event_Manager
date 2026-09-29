@@ -1,0 +1,12 @@
+{
+    "id":  "06-utility-invoice",
+    "kind":  "not-an-event",
+    "subject":  "Your invoice is ready",
+    "from":  "billing@example-utilities.com",
+    "receivedAt":  "2026-09-23T11:20:00+10:00",
+    "body":  "Your account 4471 8821 has an invoice of .20 available now.\nPay by 20 October 2026 to avoid a late fee.\n\nView your invoice online.",
+    "expectOutcome":  "no_event",
+    "expected":  {
+
+                 }
+}

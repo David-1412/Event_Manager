@@ -55,6 +55,8 @@ const ALLOWED_SINGLE = [
   0x2600, // sun (theme toggle)
   0x2318, // command key hint
   0x26bd, // soccer ball (a sport icon outside the emoji plane range below)
+  0x2605, 0x2606, // filled/star outline (Interested toggle label)
+  0x21c4, // north-east-south-west arrow (Interest/Join state-transition diagrams)
   0xfe0f, // variation selector accompanying emoji
 ];
 const ALLOWED = new Set(ALLOWED_SINGLE);

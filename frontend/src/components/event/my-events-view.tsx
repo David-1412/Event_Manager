@@ -2,59 +2,56 @@
 
 import { useMemo, useState } from "react";
 import { EventCard } from "@/components/event/event-card";
+import { CardActions } from "@/components/event/card-actions";
 import { EmptyState, ErrorState } from "@/components/state/empty-error";
 import { EventCardListSkeleton } from "@/components/ui/skeleton";
-import { useEvents } from "@/features/events/use-events";
+import { useMyEvents } from "@/features/events/use-events";
 import { useNow } from "@/lib/use-now";
-import { fixtureDetail, fixtureList } from "@/lib/fixtures";
 import { cn } from "@/lib/cn";
+import type { EventListItem } from "@/types/events";
 
-type Tab = "hosting" | "joined" | "past";
+type Tab = "upcoming" | "past";
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "hosting", label: "Hosting" },
-  { key: "joined", label: "Joined" },
+  { key: "upcoming", label: "Upcoming" },
   { key: "past", label: "Past" },
 ];
 
 /**
- * `/my-events` (spec §8): tabs carry counts in their labels - `Joined (2)` - so
- * the number answers the question before the tab is opened. Each tab filters
- * independently, and a failed fetch only blanks the tab it belongs to.
+ * `/my-events` (spec §8): only events the viewer has a personal relation to —
+ * Interested (localStorage) or Joined (a real participant row). The whole feed is
+ * not "mine", so it is not listed here. Tabs carry counts in their labels.
  *
- * Auth is not wired yet, so the fixture relations (`isHost` / `isJoined`) drive
- * the split; when the real `GET /api/events?scope=` lands, only `buckets` swaps.
+ * Each card's actions reflect how it got here: a joined event offers Leave,
+ * anything else offers Interest/Uninterest plus Join/Leave. Resolving ids hits
+ * `GET /api/events/{id}`, so a past event you joined still appears (browse would
+ * have dropped it).
  */
 export function MyEventsView() {
-  const [tab, setTab] = useState<Tab>("hosting");
-  const { error, isLoading, mutate } = useEvents();
+  const [tab, setTab] = useState<Tab>("upcoming");
+  const my = useMyEvents();
   const now = useNow(60_000);
 
-  // Auth is not wired yet, so fixture relations drive the split; when
-  // `GET /api/events?scope=` lands, only this block swaps. `now` arrives from
-  // `useNow` rather than `Date.now()` so the memo stays pure.
   const buckets = useMemo(() => {
-    const all = fixtureList().map((item) => ({
-      item,
-      detail: fixtureDetail(item.id),
-    }));
+    const all = my.items.map((item) => ({ item, future: Date.parse(item.startAt) >= now }));
     return {
-      hosting: all.filter((e) => e.detail?.isHost && Date.parse(e.item.startAt) >= now),
-      joined: all.filter((e) => e.detail?.isJoined && Date.parse(e.item.startAt) >= now),
-      past: all.filter((e) => Date.parse(e.item.startAt) < now),
+      upcoming: all.filter((e) => e.future),
+      past: all.filter((e) => !e.future),
     };
-  }, [now]);
+  }, [my.items, now]);
 
   const counts: Record<Tab, number> = {
-    hosting: buckets.hosting.length,
-    joined: buckets.joined.length,
+    upcoming: buckets.upcoming.length,
     past: buckets.past.length,
   };
-  const rows = buckets[tab];
 
   return (
     <div className="mx-auto w-full max-w-[680px] px-4 py-4">
+      {my.slots}
       <h1 className="text-h1 text-fg">My events</h1>
+      <p className="mt-1 text-meta text-fg-muted">
+        Events you&apos;re interested in or have joined.
+      </p>
 
       <div role="tablist" aria-label="My events" className="mt-4 flex gap-1 border-b border-border">
         {TABS.map((entry) => (
@@ -84,33 +81,48 @@ export function MyEventsView() {
         aria-labelledby={`tab-${tab}`}
         className="mt-4 flex flex-col gap-4"
       >
-        {isLoading && <EventCardListSkeleton count={3} />}
-        {error && <ErrorState detail={String(error)} onRetry={() => void mutate()} />}
-        {!error && rows.length === 0 && (
-          <EmptyState title={emptyCopyFor(tab)} />
+        {my.isLoading && <EventCardListSkeleton count={3} />}
+        {my.error && <ErrorState detail={String(my.error)} />}
+        {!my.isLoading && !my.error && (
+          <TabPanel tab={tab} rows={buckets[tab]} my={my} />
         )}
-        {rows.map(({ item, detail }) => (
-          <EventCard
-            key={item.id}
-            event={item}
-            variant={tab === "past" ? "past" : detail?.isHost ? "mine" : "joined"}
-            isJoined={detail?.isJoined}
-            isHost={detail?.isHost}
-          />
-        ))}
       </div>
     </div>
+  );
+}
+
+function TabPanel({
+  tab,
+  rows,
+  my,
+}: {
+  tab: Tab;
+  rows: { item: EventListItem }[];
+  my: ReturnType<typeof useMyEvents>;
+}) {
+  if (rows.length === 0) return <EmptyState title={emptyCopyFor(tab)} />;
+
+  return (
+    <>
+      {rows.map(({ item }) => (
+        <EventCard
+          key={item.id}
+          event={item}
+          isJoined={my.isJoined(item.id)}
+          action={<CardActions eventId={item.id} />}
+        />
+      ))}
+    </>
   );
 }
 
 /** Per-tab empty copy (spec §9) - one sentence, no illustration. */
 function emptyCopyFor(tab: Tab): string {
   switch (tab) {
-    case "hosting":
-      return "You're not hosting anything yet - create one and it shows up here.";
-    case "joined":
-      return "You haven't joined anything yet. Browse and take a spot.";
+    case "upcoming":
+      return "Nothing you're interested in or joined yet. Tap Interested or Join on any event.";
     case "past":
-      return "Nothing here yet. Past games show up once they've been and gone.";
+      return "Nothing here yet. Past games you were interested in or joined show up here.";
   }
 }
+
