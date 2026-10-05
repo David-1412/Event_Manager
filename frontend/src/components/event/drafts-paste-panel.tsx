@@ -8,6 +8,7 @@ import { toast } from "@/components/ui/toast";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { refreshDraftQueue } from "@/features/create/use-drafts";
 import { runIngestion } from "@/features/create/ingest";
+import type { ExtractNowResponse } from "@/types/events";
 
 /**
  * The paste-to-draft surface (EMAIL_INGESTION_PLAN §7). A user drops in an email or
@@ -17,7 +18,13 @@ import { runIngestion } from "@/features/create/ingest";
  * extract still produces a draft, which is the whole point of drafts: a human fills
  * the gaps before publishing.
  */
-export function DraftsPastePanel({ onSaved }: { onSaved?: () => void }) {
+export function DraftsPastePanel({
+  onSaved,
+  onExtracted,
+}: {
+  onSaved?: () => void;
+  onExtracted?: (result: ExtractNowResponse) => void;
+}) {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
 
@@ -45,6 +52,7 @@ export function DraftsPastePanel({ onSaved }: { onSaved?: () => void }) {
         confidence: payload.confidence,
         missingFields: payload.missingFields ?? [],
       });
+      if (payload.payload) onExtracted?.(payload);
       if (payload.draftId) {
         toast("Draft created");
         refreshDraftQueue(uid);

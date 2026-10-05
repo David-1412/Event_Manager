@@ -226,6 +226,7 @@ function toListItem(seed: Seed, distanceKm: number): EventListItem {
     cost: seed.cost,
     maxParticipants: seed.max,
     participantCount: seed.count,
+    status: seed.cancelled ? "Cancelled" : "Scheduled",
     isCancelled: Boolean(seed.cancelled),
     distanceKm,
   };

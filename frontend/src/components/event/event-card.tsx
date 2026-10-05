@@ -18,6 +18,7 @@ export type EventCardVariant =
   | "joined"
   | "mine"
   | "cancelled"
+  | "ended"
   | "past";
 
 export interface EventCardProps {
@@ -42,6 +43,7 @@ export function eventCardVariant(
   flags: { isJoined?: boolean; isHost?: boolean } = {},
 ): EventCardVariant {
   if (event.isCancelled) return "cancelled";
+  if (event.status === "Completed") return "ended";
   if (flags.isHost) return "mine";
   if (flags.isJoined) return "joined";
   const availability = availabilityOf(event.participantCount, event.maxParticipants);
@@ -100,6 +102,7 @@ export function EventCard({
         "hover:-translate-y-px hover:shadow-raise",
         kind === "mine" && "border-l-[3px] border-l-brand-600",
         kind === "cancelled" && "bg-surface-2 text-fg-muted hover:translate-y-0 hover:shadow-none",
+        kind === "ended" && "bg-surface-2 hover:translate-y-0 hover:shadow-none",
         kind === "joined" && "bg-surface",
         selected && "border-brand-600 ring-1 ring-brand-600",
       )}
@@ -138,6 +141,8 @@ export function EventCard({
         {kind === "full" && <Badge tone="danger">Full</Badge>}
         {kind === "mine" && <Badge tone="brand">You&apos;re hosting</Badge>}
         {kind === "cancelled" && <Badge tone="info">Cancelled</Badge>}
+        {kind === "ended" && <Badge tone="neutral">Ended</Badge>}
+        {kind === "ended" && event.isCancelled && <Badge tone="info">Cancelled</Badge>}
         {action && (
           <span
             className="relative z-10 ml-auto"

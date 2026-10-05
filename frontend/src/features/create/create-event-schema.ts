@@ -18,7 +18,7 @@ export const createEventSchema = z
       .string()
       .trim()
       .min(3, "Give the event a name of at least 3 characters")
-      .max(80, "Keep the name under 80 characters"),
+      .max(120, "Keep the name under 120 characters"),
     /**
      * Free tags. Optional and empty by default. Entries are normalized in
      * superRefine, which both rejects a malformed one (the same rule the server

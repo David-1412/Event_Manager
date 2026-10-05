@@ -11,7 +11,7 @@ import { type VenueSelection } from "@/components/event/venue-picker";
 import { toast } from "@/components/ui/toast";
 import { ApiError, request, usingFixtures } from "@/lib/api";
 import { useAuth } from "@/lib/auth/auth-provider";
-import { updateDraft, getDraft, approveDraft } from "@/lib/drafts";
+import { updateDraft, createManualDraft, getDraft, approveDraft } from "@/lib/drafts";
 import { refreshDraftQueue } from "@/features/create/use-drafts";
 import { payloadToFormValues, payloadToVenue } from "@/features/create/use-draft-to-form";
 import {
@@ -30,14 +30,15 @@ import {
   CREATE_EVENT_DEFAULTS,
   createEventSchema,
   toCreateEventPayload,
-  type CreateEventPayload,
   type CreateEventValues,
 } from "@/features/create/create-event-schema";
 import { melbourneDateInputValue } from "@/lib/format";
 import { normalizeTags } from "@/lib/sports";
+import { fixtureAddDraft, fixtureSaveDraft } from "@/lib/fixtures";
 import { CreateEventGroups } from "@/components/event/create-event-groups";
 import { CreateEventFooter } from "@/components/event/create-event-footer";
 import { previewOf } from "@/components/event/create-event-preview";
+import type { DraftPayload, EventDraft, ExtractNowResponse } from "@/types/events";
 
 /**
  * `/create` (spec §8): five groups - What / When / Where / Who and how much /
@@ -99,6 +100,36 @@ export function CreateEventView() {
   const errorFor = (name: keyof CreateEventValues) =>
     form.formState.errors[name]?.message ?? serverErrors[name];
 
+  function applyDraftToForm(draft: EventDraft) {
+    const serverValues = payloadToFormValues(draft.payload);
+    const edit = loadLocalDraftEdit(draft.id);
+    const local = parseLocalDraftEdit<CreateEventValues>(edit);
+    const serverTouched = draft.reviewedAt ?? draft.createdAt;
+    const useLocal = local != null && edit != null && (!serverTouched || edit.savedAt > serverTouched);
+    const chosen = useLocal ? { ...serverValues, ...local } : serverValues;
+    const nextVenue = payloadToVenue(draft.payload);
+    const nextValues = { ...chosen, date: chosen.date || melbourneDateInputValue() };
+
+    draftRef.current = draft.id;
+    setDraftId(draft.id);
+    form.reset(nextValues);
+    setVenue(nextVenue);
+    latestRef.current = { values: nextValues, venue: nextVenue };
+    setDraftMissing(draft.missingFields);
+    setDraftConfidence(draft.confidence);
+    setServerErrors({});
+    setSubmitFailed(false);
+    setIsDirty(false);
+    publishedRef.current = false;
+    hydratedRef.current = true;
+    if (useLocal) toast("Restored your unsaved edits for this draft");
+  }
+
+  function selectPendingDraft(draft: EventDraft) {
+    applyDraftToForm(draft);
+    router.push(`/create?draftId=${draft.id}`);
+  }
+
   // Open a draft for review (?draftId=): pull it, map its payload into the form,
   // and start clean (populating is not a user edit). A newer local autosave wins
   // over the server copy — it is the edit this browser made after the last PUT,
@@ -107,28 +138,10 @@ export function CreateEventView() {
     const id = new URLSearchParams(window.location.search).get("draftId");
     if (!id) return;
     let active = true;
-    draftRef.current = id;
-    setDraftId(id);
     void getDraft(id)
       .then((draft) => {
         if (!active) return;
-        const serverValues = payloadToFormValues(draft.payload);
-        const edit = loadLocalDraftEdit(id);
-        const local = parseLocalDraftEdit<CreateEventValues>(edit);
-        // The local copy only supersedes the server when it was written after the
-        // draft was last touched server-side; reviewedAt/createdAt are the closest
-        // stamps the DTO carries, and createdAt is the honest floor.
-        const serverTouched = draft.reviewedAt ?? draft.createdAt;
-        const useLocal = local != null && edit != null && (!serverTouched || edit.savedAt > serverTouched);
-        const chosen = useLocal ? { ...serverValues, ...local } : serverValues;
-
-        form.reset({ ...chosen, date: chosen.date || melbourneDateInputValue() });
-        setVenue(payloadToVenue(draft.payload));
-        setDraftMissing(draft.missingFields);
-        setDraftConfidence(draft.confidence);
-        hydratedRef.current = true;
-        setIsDirty(false);
-        if (useLocal) toast("Restored your unsaved edits for this draft");
+        applyDraftToForm(draft);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -179,18 +192,30 @@ export function CreateEventView() {
   }, [isDirty]);
 
   async function persistDraft(): Promise<boolean> {
-    if (!draftId) return false;
     setSaving(true);
     try {
-      // Autosave persists whatever the reviewer has, validated or not — a draft
-      // is expected to be incomplete, and the server only records the shape it
-      // can parse (buildDraftPayload leaves an unparseable date/time out rather
-      // than inventing one).
-      await updateDraft(
-        draftId,
-        buildDraftPayload(latestRef.current.values, latestRef.current.venue),
-      );
-      clearLocalDraftEdit(draftId);
+      const payload = buildDraftPayload(latestRef.current.values, latestRef.current.venue);
+      if (usingFixtures) {
+        const saved = draftId
+          ? fixtureSaveDraft(draftId, payload)
+          : fixtureAddDraft(payload);
+        if (!saved) throw new Error("Could not save this draft");
+        setDraftId(saved.id);
+        setDraftConfidence(saved.confidence);
+        setDraftMissing(saved.missingFields);
+      } else if (draftId) {
+        await updateDraft(draftId, payload);
+      } else {
+        const saved = await createManualDraft(
+          payload,
+          latestRef.current.values.title || "Manual event draft",
+          latestRef.current.values.description || "Manual event draft",
+        );
+        setDraftId(saved.id);
+        setDraftConfidence(saved.confidence);
+        setDraftMissing(saved.missingFields);
+      }
+      if (draftId) clearLocalDraftEdit(draftId);
       setIsDirty(false);
       refreshDraftQueue(uid);
       return true;
@@ -223,6 +248,21 @@ export function CreateEventView() {
     form.setValue("address", next?.address ?? "");
     form.setValue("latitude", next?.latitude ?? 0);
     form.setValue("longitude", next?.longitude ?? 0);
+  }
+
+  function applyExtractedDraft(result: ExtractNowResponse) {
+    if (!result.payload) return;
+    const nextValues = payloadToFormValues(result.payload);
+    const nextVenue = payloadToVenue(result.payload);
+    form.reset(nextValues);
+    setVenue(nextVenue);
+    latestRef.current = { values: nextValues, venue: nextVenue };
+    setDraftId(result.draftId);
+    setDraftMissing(result.missingFields ?? []);
+    setDraftConfidence(result.confidence);
+    setServerErrors({});
+    setSubmitFailed(false);
+    setIsDirty(false);
   }
 
 
@@ -299,7 +339,7 @@ export function CreateEventView() {
         {draftId && (
           <DraftBanner title={values.title} confidence={draftConfidence} missingFields={draftMissing} />
         )}
-        <DraftsPastePanel />
+        <DraftsPastePanel onExtracted={applyExtractedDraft} />
         <CreateEventGroups
 
           values={values}
@@ -323,14 +363,14 @@ export function CreateEventView() {
         submitting={form.formState.isSubmitting}
         submittingLabel={draftId ? "Publish draft" : "Create event"}
         onCancel={draftId ? () => attemptExit("/create") : undefined}
-        onSave={draftId ? () => void persistDraft().then((ok) => ok && toast("Draft saved", "success")) : undefined}
+        onSave={() => void persistDraft().then((ok) => ok && toast("Draft saved", "success"))}
         saveBusy={saving}
       />
 
       {/* The queue lives under the form: review happens here, and a reviewer
           finishing one draft should see the next without leaving the page. */}
       <div className="lg:col-span-2 flex flex-col gap-4 border-t border-border pt-6">
-        <DraftsSection />
+        <DraftsSection onOpenDraft={selectPendingDraft} />
       </div>
 
 
@@ -399,27 +439,24 @@ async function postEvent(
 function buildDraftPayload(
   v: CreateEventValues,
   venue: VenueSelection | null,
-): CreateEventPayload {
+): DraftPayload {
   const start = parseWallClock(v.date, v.startTime);
   const end = parseWallClock(v.date, v.endTime);
   const spots = Number(v.maxParticipants);
   const cost = Number(v.cost);
-  const lat = venue?.latitude ?? v.latitude;
-  const lng = venue?.longitude ?? v.longitude;
 
   return {
     title: v.title?.trim() || "",
     tags: normalizeTags(v.tags ?? []),
-    startAt: start ? start.toISOString() : new Date().toISOString(),
-    endAt: end ? end.toISOString() : new Date().toISOString(),
+    ...(start ? { startAt: start.toISOString() } : {}),
+    ...(end ? { endAt: end.toISOString() } : {}),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Melbourne",
     venueName: venue?.venueName ?? v.venueName ?? "",
     address: venue?.address ?? v.address ?? "",
-    latitude: Number.isFinite(lat) ? lat : 0,
-    longitude: Number.isFinite(lng) ? lng : 0,
-    maxParticipants: Number.isFinite(spots) ? Math.trunc(spots) : 4,
-    cost: v.cost && v.cost.trim() && Number.isFinite(cost) ? cost : null,
-    description: v.description?.trim() ? v.description.trim() : null,
+    ...(venue ? { latitude: venue.latitude, longitude: venue.longitude } : {}),
+    ...(Number.isFinite(spots) && spots >= 2 && spots <= 50 ? { maxParticipants: Math.trunc(spots) } : {}),
+    ...(v.cost?.trim() && Number.isFinite(cost) ? { cost } : {}),
+    ...(v.description?.trim() ? { description: v.description.trim() } : {}),
   };
 }
 

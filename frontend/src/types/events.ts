@@ -4,6 +4,7 @@
  */
 
 export type SkillLevel = "Beginner" | "Intermediate" | "Advanced";
+export type EventStatus = "Scheduled" | "Cancelled" | "Completed";
 
 /**
  * Free-text tag, always normalized (lowercase, no '#') by the server. Replaces
@@ -47,6 +48,7 @@ export interface EventListItem {
   cost: number | null;
   maxParticipants: number;
   participantCount: number;
+  status: EventStatus;
   isCancelled: boolean;
   distanceKm: number | null;
 }

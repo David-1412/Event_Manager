@@ -7,6 +7,7 @@ import { fetcher } from "@/lib/swr-fetcher";
 import { DEFAULT_QUERY, parseQuery, buildEventsKey } from "@/lib/query";
 import { request } from "@/lib/api";
 import { fixtureDetail, fixtureList, fixturePopularTags } from "@/lib/fixtures";
+import { useAuth } from "@/lib/auth/auth-provider";
 import { useInterests } from "./use-interests";
 import type { EventDetail, EventListItem, EventQuery, JoinFailure, Paged, PopularTag } from "@/types/events";
 
@@ -44,6 +45,9 @@ export const detailKey = (id: string) => `${API_BASE_URL}/api/events/${id}`;
 
 /** `GET /api/events/me/joined` — the ids the current viewer has a participant row on. */
 export const joinedKey = () => `${API_BASE_URL}/api/events/me/joined`;
+
+/** `GET /api/events/me/hosting` — every event owned by the current host. */
+export const hostedKey = () => `${API_BASE_URL}/api/events/me/hosting`;
 
 interface JoinedEnvelope {
   eventIds: string[];
@@ -222,6 +226,22 @@ export function useJoinedEvents() {
   const ids = useMemo(() => rawIds ?? EMPTY_IDS, [idsKey]);
   const isJoined = useCallback((id: string) => ids.includes(id), [ids]);
   return { ids, isJoined, error, isLoading, mutateJoined: mutate };
+}
+
+export function useHostedEvents() {
+  const { user, loading } = useAuth();
+  const key = usingFixtures || loading || !user ? null : hostedKey();
+  const { data, error, isLoading, mutate } = useSWR<EventListItem[], Error>(key, fetcher, {
+    revalidateOnFocus: true,
+  });
+  return {
+    items: usingFixtures
+      ? fixtureList().filter((item) => fixtureDetail(item.id)?.isHost)
+      : data ?? [],
+    error,
+    isLoading: usingFixtures ? false : loading || (!!user && isLoading),
+    mutate,
+  };
 }
 
 const EMPTY_IDS: string[] = [];

@@ -5,6 +5,7 @@ import type {
   ExtractNowRequest,
   ExtractNowResponse,
   EventDraft,
+  DraftPayload,
 } from "@/types/events";
 
 /**
@@ -33,10 +34,21 @@ export function getDraft(id: string): Promise<EventDraft> {
  * and the server recomputes the missing-field hints from what it is given.
  * Returns the updated draft so the caller can reconcile its row.
  */
-export function updateDraft(id: string, payload: CreateEventPayload): Promise<EventDraft> {
+export function updateDraft(id: string, payload: DraftPayload): Promise<EventDraft> {
   return request<EventDraft>(`/api/event-drafts/${id}`, {
     method: "PUT",
-    body: JSON.stringify({ payload }),
+    body: { payload },
+  });
+}
+
+export function createManualDraft(
+  payload: DraftPayload,
+  sourceSubject: string,
+  sourceBody: string,
+): Promise<EventDraft> {
+  return request<EventDraft>("/api/event-drafts", {
+    method: "POST",
+    body: { payload, sourceSubject, sourceBody },
   });
 }
 
@@ -52,7 +64,7 @@ export function approveDraft(
 ): Promise<EventDetail> {
   return request<EventDetail>(`/api/event-drafts/${id}/approve`, {
     method: "POST",
-    body: JSON.stringify({ event, note: note ?? null }),
+    body: { event, note: note ?? null },
   });
 }
 

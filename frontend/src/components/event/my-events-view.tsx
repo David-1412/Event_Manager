@@ -5,16 +5,18 @@ import { EventCard } from "@/components/event/event-card";
 import { CardActions } from "@/components/event/card-actions";
 import { EmptyState, ErrorState } from "@/components/state/empty-error";
 import { EventCardListSkeleton } from "@/components/ui/skeleton";
-import { useMyEvents } from "@/features/events/use-events";
+import { useHostedEvents, useMyEvents } from "@/features/events/use-events";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/cn";
 import type { EventListItem } from "@/types/events";
+import { HostingActions } from "@/components/event/hosting-actions";
 
-type Tab = "upcoming" | "past";
+type Tab = "upcoming" | "past" | "hosting";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "upcoming", label: "Upcoming" },
   { key: "past", label: "Past" },
+  { key: "hosting", label: "Hosting" },
 ];
 
 /**
@@ -30,6 +32,7 @@ const TABS: { key: Tab; label: string }[] = [
 export function MyEventsView() {
   const [tab, setTab] = useState<Tab>("upcoming");
   const my = useMyEvents();
+  const hosted = useHostedEvents();
   const now = useNow(60_000);
 
   const buckets = useMemo(() => {
@@ -43,7 +46,10 @@ export function MyEventsView() {
   const counts: Record<Tab, number> = {
     upcoming: buckets.upcoming.length,
     past: buckets.past.length,
+    hosting: hosted.items.length,
   };
+  const isLoading = tab === "hosting" ? hosted.isLoading : my.isLoading;
+  const error = tab === "hosting" ? hosted.error : my.error;
 
   return (
     <div className="mx-auto w-full max-w-[680px] px-4 py-4">
@@ -81,9 +87,12 @@ export function MyEventsView() {
         aria-labelledby={`tab-${tab}`}
         className="mt-4 flex flex-col gap-4"
       >
-        {my.isLoading && <EventCardListSkeleton count={3} />}
-        {my.error && <ErrorState detail={String(my.error)} />}
-        {!my.isLoading && !my.error && (
+        {isLoading && <EventCardListSkeleton count={3} />}
+        {error && <ErrorState detail={String(error)} />}
+        {!isLoading && !error && tab === "hosting" && (
+          <HostingPanel items={hosted.items} now={now} />
+        )}
+        {!isLoading && !error && tab !== "hosting" && (
           <TabPanel tab={tab} rows={buckets[tab]} my={my} />
         )}
       </div>
@@ -116,6 +125,34 @@ function TabPanel({
   );
 }
 
+function HostingPanel({ items, now }: { items: EventListItem[]; now: number }) {
+  if (items.length === 0) return <EmptyState title="You haven't hosted any events yet." />;
+
+  return (
+    <>
+      {items.map((item) => {
+        const ended = item.status === "Completed" || Date.parse(item.startAt) <= now;
+        const variant = ended ? "ended" : item.isCancelled ? "cancelled" : "mine";
+        return (
+          <EventCard
+            key={item.id}
+            event={item}
+            isHost
+            variant={variant}
+            action={(
+              <HostingActions
+                eventId={item.id}
+                isCancelled={item.isCancelled}
+                isEnded={ended}
+              />
+            )}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 /** Per-tab empty copy (spec §9) - one sentence, no illustration. */
 function emptyCopyFor(tab: Tab): string {
   switch (tab) {
@@ -123,6 +160,8 @@ function emptyCopyFor(tab: Tab): string {
       return "Nothing you're interested in or joined yet. Tap Interested or Join on any event.";
     case "past":
       return "Nothing here yet. Past games you were interested in or joined show up here.";
+    case "hosting":
+      return "You haven't hosted any events yet.";
   }
 }
 

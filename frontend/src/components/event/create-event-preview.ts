@@ -31,6 +31,7 @@ export function previewOf(values: Draft, venue: VenueSelection | null): EventLis
     cost: Number.isFinite(cost) && cost > 0 ? cost : null,
     maxParticipants: Number.isFinite(spots) && spots >= 2 ? spots : 4,
     participantCount: 1,
+    status: "Scheduled",
     isCancelled: false,
     distanceKm: null,
   };
@@ -40,4 +41,4 @@ function toIso(date: string | undefined, time: string | undefined): string {
   if (!date || !time) return new Date().toISOString();
   const parsed = new Date(`${date}T${time}`);
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-}
+}

@@ -45,7 +45,7 @@ describe("create event validation (spec 7)", () => {
     });
 
     it("rejects a name longer than 80 characters", () => {
-      expect(errorFor({ title: "a".repeat(81) })).toContain("under 80 characters");
+      expect(errorFor({ title: "a".repeat(121) })).toContain("under 120 characters");
       expect(
         createEventSchema.safeParse(valid({ title: "a".repeat(80) })).success,
       ).toBe(true);

@@ -25,7 +25,11 @@ const FIELD_LABELS: Record<string, string> = {
   description: "description",
   tags: "tags",
   skillLevel: "skill level",
+  latitude: "map location",
+  longitude: "map location",
 };
+
+const OPTIONAL_FIELDS = new Set(["timezone", "cost", "description", "tags", "skillLevel"]);
 
 function confidenceTone(confidence: number | null): "brand" | "warn" | "neutral" {
   if (confidence == null) return "neutral";
@@ -44,7 +48,11 @@ function formatConfidence(confidence: number | null): string {
  * confidence and the fields it could not fill are shown to guide review, never to
  * block — the row is always openable so the human can complete and publish it.
  */
-export function DraftsSection() {
+export function DraftsSection({
+  onOpenDraft,
+}: {
+  onOpenDraft?: (draft: EventDraft) => void;
+}) {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
   const { drafts, isLoading, totalCount } = useDraftQueue();
@@ -97,7 +105,7 @@ export function DraftsSection() {
             <DraftRow
               key={draft.id}
               draft={draft}
-              onOpen={undefined}
+              onOpen={onOpenDraft ? () => onOpenDraft(draft) : undefined}
               onRequestDelete={() => setPendingDelete(draft)}
             />
           ))}
@@ -134,7 +142,12 @@ export function DraftBanner({
   confidence: number | null;
   missingFields: string[];
 }) {
-  const missing = missingFields.map((f) => FIELD_LABELS[f] ?? f);
+  const requiredMissing = missingFields
+    .filter((field) => !OPTIONAL_FIELDS.has(field))
+    .map((field) => FIELD_LABELS[field] ?? field);
+  const optionalMissing = missingFields
+    .filter((field) => OPTIONAL_FIELDS.has(field))
+    .map((field) => FIELD_LABELS[field] ?? field);
   return (
     <div className="flex flex-col gap-2 rounded-md border border-brand-600/40 bg-brand-tint p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -143,9 +156,13 @@ export function DraftBanner({
         <Badge tone={confidenceTone(confidence)}>{formatConfidence(confidence)}</Badge>
       </div>
       <p className="text-meta text-fg-muted">
-        {missing.length > 0
-          ? `Fill these in, then publish: ${missing.join(", ")}. You can save and finish later.`
-          : "Complete anything the message left out, then publish. Save and finish any time."}
+        {requiredMissing.length > 0
+          ? `Complete before publishing: ${requiredMissing.join(", ")}. `
+          : "All required fields are ready. "}
+        {optionalMissing.length > 0
+          ? `Optional details not found: ${optionalMissing.join(", ")}. `
+          : ""}
+        You can save and finish later.
       </p>
     </div>
   );
@@ -166,7 +183,12 @@ export function DraftRow({
   extraActions?: React.ReactNode;
 }) {
   const confidence = formatConfidence(draft.confidence);
-  const missing = draft.missingFields.map((f) => FIELD_LABELS[f] ?? f);
+  const requiredMissing = draft.missingFields
+    .filter((field) => !OPTIONAL_FIELDS.has(field))
+    .map((field) => FIELD_LABELS[field] ?? field);
+  const optionalMissing = draft.missingFields
+    .filter((field) => OPTIONAL_FIELDS.has(field))
+    .map((field) => FIELD_LABELS[field] ?? field);
 
   const body = (
     <>
@@ -181,8 +203,11 @@ export function DraftRow({
         from {draft.fromAddr || "an unknown sender"}
         {draft.subject ? ` · ${draft.subject}` : ""}
       </p>
-      {missing.length > 0 && (
-        <p className="text-meta text-warn">Needs: {missing.join(", ")}</p>
+      {requiredMissing.length > 0 && (
+        <p className="text-meta text-warn">Needs: {requiredMissing.join(", ")}</p>
+      )}
+      {optionalMissing.length > 0 && (
+        <p className="text-meta text-fg-muted">Optional: {optionalMissing.join(", ")}</p>
       )}
     </>
   );

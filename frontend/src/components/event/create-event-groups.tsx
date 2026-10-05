@@ -114,16 +114,27 @@ function WhenGroup({ errorFor, register }: CreateGroupsProps) {
   );
 }
 
-function WhereGroup({ venue, errorFor, onVenue }: CreateGroupsProps) {
+function WhereGroup({ venue, errorFor, register, onVenue }: CreateGroupsProps) {
   return (
     <fieldset className="flex flex-col gap-4">
       <legend className="text-h3 text-fg">Where</legend>
       <Field
-        label="Venue"
-        hint="Tap a spot on the map or search an address - the pin is the location."
+        label="Venue name"
         error={errorFor("venueName")}
         required
       >
+        {({ id, describedBy, invalid }) => (
+          <Input
+            id={id}
+            placeholder="G13 Alan Finkel Building"
+            maxLength={120}
+            aria-describedby={describedBy}
+            aria-invalid={invalid || undefined}
+            {...register("venueName")}
+          />
+        )}
+      </Field>
+      <Field label="Map location" hint="Search or tap the map to set the event pin." error={errorFor("venueName")} required>
         {() =>
           venue ? (
             <VenueChips venue={venue} onChange={onVenue} />

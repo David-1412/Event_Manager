@@ -53,9 +53,16 @@ export function CreateEventFooter({
       </div>
       <div className="lg:hidden">
         <StickyFooter>
-          <Button type="submit" size="lg" fullWidth loading={submitting}>
-            {label}
-          </Button>
+          <div className="flex w-full gap-2">
+            <Button type="submit" size="lg" fullWidth loading={submitting}>
+              {label}
+            </Button>
+            {onSave && (
+              <Button variant="secondary" size="lg" fullWidth onClick={onSave} loading={saveBusy}>
+                Save draft
+              </Button>
+            )}
+          </div>
         </StickyFooter>
       </div>
     </>
