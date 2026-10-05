@@ -24,7 +24,7 @@ public sealed class CreateEventDtoValidator : AbstractValidator<CreateEventDto>
 {
 
     public const int TitleMinLength = 3;
-    public const int TitleMaxLength = 80;
+    public const int TitleMaxLength = 120;
     public const int VenueMaxLength = 120;
     public const int DescriptionMaxLength = 1000;
     public const int ParticipantsMin = 2;

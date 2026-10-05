@@ -82,8 +82,8 @@ public sealed class FirebaseOptions
     public string ProjectId { get; init; } = "";
 
     /// <summary>The <c>iss</c> prefix a valid token starts with. Firebase issues from
-    /// securetoken.googleapis.com; overridable only so a test can point at a stub.</summary>
-    public string IssuerPrefix { get; init; } = "https://securetoken.googleapis.com";
+    /// securetoken.google.com; overridable only so a test can point at a stub.</summary>
+    public string IssuerPrefix { get; init; } = "https://securetoken.google.com";
 
     /// <summary>True once a project is configured, i.e. verification is expected to
     /// run. Checked by <c>AddInfrastructure</c> to decide whether to install the
@@ -92,7 +92,7 @@ public sealed class FirebaseOptions
 
     /// <summary>The full expected issuer for a given project id — the JWT
     /// <c>iss</c> claim, validated exactly.</summary>
-    public string ExpectedIssuer(string projectId) => $"{IssuerPrefix.TrimEnd('/')}/v2/{projectId}";
+    public string ExpectedIssuer(string projectId) => $"{IssuerPrefix.TrimEnd('/')}/{projectId}";
 }
 
 

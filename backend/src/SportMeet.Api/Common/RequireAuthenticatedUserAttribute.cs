@@ -31,14 +31,24 @@ public sealed class RequireAuthenticatedUserAttribute : Attribute, IFilterFactor
 
     public IFilterMetadata CreateInstance(IServiceProvider serviceProvider)
         => new RequireAuthenticatedUserFilter(
-            serviceProvider.GetRequiredService<ICurrentUser>());
+            serviceProvider.GetRequiredService<ICurrentUser>(),
+            serviceProvider.GetRequiredService<ILogger<RequireAuthenticatedUserFilter>>());
 
-    private sealed class RequireAuthenticatedUserFilter(ICurrentUser currentUser) : IFilterMetadata, IAuthorizationFilter
+    private sealed class RequireAuthenticatedUserFilter(
+        ICurrentUser currentUser,
+        ILogger<RequireAuthenticatedUserFilter> logger) : IFilterMetadata, IAuthorizationFilter
     {
         public void OnAuthorization(AuthorizationFilterContext context)
         {
             if (currentUser.IsDemo)
             {
+                logger.LogWarning(
+                    "Private endpoint rejected at {Path}: hasBearer={HasBearer}, authenticated={Authenticated}, demoIdentity={DemoIdentity}",
+                    context.HttpContext.Request.Path,
+                    context.HttpContext.Request.Headers.Authorization.Count > 0,
+                    context.HttpContext.User.Identity?.IsAuthenticated == true,
+                    currentUser.IsDemo);
+
                 // Demo identity is only a stand-in for "nobody verified is acting";
                 // private per-user data must not be served to an unverified caller.
                 // (IsDemo is false exactly when a verified Firebase token resolved,

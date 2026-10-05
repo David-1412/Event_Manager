@@ -198,11 +198,21 @@ public static class DependencyInjection
                     ValidateIssuerSigningKey = true,
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromMinutes(1),
-                    // Key picked per-token in FirebaseJwtBearerEvents.TokenValidated.
-                    IssuerSigningKeyResolver = (_, _, _, _) => [],
                 };
                 options.EventsType = typeof(Identity.FirebaseJwtBearerEvents);
             });
+
+        services.AddOptions<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+                Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)
+            .Configure<Identity.FirebasePublicKeyProvider>((options, keys) =>
+            {
+                options.TokenValidationParameters.IssuerSigningKeyResolver = (_, _, kid, _) =>
+                {
+                    var key = keys.ResolveAsync(kid).GetAwaiter().GetResult();
+                    return key is null ? [] : [key];
+                };
+            });
+
         services.AddScoped<Identity.FirebaseJwtBearerEvents>();
         services.AddAuthorization();
         return services;

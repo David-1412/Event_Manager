@@ -43,7 +43,14 @@ public sealed class TokenCurrentUser : ICurrentUser
         }
     }
 
-    public bool IsDemo => _isDemo;
+    public bool IsDemo
+    {
+        get
+        {
+            if (_resolved is null) ResolveAsync().GetAwaiter().GetResult();
+            return _isDemo;
+        }
+    }
 
     private async Task ResolveAsync()
     {

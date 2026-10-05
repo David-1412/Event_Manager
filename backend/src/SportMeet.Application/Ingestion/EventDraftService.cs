@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using SportMeet.Application.Common;
 using SportMeet.Application.Events;
 using SportMeet.Domain.Entities;
@@ -80,6 +82,60 @@ public sealed class EventDraftService(
         var row = await drafts.FindAsync(id, RequireUser(), ct)
             ?? throw new NotFoundException("draft", id);
         return Map(row.Draft, row.Email);
+    }
+
+    public async Task<EventDraftDto> CreateManualAsync(CreateManualDraftDto dto, CancellationToken ct = default)
+    {
+        var userId = RequireUser();
+        if (dto.Payload is null)
+            throw new DomainRuleException("A draft payload is required");
+
+        var now = DateTimeOffset.UtcNow;
+        var payload = ToUtc(dto.Payload);
+        var body = (dto.SourceBody ?? payload.Description ?? "Manual event draft").Trim();
+        if (body.Length > 12_000) body = body[..12_000];
+        var id = Guid.NewGuid();
+        var emailId = Guid.NewGuid();
+        var messageUid = Guid.NewGuid().ToString("N");
+        var email = new IngestedEmail
+        {
+            Id = emailId,
+            Mailbox = "manual-form",
+            OwnerUserId = userId,
+            MessageUid = messageUid,
+            MessageId = $"<manual-{messageUid}@local>",
+            SentAt = now,
+            FromAddr = "manual@local",
+            Subject = Truncate(dto.SourceSubject?.Trim() is { Length: > 0 } subject
+                ? subject
+                : payload.Title ?? "Manual event draft", 500),
+            BodyText = body,
+            BodyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(body))).ToLowerInvariant(),
+            ProcessedAt = now,
+            ExtractionStatus = ExtractionStatus.Extracted,
+            Model = "manual",
+            PromptVersion = "manual-form-v1",
+            CreatedAt = now,
+        };
+        var draft = new EventDraft
+        {
+            Id = id,
+            UserId = userId,
+            IngestedEmailId = emailId,
+            Payload = JsonSerializer.Serialize(payload, PayloadWrite),
+            Confidence = 1m,
+            MissingFields = [.. ComputeMissingFields(payload)],
+            Status = DraftStatus.Pending,
+            CreatedAt = now,
+        };
+
+        await drafts.RunInTransactionAsync(async inner =>
+        {
+            await drafts.AddEmailAsync(email, inner);
+            await drafts.AddAsync(draft, inner);
+        }, ct);
+
+        return await GetAsync(id, ct);
     }
 
     /// <summary>
@@ -301,6 +357,9 @@ public sealed class EventDraftService(
         ReviewNote = d.ReviewNote,
         ReviewedAt = d.ReviewedAt,
     };
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value[..max];
 
     /// <summary>Rejects anything unparseable rather than substituting an empty
     /// payload: a reviewer shown a blank form could approve it and create a blank

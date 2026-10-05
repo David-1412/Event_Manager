@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using SportMeet.Api.Common;
 using SportMeet.Application.Common;
 using SportMeet.Application.Events;
 using SportMeet.Domain.Entities;
@@ -75,6 +74,12 @@ public class EventsController(IEventService events) : ControllerBase
     public async Task<ActionResult<JoinedIdsDto>> MyJoined(CancellationToken ct)
         => Ok(new JoinedIdsDto(await events.ListMyJoinedAsync(ct)));
 
+    /// <summary>All events created by the current host, regardless of status or date.</summary>
+    [HttpGet("me/hosting")]
+    [ProducesResponseType(typeof(IReadOnlyList<EventListItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<EventListItemDto>>> MyHosting(CancellationToken ct)
+        => Ok(await events.ListMyHostedAsync(ct));
+
     /// <summary>
     /// Create. Returns 201 with both Location and a body: the plan asks for
     /// Location only, but create-event-view.tsx reads created.id from the
@@ -109,6 +114,18 @@ public class EventsController(IEventService events) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<EventDetailDto>> Leave(Guid id, CancellationToken ct)
         => Ok(await events.LeaveAsync(id, ct));
+
+    [HttpPatch("{id:guid}/cancel")]
+    [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<EventDetailDto>> Cancel(Guid id, CancellationToken ct)
+        => Ok(await events.CancelAsync(id, ct));
+
+    [HttpPatch("{id:guid}/reopen")]
+    [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<EventDetailDto>> Reopen(Guid id, CancellationToken ct)
+        => Ok(await events.ReopenAsync(id, ct));
 
     private static string? FirstOf(string? first, string? second) => TrimToNull(first) ?? TrimToNull(second);
 

@@ -17,14 +17,14 @@ namespace SportMeet.Infrastructure.Ingestion;
 /// a useful result; a draft with four plausible inventions nobody re-reads is the
 /// failure mode this feature has to avoid.
 ///
-/// Non-goals, deliberately: it does not read venues or timezones (email rarely states
-/// either unambiguously, and GeoSearch is still a stub), and it treats its input as
+/// Non-goals, deliberately: it does not read addresses, coordinates or timezones
+/// (GeoSearch is still a stub), and it treats its input as
 /// inert data - no code path here lets body text influence anything except which
 /// field a matched value lands in.
 /// </summary>
 public sealed partial class HeuristicEventExtractor : IEventExtractor
 {
-    public string PromptVersion => "heuristic-1";
+    public string PromptVersion => "heuristic-2";
     public string Model => "heuristic";
 
     /// <summary>A body this short cannot contain an invitation worth a draft.</summary>
@@ -50,6 +50,27 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
     /// <summary>"7:30pm", "19:00", "at 7".</summary>
     [GeneratedRegex(@"(?:at\s+|^|\s)(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex TimeOfDay();
+
+    [GeneratedRegex(@"\b(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+)?\d{1,2}(?:st|nd|rd|th)?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{4}\b|\b(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+\d{4}\b|\b\d{1,2}[/-]\d{1,2}[/-]\d{4}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AbsoluteDate();
+
+    [GeneratedRegex(@"(?m)^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", RegexOptions.CultureInvariant)]
+    private static partial Regex MarkdownHeading();
+
+    [GeneratedRegex(@"(?im)^\s*\*\*(?:title|event|name)\s*:\*\*\s*(.+?)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Multiline)]
+    private static partial Regex LabeledTitle();
+
+    [GeneratedRegex(@"(?m)^\s*\*\*(.{3,})\*\*\s*$", RegexOptions.CultureInvariant)]
+    private static partial Regex BoldTitle();
+
+    [GeneratedRegex(@"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?(?:where|venue|location)(?:\*\*)?\s*:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Multiline)]
+    private static partial Regex VenueLine();
+
+    [GeneratedRegex(@"(?<=\d)(?:st|nd|rd|th)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex OrdinalSuffix();
+
+    [GeneratedRegex(@"^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex WeekdayPrefix();
 
     /// <summary>Day names plus the two relative words unambiguous without a calendar.
     /// "soon"/"next week" are absent on purpose: they resolve to several valid dates,
@@ -81,7 +102,7 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
 
     /// <summary>The only duration form read. Inferring an end from "a couple of
     /// hours" is how an event silently ends at the wrong hour.</summary>
-    [GeneratedRegex(@"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|--|to|until|through)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|--|to|until|through|\u2012|\u2013|\u2014|\u2015)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex TimeRange();
 
     [GeneratedRegex(@"\b(?:max(?:imum)?|up to|capped at|limit)\D{0,12}(\d{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
@@ -170,7 +191,7 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
 
         // The subject is the better title source when present; truncating keeps a
         // long subject from smuggling a paragraph into a bounded column.
-        var title = head.Length >= 3 ? Truncate(head, 80) : null;
+        var title = FindTitle(head, body);
         if (title is null) missing.Add("title");
 
         var tags = ActivityWords
@@ -225,10 +246,10 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
         var cost = FindCost(body);
         if (cost is null) missing.Add("cost");
 
-        // Never invented. The plan's §7 blocker (GeoSearch is a stub) means there is
-        // nothing to resolve an address against, so the reviewer supplies the venue
-        // through the picker, which owns the coordinates.
-        missing.AddRange(["venueName", "address", "latitude", "longitude"]);
+        var venueName = FindVenue(body);
+        if (venueName is null) missing.Add("venueName");
+        // Text can identify a venue, but only the picker can resolve it to a map point.
+        missing.AddRange(["address", "latitude", "longitude"]);
 
         var hasTime = start is not null;
         var confidence = (title, hasTime, tags.Count) switch
@@ -252,12 +273,12 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
             MaxParticipants = stated,
             Cost = cost,
             SkillLevel = skill,
-            Description = body.Length > MinBodyChars ? Truncate(body, 1000) : null,
+            VenueName = venueName,
+            Description = body.Length > MinBodyChars ? Truncate(CleanMarkup(body), 1000) : null,
             Confidence = confidence,
             MissingFields = missing,
             Reasoning = hasTime
-                ? "Matched an invitation keyword and a clock time. Venue, timezone and "
-                  + "end time are not read from email - confirm them before approving."
+                                ? "Matched an invitation title, date and clock time. Confirm the extracted details and choose a map pin before publishing."
                 : "Matched an invitation keyword but no usable date/time, so the start "
                   + "is unset. Treat every other field as unverified.",
             PromptVersion = PromptVersion,
@@ -270,16 +291,30 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
     /// date on an approved event is the real harm this feature could cause.</summary>
     private static DateTimeOffset? FindStart(string body, string head, DateTimeOffset receivedAt)
     {
-        var day = FindDay(body, receivedAt) ?? FindDay(head, receivedAt);
+        var day = FindExplicitDate(body) ?? FindExplicitDate(head)
+                  ?? FindDay(body, receivedAt) ?? FindDay(head, receivedAt);
         if (day is not { } dayDate) return null;
+
+        var range = TimeRange().Match(body);
+        var time = range.Success ? range : TimeRange().Match(head);
+        if (time.Success)
+        {
+            var meridiem = time.Groups[3].Success ? time.Groups[3] : time.Groups[6];
+            if (!TryClock(time.Groups[1], time.Groups[2], meridiem, out var rangeHour, out var rangeMinute))
+                return null;
+            return AtWallClock(dayDate, rangeHour, rangeMinute);
+        }
 
         var match = TimeOfDay().Match(body);
         if (!match.Success) match = TimeOfDay().Match(head);
-        if (!match.Success) return null;
-
-        if (!TryClock(match.Groups[1], match.Groups[2], match.Groups[3], out var hour, out var minute))
+        if (!match.Success || !TryClock(match.Groups[1], match.Groups[2], match.Groups[3], out var hour, out var minute))
             return null;
 
+        return AtWallClock(dayDate, hour, minute);
+    }
+
+    private static DateTimeOffset AtWallClock(DateOnly dayDate, int hour, int minute)
+    {
         // Melbourne wall clock, because that is this product's market and the entity's
         // own default. The offset is taken for the resolved date so a date crossing an
         // AEDT/AEST boundary is not shifted by an hour.
@@ -293,6 +328,48 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
         var zone = WallClockZone;
         var wall = new DateTime(dayDate.Year, dayDate.Month, dayDate.Day, hour, minute, 0);
         return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, zone), TimeSpan.Zero);
+    }
+
+    private static string? FindTitle(string subject, string body)
+    {
+        foreach (var match in new[] { LabeledTitle().Match(body), MarkdownHeading().Match(body), BoldTitle().Match(body) })
+        {
+            if (match.Success)
+            {
+                var title = CleanMarkup(match.Groups[1].Value);
+                if (title.Length >= 3) return Truncate(title, 120);
+            }
+        }
+
+        return subject.Length >= 3 ? Truncate(CleanMarkup(subject), 120) : null;
+    }
+
+    private static string? FindVenue(string body)
+    {
+        var match = VenueLine().Match(body);
+        if (!match.Success) return null;
+        var venue = CleanMarkup(match.Groups[1].Value).Trim().TrimEnd('.', ',');
+        return venue.Length > 0 ? Truncate(venue, 120) : null;
+    }
+
+    private static DateOnly? FindExplicitDate(string text)
+    {
+        var match = AbsoluteDate().Match(text);
+        if (!match.Success) return null;
+
+        var value = OrdinalSuffix().Replace(match.Value, string.Empty);
+        value = WeekdayPrefix().Replace(value, string.Empty);
+        var formats = new[]
+        {
+            "d MMMM yyyy", "dd MMMM yyyy", "d MMM yyyy", "dd MMM yyyy",
+            "MMMM d yyyy", "MMMM dd yyyy", "MMM d yyyy", "MMM dd yyyy",
+            "d/M/yyyy", "dd/MM/yyyy", "d-M-yyyy", "dd-MM-yyyy",
+        };
+        return DateOnly.TryParseExact(
+            value, formats, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var date)
+            ? date
+            : null;
     }
 
     /// <summary>Hour/minute from a time capture. Rejects an ambiguous bare number (a
@@ -402,7 +479,8 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
     {
         var match = TimeRange().Match(body);
         if (!match.Success) return null;
-        if (!TryClock(match.Groups[4], match.Groups[5], match.Groups[6], out var hour, out var minute))
+        var meridiem = match.Groups[6].Success ? match.Groups[6] : match.Groups[3];
+        if (!TryClock(match.Groups[4], match.Groups[5], meridiem, out var hour, out var minute))
             return null;
 
         // Rebuilt as wall clock in the same zone as the start, not by reusing
@@ -448,6 +526,11 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
     /// <see cref="Cost"/> pattern for exactly which forms are admitted.</summary>
     private static decimal? FindCost(string body)
     {
+        if (Regex.IsMatch(body,
+            @"\bfree\s+(?:tickets?|entry|admission|to\s+attend)\b|\bno\s+charge\b|\bcomplimentary\s+(?:tickets?|entry|admission)\b|\b(?:tickets?|entry|admission)\s+(?:are\s+)?free\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return 0m;
+
         var match = Cost().Match(body);
         if (!match.Success || !decimal.TryParse(
                 match.Groups[1].Value, System.Globalization.NumberStyles.AllowDecimalPoint,
@@ -479,4 +562,11 @@ public sealed partial class HeuristicEventExtractor : IEventExtractor
 
     private static string Truncate(string value, int max)
         => value.Length <= max ? value : value[..max].TrimEnd();
+
+    private static string CleanMarkup(string value)
+    {
+        var cleaned = Regex.Replace(value, @"\[([^\]]+)\]\([^)]*\)", "$1", RegexOptions.CultureInvariant);
+        cleaned = Regex.Replace(cleaned, @"[*_~`]", string.Empty, RegexOptions.CultureInvariant);
+        return cleaned.Trim().TrimStart('#', '>', ' ', '\t').TrimEnd('#', ' ', '\t');
+    }
 }

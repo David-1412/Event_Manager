@@ -1,0 +1,15 @@
+{
+  "id": "08-monsec-masterclass",
+  "kind": "markdown-social-invite",
+  "subject": "Weekly event announcement",
+  "receivedAt": "2026-09-20T12:00:00+10:00",
+  "body": "# MonSec Monday Masterclass 🎓 The State of Cybersecurity: AI, Government & the Future of Cyber\n\nJoin us for an evening discussion.\n\n**Date:** Monday 5th October 2026\n**Time:** 6:00 PM – 8:00 PM\n**Where:** G13 Alan Finkel Building\n**Tickets:** Free tickets\n\nHear from researchers and government experts about the future of cyber.",
+  "expectOutcome": "event",
+  "expected": {
+    "title": "MonSec Monday Masterclass 🎓 The State of Cybersecurity: AI, Government & the Future of Cyber",
+    "startAt": "2026-10-05T18:00:00+11:00",
+    "endAt": "2026-10-05T20:00:00+11:00",
+    "venueName": "G13 Alan Finkel Building",
+    "cost": 0
+  }
+}

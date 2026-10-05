@@ -49,6 +49,7 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             Cost = row.Event.Cost,
             MaxParticipants = row.Event.MaxParticipants,
             ParticipantCount = row.ParticipantCount,
+            Status = row.Event.Status.ToString(),
             IsCancelled = row.Event.Status == EventStatus.Cancelled,
             DistanceKm = null,
             Description = row.Event.Description,
@@ -208,6 +209,54 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         return await events.ListJoinedEventIdsAsync(userId.Value, ct);
     }
 
+    public async Task<IReadOnlyList<EventListItemDto>> ListMyHostedAsync(CancellationToken ct = default)
+    {
+        var userId = currentUser.UserId;
+        if (userId is null)
+        {
+            return [];
+        }
+
+        var rows = await events.ListHostedAsync(userId.Value, ct);
+        return rows.Select(row => ToListItem(row.Event, row, null)).ToList();
+    }
+
+    public Task<EventDetailDto> CancelAsync(Guid eventId, CancellationToken ct = default)
+        => ChangeStatusAsync(eventId, EventStatus.Scheduled, EventStatus.Cancelled, ct);
+
+    public Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default)
+        => ChangeStatusAsync(eventId, EventStatus.Cancelled, EventStatus.Scheduled, ct);
+
+    private async Task<EventDetailDto> ChangeStatusAsync(
+        Guid eventId,
+        EventStatus expectedStatus,
+        EventStatus status,
+        CancellationToken ct)
+    {
+        var userId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to manage an event.");
+        var now = DateTimeOffset.UtcNow;
+
+        if (!await events.TrySetStatusAsync(eventId, userId, expectedStatus, status, now, ct))
+        {
+            var row = await events.FindAsync(eventId, ct)
+                ?? throw new NotFoundException("Event", eventId, eventId);
+            if (row.Event.HostId != userId)
+            {
+                throw new NotFoundException("Event", eventId, eventId);
+            }
+
+            if (row.Event.StartAt <= now)
+            {
+                throw new DomainRuleException("An event cannot be changed after it has started.");
+            }
+
+            throw new DomainRuleException("The event status has changed. Refresh and try again.");
+        }
+
+        return await GetAsync(eventId, ct);
+    }
+
     private static EventListItemDto ToListItem(Event e, FeedRow row, double? distanceKm) => new()
 
     {
@@ -226,6 +275,7 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         Cost = e.Cost,
         MaxParticipants = e.MaxParticipants,
         ParticipantCount = row.ParticipantCount,
+        Status = e.Status.ToString(),
         IsCancelled = e.Status == EventStatus.Cancelled,
         DistanceKm = distanceKm,
     };

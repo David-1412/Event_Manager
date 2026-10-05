@@ -46,6 +46,16 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         return feed is null ? null : ToRow(feed);
     }
 
+    public async Task<List<FeedRow>> ListHostedAsync(Guid hostId, CancellationToken ct = default)
+    {
+        var rows = await db.EventFeed.AsNoTracking()
+            .Where(v => v.HostId == hostId)
+            .OrderByDescending(v => v.StartAt)
+            .ToListAsync(ct);
+
+        return rows.Select(ToRow).ToList();
+    }
+
     public Task<Sport?> FindSportBySlugAsync(string slug, CancellationToken ct = default)
         => db.Sports.AsNoTracking().FirstOrDefaultAsync(s => s.Slug == slug, ct);
 
@@ -206,6 +216,20 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task<bool> TrySetStatusAsync(
+        Guid eventId,
+        Guid hostId,
+        EventStatus expectedStatus,
+        EventStatus status,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+        => await db.Events
+            .Where(e => e.Id == eventId && e.HostId == hostId && e.Status == expectedStatus && e.StartAt > now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(e => e.Status, status)
+                .SetProperty(e => e.CancelledAt, status == EventStatus.Cancelled ? now : (DateTimeOffset?)null)
+                .SetProperty(e => e.UpdatedAt, now), ct) == 1;
+
     public async Task<bool> RemoveParticipantAsync(Guid eventId, Guid userId, DateTimeOffset cancelledAt, CancellationToken ct = default)
     {
         var row = await db.EventParticipants
@@ -221,6 +245,7 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         {
             @event.Status = EventStatus.Cancelled;
             @event.CancelledAt = cancelledAt;
+            @event.UpdatedAt = cancelledAt;
             cancelled = true;
         }
 

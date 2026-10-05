@@ -84,3 +84,11 @@ public sealed class UpdateDraftDto
 {
     public required CreateEventDto Payload { get; init; }
 }
+
+/// <summary>Creates a private pending draft from the create form without publishing it.</summary>
+public sealed class CreateManualDraftDto
+{
+    public required CreateEventDto Payload { get; init; }
+    public string? SourceSubject { get; init; }
+    public string? SourceBody { get; init; }
+}

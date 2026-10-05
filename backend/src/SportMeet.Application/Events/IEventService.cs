@@ -33,6 +33,13 @@ public interface IEventService
     /// no identity is configured, so My events degrades to the Interested list.</summary>
     Task<IReadOnlyList<Guid>> ListMyJoinedAsync(CancellationToken ct = default);
 
+    /// <summary>All events hosted by the current user, including cancelled and past events.</summary>
+    Task<IReadOnlyList<EventListItemDto>> ListMyHostedAsync(CancellationToken ct = default);
+
+    Task<EventDetailDto> CancelAsync(Guid eventId, CancellationToken ct = default);
+
+    Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default);
+
     /// <summary>Most-used tags on currently-visible events, for the home page's
     /// filter chips. Empty on a fresh database (the demo seed creates no tags),
     /// which the client renders as an empty state rather than a stray divider.</summary>

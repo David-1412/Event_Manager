@@ -18,5 +18,6 @@ bin/
 obj/
 
 # OS/editor noise.
+.vs/
 .DS_Store
 Thumbs.db

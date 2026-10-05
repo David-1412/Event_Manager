@@ -12,7 +12,7 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
     /// match the client's "50 is the maximum for now" rather than the 100 in
     /// IMPLEMENTATION_PLAN.md §2 - a server looser than the client lets a
     /// non-browser caller store a value the UI then rejects.</summary>
-    public const int TitleMaxLength = 80;
+    public const int TitleMaxLength = 120;
     public const int DescriptionMaxLength = 2000;
     public const int VenueMaxLength = 120;
     public const int ParticipantsMin = 2;

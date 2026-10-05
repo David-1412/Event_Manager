@@ -50,6 +50,7 @@ public class EventListItemDto
 
     public required int MaxParticipants { get; init; }
     public required int ParticipantCount { get; init; }
+    public required string Status { get; init; }
     public required bool IsCancelled { get; init; }
 
     /// <summary>null when no origin coordinates were supplied or the sort is not

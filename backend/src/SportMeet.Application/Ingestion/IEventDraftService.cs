@@ -20,6 +20,8 @@ public interface IEventDraftService
     /// <summary><see cref="NotFoundException"/> when unknown.</summary>
     Task<EventDraftDto> GetAsync(Guid id, CancellationToken ct = default);
 
+    Task<EventDraftDto> CreateManualAsync(CreateManualDraftDto dto, CancellationToken ct = default);
+
     /// <summary>Autosave the owner's in-progress edits to a *pending* draft. The
     /// payload is stored as-is (gaps allowed — that is what a draft is), and
     /// MissingFields is recomputed from it. Owner-scoped: unknown id, someone

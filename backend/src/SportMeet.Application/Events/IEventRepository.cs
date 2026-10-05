@@ -1,4 +1,5 @@
 using SportMeet.Domain.Entities;
+using SportMeet.Domain.Enums;
 
 namespace SportMeet.Application.Events;
 
@@ -34,6 +35,9 @@ public interface IEventRepository
     Task<(List<FeedRow> Rows, int TotalCount)> QueryAsync(EventQueryModel query, CancellationToken ct = default);
 
     Task<FeedRow?> FindAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>All events owned by one host, without the public browse status/date filters.</summary>
+    Task<List<FeedRow>> ListHostedAsync(Guid hostId, CancellationToken ct = default);
 
     Task<Sport?> FindSportBySlugAsync(string slug, CancellationToken ct = default);
 
@@ -90,6 +94,9 @@ public interface IEventRepository
     /// exists; callers check membership first, so that only happens on a genuine
     /// race and stays a 500 rather than a silent double count.</summary>
     Task AddParticipantAsync(Guid eventId, Guid userId, DateTimeOffset joinedAt, CancellationToken ct = default);
+
+    /// <summary>Changes status only for the owning host, expected current status, and not-yet-started events.</summary>
+    Task<bool> TrySetStatusAsync(Guid eventId, Guid hostId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default);
 
     /// <summary>Removes the participant row; no-op when absent. Returns true when
     /// the event row itself was cancelled by this call (the host left).</summary>

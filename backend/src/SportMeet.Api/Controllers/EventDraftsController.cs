@@ -46,6 +46,18 @@ public class EventDraftsController(IEventDraftService drafts) : ControllerBase
     public async Task<ActionResult<EventDraftDto>> Get(Guid id, CancellationToken ct)
         => Ok(await drafts.GetAsync(id, ct));
 
+    /// <summary>Create a private pending draft from the event form without publishing it.</summary>
+    [HttpPost]
+    [ProducesResponseType(typeof(EventDraftDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<EventDraftDto>> Create(
+        [FromBody] CreateManualDraftDto dto, CancellationToken ct)
+    {
+        var created = await drafts.CreateManualAsync(dto, ct);
+        return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+    }
+
     /// <summary>
     /// Autosave the reviewer's in-progress edits (the create form's PUT target).
     /// Gaps are allowed — a draft is expected to be incomplete — and the saved

@@ -106,8 +106,8 @@ namespace SportMeet.Infrastructure.Migrations
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
                         .HasColumnName("title");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
@@ -154,7 +154,7 @@ namespace SportMeet.Infrastructure.Migrations
 
                             t.HasCheckConstraint("events_time_range_check", "end_at > start_at");
 
-                            t.HasCheckConstraint("events_title_length_check", "char_length(title) BETWEEN 3 AND 80");
+                            t.HasCheckConstraint("events_title_length_check", "char_length(title) BETWEEN 3 AND 120");
 
                             t.HasCheckConstraint("events_venue_length_check", "char_length(venue_name) BETWEEN 1 AND 120");
                         });
