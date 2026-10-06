@@ -10,6 +10,15 @@ namespace SportMeet.Api.Controllers;
 /// `eventIds` unchanged.</summary>
 public sealed record JoinedIdsDto(System.Collections.Generic.IReadOnlyList<System.Guid> EventIds);
 
+/// <summary>Body of `GET /api/events/me/interested` — the current viewer's
+/// interested event ids, as the frontend's `InterestedEnvelope`. camelCase policy
+/// leaves `eventIds` unchanged.</summary>
+public sealed record InterestedIdsDto(System.Collections.Generic.IReadOnlyList<System.Guid> EventIds);
+
+/// <summary>Body of `POST|DELETE /api/events/{id}/interest` — the post-toggle
+/// state, so the client settles its button from the server rather than guessing.</summary>
+public sealed record InterestResultDto(bool IsInterested);
+
 [ApiController]
 [Route("api/events")]
 public class EventsController(IEventService events) : ControllerBase
@@ -74,6 +83,15 @@ public class EventsController(IEventService events) : ControllerBase
     public async Task<ActionResult<JoinedIdsDto>> MyJoined(CancellationToken ct)
         => Ok(new JoinedIdsDto(await events.ListMyJoinedAsync(ct)));
 
+    /// <summary>The current viewer's interested event ids, for My events →
+    /// Interested and the browse/detail isInterested flag. Anonymous-tolerant like
+    /// me/joined: no identity returns an empty list, not a 401. Declared with the
+    /// other literal "me/*" routes so "me" is never parsed as a guid.</summary>
+    [HttpGet("me/interested")]
+    [ProducesResponseType(typeof(InterestedIdsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<InterestedIdsDto>> MyInterested(CancellationToken ct)
+        => Ok(new InterestedIdsDto(await events.ListMyInterestedAsync(ct)));
+
     /// <summary>All events created by the current host, regardless of status or date.</summary>
     [HttpGet("me/hosting")]
     [ProducesResponseType(typeof(IReadOnlyList<EventListItemDto>), StatusCodes.Status200OK)]
@@ -114,6 +132,24 @@ public class EventsController(IEventService events) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<EventDetailDto>> Leave(Guid id, CancellationToken ct)
         => Ok(await events.LeaveAsync(id, ct));
+
+    /// <summary>Toggle interest. Bodyless POST, identity from ICurrentUser like
+    /// Join. Returns only the new state — interest is a boolean flag with no
+    /// optimistic count to settle — and the client revalidates the interested set
+    /// and the event's interestedCount from there. 404 when the event is unknown.</summary>
+    [HttpPost("{id:guid}/interest")]
+    [ProducesResponseType(typeof(InterestResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InterestResultDto>> ToggleInterest(Guid id, CancellationToken ct)
+        => Ok(new InterestResultDto(await events.ToggleInterestAsync(id, ct)));
+
+    /// <summary>Un-interest. Idempotent: removing interest that is not there is a
+    /// no-op returning { isInterested: false }, so a retried tap converges.</summary>
+    [HttpDelete("{id:guid}/interest")]
+    [ProducesResponseType(typeof(InterestResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InterestResultDto>> RemoveInterest(Guid id, CancellationToken ct)
+        => Ok(new InterestResultDto(await events.ToggleInterestAsync(id, ct)));
 
     [HttpPatch("{id:guid}/cancel")]
     [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]

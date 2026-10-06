@@ -1,51 +1,64 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
-import { useAuth } from "@/lib/auth/auth-provider";
-import {
-  getInterestSnapshot,
-  setInterestedScope,
-  subscribeInterest,
-  toggleInterest,
-} from "./interest-store";
-
-export { setInterestedScope } from "./interest-store";
-
-const EMPTY: string[] = [];
+import { useCallback, useState } from "react";
+import { useSWRConfig } from "swr";
+import { ApiError, request } from "@/lib/api";
+import { detailKey, eventsKey, interestedKey, useInterestedEvents } from "./use-events";
+import type { JoinFailure } from "@/types/events";
 
 /**
- * The signed-in user's Interested set, backed by `interest-store`.
+ * The signed-in user's Interested set, now server-backed.
  *
- * Interest is per-browser (localStorage keyed on the Firebase uid), so scope
- * follows `useAuth().user?.uid`: signing in or out re-points the store at the
- * right list. The snapshot is the whole set; single-id membership is checked
- * against it (a short list, so `includes` beats a selector re-read per card).
+ * Interest used to live in localStorage (per-uid). It is now a real
+ * `event_interests` row, so this hook reads membership from
+ * `GET /api/events/me/interested` (via `useInterestedEvents`, the twin of
+ * `useJoinedEvents`) and writes through `POST /api/events/{id}/interest`. The
+ * consequence the UI relies on: interest follows the account across devices, and
+ * joining an event clears the interest row server-side, so the Interested and
+ * Joined sets never overlap.
  */
 export function useInterests() {
-  const { user } = useAuth();
-  const uid = user?.uid ?? null;
+  const { isInterested, ids } = useInterestedEvents();
+  return { ids, isInterested };
+}
 
-  // Scope the store to the current person. A null uid (signed out) clears it, so
-  // interest is never attributed to whoever used the browser before.
-  useEffect(() => {
-    setInterestedScope(uid);
-  }, [uid]);
+/**
+ * Toggle one event's interest. Mirrors `useCardJoin`: performs the call,
+ * invalidates the caches the card and My-events page read (the interested set,
+ * this event's detail for its isInterested flag, and the browse list for its
+ * interestedCount), and reports the failure class so the button can surface a
+ * retry rather than silently reverting. Returns the server's post-toggle state.
+ */
+export function useToggleInterest(eventId: string) {
+  const { mutate } = useSWRConfig();
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<JoinFailure | null>(null);
 
-  const snapshot = useSyncExternalStore(subscribeInterest, getInterestSnapshot, () => EMPTY);
-
-  // The store re-emits whenever its scope resets (each mount's scope effect
-  // calls setInterestedScope, which clears its cache), so the raw snapshot can
-  // change identity with the same contents. Normalize to a stable reference by
-  // membership, otherwise every consumer memo (useMyEvents' wanted -> items ->
-  // slots) recreates per render and the slot effect loop cascades.
-  const joinedKey = snapshot.join(",");
-  const ids = useMemo(
-    () => (joinedKey === "" ? EMPTY : joinedKey.split(",")),
-    [joinedKey],
+  const toggle = useCallback(
+    async (): Promise<{ ok: boolean; isInterested: boolean }> => {
+      setFailure(null);
+      setPending(true);
+      try {
+        // The endpoint is a toggle, so the verb only expresses intent; both settle
+        // on the same handler. The server returns the post-toggle state, surfaced
+        // to the caller for its toast rather than guessed from a local flip.
+        const result = await request<{ isInterested: boolean } | undefined>(
+          `/api/events/${eventId}/interest`,
+          { method: "POST" },
+        );
+        void mutate(interestedKey(), undefined, { revalidate: true });
+        void mutate(detailKey(eventId), undefined, { revalidate: true });
+        void mutate(eventsKey(), undefined, { revalidate: true });
+        return { ok: true, isInterested: result?.isInterested ?? false };
+      } catch (error) {
+        setFailure(error instanceof ApiError ? error.joinFailure : "network");
+        return { ok: false, isInterested: false };
+      } finally {
+        setPending(false);
+      }
+    },
+    [eventId, mutate],
   );
 
-  const isInterested = useCallback((id: string) => ids.includes(id), [ids]);
-  const toggle = useCallback((id: string) => toggleInterest(id), []);
-
-  return { ids, isInterested, toggle };
+  return { toggle, failure, isPending: pending };
 }

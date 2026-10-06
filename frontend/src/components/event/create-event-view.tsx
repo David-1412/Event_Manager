@@ -54,6 +54,11 @@ export function CreateEventView() {
   const [venue, setVenue] = useState<VenueSelection | null>(null);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const [submitFailed, setSubmitFailed] = useState(false);
+  // The banner used to say "see the highlights below", but an error on a field
+  // with no visible control (venue is set through the map picker, not a text box)
+  // or scrolled off-screen left the user staring at a message with nothing to act
+  // on. Keep the human labels of whatever just failed and print them in the banner.
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 
   const form = useForm<CreateEventValues>({
     resolver: zodResolver(createEventSchema),
@@ -119,6 +124,7 @@ export function CreateEventView() {
     setDraftConfidence(draft.confidence);
     setServerErrors({});
     setSubmitFailed(false);
+    setSubmitErrors([]);
     setIsDirty(false);
     publishedRef.current = false;
     hydratedRef.current = true;
@@ -250,6 +256,11 @@ export function CreateEventView() {
     form.setValue("longitude", next?.longitude ?? 0);
   }
 
+  // Fill the form from a dry-run extraction. Nothing was persisted (the paste
+  // panel runs the extractor as a dry run), so there is no draft id to adopt:
+  // this stays a plain create-event form, not a draft review — the "Editing
+  // draft" banner stays hidden and publishing goes through the normal
+  // POST /api/events path. The extracted values simply populate the fields.
   function applyExtractedDraft(result: ExtractNowResponse) {
     if (!result.payload) return;
     const nextValues = payloadToFormValues(result.payload);
@@ -257,20 +268,28 @@ export function CreateEventView() {
     form.reset(nextValues);
     setVenue(nextVenue);
     latestRef.current = { values: nextValues, venue: nextVenue };
-    setDraftId(result.draftId);
     setDraftMissing(result.missingFields ?? []);
     setDraftConfidence(result.confidence);
     setServerErrors({});
     setSubmitFailed(false);
+    setSubmitErrors([]);
     setIsDirty(false);
   }
 
 
   async function onSubmit(draft: CreateEventValues) {
     setSubmitFailed(false);
+    setSubmitErrors([]);
     setServerErrors({});
     const parsed = createEventSchema.safeParse(draft);
     if (!parsed.success) {
+      const issues = parsed.error.issues.map((i) => ({
+        field: String(i.path[0]),
+        message: i.message,
+      }));
+      setSubmitErrors(
+        issues.map((i) => `${FIELD_LABELS[i.field] ?? i.field}: ${i.message}`),
+      );
       parsed.error.issues.forEach((issue) =>
         form.setError(String(issue.path[0]) as keyof CreateEventValues, {
           message: issue.message,
@@ -281,6 +300,9 @@ export function CreateEventView() {
       return;
     }
     if (!venue) {
+      // One error line only: the inline field error under the picker. The
+      // summary banner stays empty so the same message isn't shown twice.
+      setSubmitErrors([]);
       form.setError("venueName", { message: "Search for a venue" });
       focusFirstError(["venueName"]);
       setSubmitFailed(true);
@@ -311,10 +333,19 @@ export function CreateEventView() {
           mapped[toCamel(key)] = messages[0] ?? "Check this value";
         });
         setServerErrors(mapped);
+        setSubmitErrors(
+          Object.entries(mapped).map(
+            ([key, message]) => `${FIELD_LABELS[key] ?? key}: ${message}`,
+          ),
+        );
         Object.entries(mapped).forEach(([key, message]) =>
           form.setError(key as keyof CreateEventValues, { message }),
         );
         focusFirstError(Object.keys(mapped));
+      } else {
+        setSubmitErrors([
+          error instanceof Error && error.message ? error.message : "Could not create the event",
+        ]);
       }
       setSubmitFailed(true);
     }
@@ -329,17 +360,27 @@ export function CreateEventView() {
       <div className="flex min-w-0 flex-col gap-8">
         <h1 className="text-h1 text-fg">Create an event</h1>
         {submitFailed && (
-          <p
+          <div
             role="alert"
             className="rounded-md border border-danger bg-surface p-3 text-meta text-danger"
           >
-            Some fields need attention - see the highlights below.
-          </p>
+            <p className="font-medium">
+              {submitErrors.length > 0
+                ? "Some fields need attention:"
+                : "Some fields need attention - see the highlights below."}
+            </p>
+            {submitErrors.length > 0 && (
+              <ul className="mt-1 list-disc pl-5">
+                {submitErrors.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         {draftId && (
           <DraftBanner title={values.title} confidence={draftConfidence} missingFields={draftMissing} />
         )}
-        <DraftsPastePanel onExtracted={applyExtractedDraft} />
         <CreateEventGroups
 
           values={values}
@@ -348,14 +389,20 @@ export function CreateEventView() {
           register={form.register}
           onTags={(tags) => form.setValue("tags", tags, { shouldValidate: true })}
           onVenue={applyVenue}
+          onThumbnail={(url) => form.setValue("thumbnailUrl", url)}
         />
       </div>
 
-      {/* Live preview: the cheapest way to teach what the listing will look like. */}
+      {/* Right rail: the live preview on top, and the paste-to-extract panel
+          beneath it. The panel fills the form on the left (a dry run that saves
+          nothing), so it belongs beside the preview the fill updates. */}
       <aside className="hidden lg:block">
-        <div className="sticky top-20 flex flex-col gap-2">
-          <p className="text-meta text-fg-muted">Live preview</p>
-          <EventCard event={previewOf(values, venue)} />
+        <div className="sticky top-20 flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <p className="text-meta text-fg-muted">Live preview</p>
+            <EventCard event={previewOf(values, venue)} />
+          </div>
+          <DraftsPastePanel onExtracted={applyExtractedDraft} />
         </div>
       </aside>
 
@@ -396,6 +443,25 @@ export function CreateEventView() {
     </form>
   );
 }
+
+/** Human labels for the submit banner. Keyed by schema field so a failure on a
+ *  field with no visible control (venue, lat/lng) still reads as something the
+ *  user can act on rather than a raw camelCase key. */
+const FIELD_LABELS: Record<string, string> = {
+  title: "Name",
+  tags: "Tags",
+  date: "Date",
+  startTime: "Start",
+  endTime: "Finish",
+  venueName: "Map location",
+  address: "Map location",
+  latitude: "Map location",
+  longitude: "Map location",
+  maxParticipants: "Spots",
+  cost: "Cost per person",
+  description: "Description",
+  visibility: "Who can find it",
+};
 
 /** Focus the first invalid control so keyboard users are never stranded. */
 function focusFirstError(names: string[]) {
@@ -453,10 +519,14 @@ function buildDraftPayload(
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Melbourne",
     venueName: venue?.venueName ?? v.venueName ?? "",
     address: venue?.address ?? v.address ?? "",
+    ...(v.thumbnailUrl?.trim() ? { thumbnailUrl: v.thumbnailUrl.trim() } : {}),
     ...(venue ? { latitude: venue.latitude, longitude: venue.longitude } : {}),
     ...(Number.isFinite(spots) && spots >= 2 && spots <= 50 ? { maxParticipants: Math.trunc(spots) } : {}),
     ...(v.cost?.trim() && Number.isFinite(cost) ? { cost } : {}),
     ...(v.description?.trim() ? { description: v.description.trim() } : {}),
+    // Always sent: the select has a valid value even on a half-filled form, and an
+    // approved draft must not silently fall back to Public on the reviewer's choice.
+    visibility: v.visibility === "Private" ? "Private" : "Public",
   };
 }
 

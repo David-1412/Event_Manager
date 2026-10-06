@@ -21,6 +21,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<Sport> Sports => Set<Sport>();
     public DbSet<EventParticipant> EventParticipants => Set<EventParticipant>();
+    public DbSet<EventInterest> EventInterests => Set<EventInterest>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<EventTag> EventTags => Set<EventTag>();
 

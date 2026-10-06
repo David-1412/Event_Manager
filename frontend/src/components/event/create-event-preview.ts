@@ -26,13 +26,21 @@ export function previewOf(values: Draft, venue: VenueSelection | null): EventLis
     timezone: "Australia/Melbourne",
     venueName: venue?.venueName || "Venue not chosen yet",
     address: venue?.address ?? "",
+    // The uploaded thumbnail URL straight from the form, so the live preview shows
+    // the image the moment it finishes uploading. null (nothing uploaded) is the
+    // same state the card renders for an event with no image.
+    thumbnailUrl: values.thumbnailUrl?.trim() ? values.thumbnailUrl.trim() : null,
     latitude: venue?.latitude ?? 0,
     longitude: venue?.longitude ?? 0,
     cost: Number.isFinite(cost) && cost > 0 ? cost : null,
     maxParticipants: Number.isFinite(spots) && spots >= 2 ? spots : 4,
-    participantCount: 1,
+    joinedCount: 1,
+    interestedCount: 0,
     status: "Scheduled",
     isCancelled: false,
+    // Mirrors the form's choice so the preview is honest about what will be
+    // created. The card itself does not render it; the type requires it.
+    visibility: values.visibility === "Private" ? "Private" : "Public",
     distanceKm: null,
   };
 }

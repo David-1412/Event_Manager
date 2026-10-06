@@ -216,6 +216,47 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task<bool> IsInterestedAsync(Guid eventId, Guid userId, CancellationToken ct = default)
+        => await db.EventInterests.AnyAsync(i => i.EventId == eventId && i.UserId == userId, ct);
+
+    public async Task AddInterestAsync(Guid eventId, Guid userId, DateTimeOffset createdAt, CancellationToken ct = default)
+    {
+        // No-op when the row already exists: the composite key already guarantees
+        // one-per-user, so a re-tap converges on "interested" rather than throwing
+        // on a duplicate key. The service toggles, so this is reached only when the
+        // caller has just confirmed the user is not yet interested.
+        var exists = await db.EventInterests.AnyAsync(i => i.EventId == eventId && i.UserId == userId, ct);
+        if (exists)
+        {
+            return;
+        }
+
+        db.EventInterests.Add(new EventInterest
+        {
+            EventId = eventId,
+            UserId = userId,
+            CreatedAt = createdAt,
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveInterestAsync(Guid eventId, Guid userId, CancellationToken ct = default)
+    {
+        // Set-based delete: no-op when absent and one statement either way, so the
+        // join path (which clears interest unconditionally) costs nothing when the
+        // user was never interested.
+        await db.EventInterests
+            .Where(i => i.EventId == eventId && i.UserId == userId)
+            .ExecuteDeleteAsync(ct);
+    }
+
+    public async Task<List<Guid>> ListInterestedEventIdsAsync(Guid userId, CancellationToken ct = default)
+        => await db.EventInterests
+            .AsNoTracking()
+            .Where(i => i.UserId == userId)
+            .Select(i => i.EventId)
+            .ToListAsync(ct);
+
     public async Task<bool> TrySetStatusAsync(
         Guid eventId,
         Guid hostId,
@@ -263,6 +304,21 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         // Cancelled events stay out of browse; the client has no control asking
         // for them, and spec §11 keeps them off the feed.
         source = source.Where(v => v.Status != EventStatus.Cancelled);
+
+        // Private events stay out of browse for the same structural reason: the
+        // feed is the discovery surface, and a private event is one the host chose
+        // not to publish. This is the *only* place the rule lives — the detail
+        // endpoint stays open to every caller, which is what lets the host hand
+        // someone the link and have it work.
+        //
+        // Compared against the string, not the enum. VwEventFeed.Visibility is the
+        // view's text column and is deliberately not value-converted: EF binds an
+        // enum constant as its underlying integer, so `!= EventVisibility.Private`
+        // reaches Postgres as `v.visibility <> 1` and every browse request dies with
+        // "42883: operator does not exist: character varying <> integer" (measured
+        // against a real database). Enum.ToString() is no escape either - EF 8
+        // cannot translate it. Both sides as text is what translates.
+        source = source.Where(v => v.Visibility != nameof(EventVisibility.Private));
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -334,7 +390,8 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         v.SportIcon,
         v.HostName,
         v.HostPhotoUrl,
-        v.CurrentParticipants);
+        v.CurrentParticipants,
+        v.InterestedCount);
 
     /// <summary>The view returns tags as one comma-joined string (see the
     /// string_agg note in Init_Views); empty list rather than null when the event
@@ -358,6 +415,7 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         SportId = v.SportId,
         VenueName = v.VenueName,
         Address = v.Address,
+        ThumbnailUrl = v.ThumbnailUrl,
         PlaceId = v.PlaceId,
         Lat = v.Lat,
         Lng = v.Lng,
@@ -368,6 +426,12 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         SkillLevel = v.SkillLevel,
         Cost = v.Cost,
         Status = v.Status,
+        // The view carries visibility as text; parse back rather than converting, so
+        // an unexpected value surfaces as the enum's default (Public) instead of
+        // throwing inside a read path.
+        Visibility = Enum.TryParse<EventVisibility>(v.Visibility, out var visibility)
+            ? visibility
+            : EventVisibility.Public,
         CancelledAt = v.CancelledAt,
         CreatedAt = v.CreatedAt,
         UpdatedAt = v.UpdatedAt,

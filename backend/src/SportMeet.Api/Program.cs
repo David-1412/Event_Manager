@@ -67,6 +67,30 @@ builder.Services.AddEmailIngestionWorker(builder.Configuration);
 
 var app = builder.Build();
 
+// Host-uploaded event thumbnails are written to App_Data/uploads (a compose
+// volume) and referenced by the URL /uploads/<key>. Serving them here keeps the
+// stored URL exactly what the browser requests; the GUID-named key cannot
+// traverse, and the directory holds only files this API itself wrote. Placed
+// before the controllers so a static hit never reaches routing.
+var uploadRoot = Path.Combine(app.Environment.ContentRootPath, "App_Data", "uploads");
+try
+{
+    Directory.CreateDirectory(uploadRoot);
+}
+catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+{
+    // A read-only or pre-mounted volume: serve what is there, and let the upload
+    // endpoint surface the write failure per-request rather than crash startup.
+    Log.Warning(ex, "Uploads directory {Path} is not writable; thumbnail uploads will fail", uploadRoot);
+}
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadRoot),
+    RequestPath = "/uploads",
+    ServeUnknownFileTypes = false,
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "public,max-age=86400",
+});
+
 app.UseSerilogRequestLogging();
 app.UseCors();
 

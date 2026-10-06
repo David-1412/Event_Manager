@@ -11,12 +11,13 @@ import { cn } from "@/lib/cn";
 import type { EventListItem } from "@/types/events";
 import { HostingActions } from "@/components/event/hosting-actions";
 
-type Tab = "upcoming" | "past" | "hosting";
+type Tab = "upcoming" | "past" | "hosting" | "interested";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "upcoming", label: "Upcoming" },
   { key: "past", label: "Past" },
   { key: "hosting", label: "Hosting" },
+  { key: "interested", label: "Interested" },
 ];
 
 /**
@@ -34,19 +35,28 @@ export function MyEventsView() {
   const my = useMyEvents();
   const hosted = useHostedEvents();
   const now = useNow(60_000);
+  // Stable references for the buckets memo (the `my` object is fresh each render).
+  const { items, interestedIds, isJoined } = my;
 
   const buckets = useMemo(() => {
-    const all = my.items.map((item) => ({ item, future: Date.parse(item.startAt) >= now }));
+    const all = items.map((item) => ({ item, future: Date.parse(item.startAt) >= now }));
+    // Interested tab = interest row present AND no participant row. Joining clears
+    // the interest server-side, so this is belt-and-braces against a stale cache,
+    // not the normal path.
+    const interestedSet = new Set(interestedIds);
+    const interested = items.filter((item) => interestedSet.has(item.id) && !isJoined(item.id));
     return {
       upcoming: all.filter((e) => e.future),
       past: all.filter((e) => !e.future),
+      interested,
     };
-  }, [my.items, now]);
+  }, [items, interestedIds, isJoined, now]);
 
   const counts: Record<Tab, number> = {
     upcoming: buckets.upcoming.length,
     past: buckets.past.length,
     hosting: hosted.items.length,
+    interested: buckets.interested.length,
   };
   const isLoading = tab === "hosting" ? hosted.isLoading : my.isLoading;
   const error = tab === "hosting" ? hosted.error : my.error;
@@ -92,7 +102,10 @@ export function MyEventsView() {
         {!isLoading && !error && tab === "hosting" && (
           <HostingPanel items={hosted.items} now={now} />
         )}
-        {!isLoading && !error && tab !== "hosting" && (
+        {!isLoading && !error && tab === "interested" && (
+          <InterestedPanel items={buckets.interested} my={my} />
+        )}
+        {!isLoading && !error && tab !== "hosting" && tab !== "interested" && (
           <TabPanel tab={tab} rows={buckets[tab]} my={my} />
         )}
       </div>
@@ -114,6 +127,31 @@ function TabPanel({
   return (
     <>
       {rows.map(({ item }) => (
+        <EventCard
+          key={item.id}
+          event={item}
+          isJoined={my.isJoined(item.id)}
+          action={<CardActions eventId={item.id} />}
+        />
+      ))}
+    </>
+  );
+}
+
+/** The Interested tab: events marked interested but not joined. Same card +
+ * actions as the other personal tabs (Join still offered; Uninterest removes it). */
+function InterestedPanel({
+  items,
+  my,
+}: {
+  items: EventListItem[];
+  my: ReturnType<typeof useMyEvents>;
+}) {
+  if (items.length === 0) return <EmptyState title={emptyCopyFor("interested")} />;
+
+  return (
+    <>
+      {items.map((item) => (
         <EventCard
           key={item.id}
           event={item}
@@ -159,9 +197,11 @@ function emptyCopyFor(tab: Tab): string {
     case "upcoming":
       return "Nothing you're interested in or joined yet. Tap Interested or Join on any event.";
     case "past":
-      return "Nothing here yet. Past games you were interested in or joined show up here.";
+      return "Nothing here yet. Past Events you were interested in or joined show up here.";
     case "hosting":
       return "You haven't hosted any events yet.";
+    case "interested":
+      return "Nothing marked interested yet. Tap Interested on any event to keep an eye on it.";
   }
 }
 

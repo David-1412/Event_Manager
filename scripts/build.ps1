@@ -32,6 +32,24 @@ if (-not (Test-Path $cache)) {
     $env:NUGET_PACKAGES_PATH = $cache
 }
 
+# The offline source is what lets a build finish with the registry unreachable,
+# and it can only be created while the registry is reachable. Build it from the
+# host cache now, while that is still possible, so the next cold build has it:
+# a machine that has restored once never needs nuget.org again.
+$sources = if ($env:NUGET_SOURCES_PATH) { $env:NUGET_SOURCES_PATH } else { Join-Path (Get-Location) ".nuget-sources" }
+if (-not (Test-Path (Join-Path $sources "*.nupkg"))) {
+    if (Test-Path $cache) {
+        Write-Host "No offline NuGet source yet at '$sources'; creating it from the host cache."
+        & (Join-Path $PSScriptRoot "restore-cache.ps1")
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+}
+if (Test-Path (Join-Path $sources "*.nupkg")) {
+    # Preferred over the raw host cache: a flat source folder resolves reliably,
+    # whereas global-packages is a fallback folder rather than a source.
+    $env:NUGET_PACKAGES_PATH = $sources
+}
+
 # A stale corp CA silently reintroduces NU1301, so refresh it when a proxy root
 # is present in the store.
 $proxy = Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue |

@@ -21,7 +21,16 @@ namespace SportMeet.Infrastructure.Migrations;
 internal static class EventViewSql
 {
     /// <summary>The current shape: LEFT JOIN on sports (sport_id became nullable)
-    /// plus the comma-joined tag aggregate.</summary>
+    /// plus the comma-joined tag aggregate.
+    ///
+    /// Frozen at the Add_Event_Visibility boundary. Migrations are replayed in
+    /// order on a fresh database, and Add_Tags and Increase_Event_Title_Length both
+    /// execute this string, so adding a column here makes those earlier migrations
+    /// reference a column that does not exist yet - 42703 "column e.visibility does
+    /// not exist" on every fresh database, while an already-upgraded one never
+    /// replays them and so appears fine. A new view column belongs in its own
+    /// migration's private constant instead, the way Init_Views keeps its original
+    /// definition rather than reading this one.</summary>
     public const string Definition = """
         CREATE OR REPLACE VIEW sportsmeet.v_event_feed AS
         SELECT
@@ -72,6 +81,52 @@ internal static class EventViewSql
         -- LEFT, not JOIN: sport_id became nullable when tags replaced the sport
         -- vocabulary. With the inner join an event without a sport vanished from
         -- browse entirely - silently, and with no error to trace.
+        LEFT JOIN sportsmeet.sports s ON s.id = e.sport_id
+        JOIN sportsmeet.users u ON u.id = e.host_id;
+        """;
+
+    /// <summary>The v_event_feed shape as of Add_Event_Visibility: Definition plus
+    /// e.visibility appended last. Used only by Add_Event_Interests_Counts.Down()
+    /// to restore the pre-interest view. A private constant there would duplicate
+    /// the whole SELECT; keeping it here groups every view shape in one file, which
+    /// is what this class exists for. It references events.visibility, so it can
+    /// only run after Add_Event_Visibility has created that column.</summary>
+    public const string AddEventVisibilityView = """
+        CREATE OR REPLACE VIEW sportsmeet.v_event_feed AS
+        SELECT
+            e.id,
+            e.host_id,
+            e.title,
+            e.description,
+            e.sport_id,
+            e.venue_name,
+            e.address,
+            e.place_id,
+            e.lat,
+            e.lng,
+            e.timezone,
+            e.start_at,
+            e.end_at,
+            e.max_participants,
+            e.skill_level,
+            e.cost,
+            e.status,
+            e.cancelled_at,
+            e.created_at,
+            e.updated_at,
+            (SELECT COUNT(*)::int FROM sportsmeet.event_participants p WHERE p.event_id = e.id)
+                AS current_participants,
+            s.name AS sport_name,
+            s.slug AS sport_slug,
+            s.icon AS sport_icon,
+            u.name AS host_name,
+            u.photo_url AS host_photo_url,
+            (SELECT string_agg(t.name::text, ',' ORDER BY t.name)
+               FROM sportsmeet.event_tags et
+               JOIN sportsmeet.tags t ON t.id = et.tag_id
+              WHERE et.event_id = e.id) AS tags,
+            e.visibility
+        FROM sportsmeet.events e
         LEFT JOIN sportsmeet.sports s ON s.id = e.sport_id
         JOIN sportsmeet.users u ON u.id = e.host_id;
         """;

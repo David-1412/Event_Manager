@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
@@ -8,7 +8,6 @@ import { DEFAULT_QUERY, parseQuery, buildEventsKey } from "@/lib/query";
 import { request } from "@/lib/api";
 import { fixtureDetail, fixtureList, fixturePopularTags } from "@/lib/fixtures";
 import { useAuth } from "@/lib/auth/auth-provider";
-import { useInterests } from "./use-interests";
 import type { EventDetail, EventListItem, EventQuery, JoinFailure, Paged, PopularTag } from "@/types/events";
 
 /** `GET /api/tags/popular` - the home page's filter chips. */
@@ -46,10 +45,17 @@ export const detailKey = (id: string) => `${API_BASE_URL}/api/events/${id}`;
 /** `GET /api/events/me/joined` — the ids the current viewer has a participant row on. */
 export const joinedKey = () => `${API_BASE_URL}/api/events/me/joined`;
 
+/** `GET /api/events/me/interested` — the ids the current viewer has an interest row on. */
+export const interestedKey = () => `${API_BASE_URL}/api/events/me/interested`;
+
 /** `GET /api/events/me/hosting` — every event owned by the current host. */
 export const hostedKey = () => `${API_BASE_URL}/api/events/me/hosting`;
 
 interface JoinedEnvelope {
+  eventIds: string[];
+}
+
+interface InterestedEnvelope {
   eventIds: string[];
 }
 
@@ -151,7 +157,7 @@ export function useJoinEvent(event: EventDetail): JoinResult {
     (previous: number, reason: JoinFailure) => {
       void globalMutate(
         detailKey(event.id),
-        (current) => (current ? { ...current, participantCount: previous } : current),
+        (current) => (current ? { ...current, joinedCount: previous } : current),
         { revalidate: false },
       );
       setFailure(reason);
@@ -162,29 +168,32 @@ export function useJoinEvent(event: EventDetail): JoinResult {
   const run = useCallback(
     async (method: "POST" | "DELETE"): Promise<{ ok: boolean; count: number }> => {
       setFailure(null);
-      const previous = event.participantCount;
+      const previous = event.joinedCount;
       const optimistic = method === "POST" ? previous + 1 : Math.max(0, previous - 1);
       void globalMutate(
         detailKey(event.id),
         (current) =>
-          current ? { ...current, participantCount: optimistic } : current,
+          current ? { ...current, joinedCount: optimistic } : current,
         { revalidate: false },
       );
       try {
         if (method === "POST") setJoining(true);
         else setLeaving(true);
-        const data = await request<{ participantCount: number } | undefined>(
+        const data = await request<{ joinedCount: number } | undefined>(
           `/api/events/${event.id}/participants`,
           { method },
         );
-        const count = data?.participantCount ?? optimistic;
+        const count = data?.joinedCount ?? optimistic;
         void globalMutate(
           detailKey(event.id),
-          (current) => (current ? { ...current, participantCount: count } : current),
+          (current) => (current ? { ...current, joinedCount: count } : current),
           { revalidate: false },
         );
         // The joined set (My events, and every card's Join/Leave state) changed.
         void globalMutate(joinedKey(), undefined, { revalidate: true });
+        // Joining clears any interest server-side, so the interested set and the
+        // browse list's interestedCount both move too.
+        void globalMutate(interestedKey(), undefined, { revalidate: true });
         void globalMutate(eventsKey(), undefined, { revalidate: true });
         return { ok: true, count };
       } catch (error) {
@@ -195,7 +204,7 @@ export function useJoinEvent(event: EventDetail): JoinResult {
         setLeaving(false);
       }
     },
-    [event.id, event.participantCount, rollback],
+    [event.id, event.joinedCount, rollback],
   );
 
   const join = useCallback(() => run("POST"), [run]);
@@ -228,6 +237,28 @@ export function useJoinedEvents() {
   return { ids, isJoined, error, isLoading, mutateJoined: mutate };
 }
 
+/**
+ * `GET /api/events/me/interested`. The server-backed mirror of the old
+ * localStorage interest store and the exact twin of `useJoinedEvents`: signed-out
+ * or fixture mode resolves to an empty set without blocking the page, because the
+ * interested set only decorates an already-working list. `useToggleInterest`
+ * revalidates `interestedKey()` after a toggle so this refreshes, and joining
+ * clears interest server-side so the two sets never overlap.
+ */
+export function useInterestedEvents() {
+  const key = usingFixtures ? null : interestedKey();
+  const { data, error, isLoading, mutate } = useSWR<InterestedEnvelope, Error>(key, fetcher, {
+    revalidateOnFocus: false,
+  });
+  // Stable reference while the contents match, for the same reason as useJoinedEvents.
+  const rawIds = data?.eventIds;
+  const idsKey = rawIds?.join(",") ?? "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- idsKey is the content identity of rawIds
+  const ids = useMemo(() => rawIds ?? EMPTY_IDS, [idsKey]);
+  const isInterested = useCallback((id: string) => ids.includes(id), [ids]);
+  return { ids, isInterested, error, isLoading, mutateInterested: mutate };
+}
+
 export function useHostedEvents() {
   const { user, loading } = useAuth();
   const key = usingFixtures || loading || !user ? null : hostedKey();
@@ -248,8 +279,8 @@ const EMPTY_IDS: string[] = [];
 
 /** A detail payload satisfies every `EventListItem` field; keep only those. */
 function toCard(detail: EventDetail): EventListItem {
-  const { host, isHost, isJoined, participants, cancelledAt, description, ...card } = detail;
-  void host; void isHost; void isJoined; void participants; void cancelledAt; void description;
+  const { host, isHost, isJoined, isInterested, participants, cancelledAt, description, ...card } = detail;
+  void host; void isHost; void isJoined; void isInterested; void participants; void cancelledAt; void description;
   return card;
 }
 
@@ -303,7 +334,7 @@ const SLOTS = Array.from({ length: MAX_CARDS }, (_, i) => i);
  */
 export function useMyEvents() {
   const joined = useJoinedEvents();
-  const interests = useInterests();
+  const interests = useInterestedEvents();
   const [resolved, setResolved] = useState<Record<string, EventListItem>>({});
 
   const wanted = useMemo(() => {
@@ -357,7 +388,9 @@ export function useMyEvents() {
     // interested. The card uses `isJoined` to pick Join/Leave, else Interest/Uninterest.
     isJoined: joined.isJoined,
     isInterested: interests.isInterested,
-    toggleInterest: interests.toggle,
+    // The Interested-tab membership, so the view can bucket the same resolved
+    // cards into "interested but not joined" without a second fetch.
+    interestedIds: interests.ids,
     error: joined.error,
     isLoading: usingFixtures ? false : joined.isLoading,
   };

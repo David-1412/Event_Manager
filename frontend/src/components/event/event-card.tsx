@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { availabilityOf, countTextClass } from "@/lib/cn";
+import { mediaUrl } from "@/lib/api";
 import {
   formatCardWhen,
   formatCost,
@@ -46,7 +47,7 @@ export function eventCardVariant(
   if (event.status === "Completed") return "ended";
   if (flags.isHost) return "mine";
   if (flags.isJoined) return "joined";
-  const availability = availabilityOf(event.participantCount, event.maxParticipants);
+  const availability = availabilityOf(event.joinedCount, event.maxParticipants);
   if (availability === "full") return "full";
   if (availability === "one-spot") return "one-spot";
   return "open";
@@ -62,11 +63,14 @@ export function EventCard({
   onSelect,
 }: EventCardProps) {
   const kind = variant ?? eventCardVariant(event, { isJoined, isHost });
-  const availability = availabilityOf(event.participantCount, event.maxParticipants);
+  const availability = availabilityOf(event.joinedCount, event.maxParticipants);
   // Sport is decoration only now: null when the event has no sport row, and the
   // glyph slot collapses rather than falling back to a generic emoji.
   const icon = event.sportIcon;
   const tagLine = formatTagLine(event.tags);
+  // Resolve the stored /uploads path to the API origin, or null when there is no
+  // image - the card then renders exactly as before, with no image area at all.
+  const thumbnailSrc = mediaUrl(event.thumbnailUrl);
 
 
   if (kind === "past") {
@@ -87,7 +91,7 @@ export function EventCard({
     );
   }
 
-  const countLabel = spotsTakenSentence(event.participantCount, event.maxParticipants);
+  const countLabel = spotsTakenSentence(event.joinedCount, event.maxParticipants);
   const meta = [
     formatCardWhen(event),
     formatDistance(event.distanceKm),
@@ -98,6 +102,10 @@ export function EventCard({
     <article
       className={cn(
         "press group relative rounded-md border border-border bg-surface p-4",
+        // With a thumbnail the card splits into a row at >=768px: content fills the
+        // space beside a fixed-width image, and the card padding comes off so the
+        // image can bleed to the edge. Without one it stays a plain padded column.
+        thumbnailSrc && "md:flex md:items-center md:gap-4 md:p-0",
         // hover lifts by translation only — `scale` would reflow the grid (spec §7)
         "hover:-translate-y-px hover:shadow-raise",
         kind === "mine" && "border-l-[3px] border-l-brand-600",
@@ -109,6 +117,7 @@ export function EventCard({
       aria-label={`${event.title}, ${countLabel}`}
       onClick={onSelect ? () => onSelect(event.id) : undefined}
     >
+      <div className={cn("min-w-0", thumbnailSrc && "md:p-4")}>
       <div className="flex items-center gap-2 text-meta text-fg-muted">
         {icon && <span aria-hidden>{icon}</span>}
         <span className="truncate">{tagLine}</span>
@@ -137,6 +146,7 @@ export function EventCard({
         )}
       >
         <Count event={event} kind={kind} availability={availability} />
+        <Tally event={event} />
         {kind === "one-spot" && <Badge tone="warn">1 spot left</Badge>}
         {kind === "full" && <Badge tone="danger">Full</Badge>}
         {kind === "mine" && <Badge tone="brand">You&apos;re hosting</Badge>}
@@ -153,6 +163,23 @@ export function EventCard({
           </span>
         )}
       </div>
+      </div>
+      {thumbnailSrc && (
+        // Host-uploaded thumbnail. Plain <img> (not next/image): the bytes come
+        // from the API origin, which isn't a configured image domain, and these
+        // are the host's own files. alt="" - the title names the event; the image
+        // is decoration. Below 768px it is a full-width banner bleeding to the
+        // card's top edge; at >=768px the card is a row and it becomes a fixed
+        // 160px column that fills the card height, vertically centred, rounded on
+        // the card's right corners.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbnailSrc}
+          alt=""
+          aria-hidden
+          className="-mx-4 -mt-4 mb-3 h-32 w-[calc(100%+2rem)] rounded-t-md object-cover md:mx-0 md:mt-0 md:mb-0 md:h-auto md:w-40 md:self-stretch md:rounded-l-none md:rounded-r-md"
+        />
+      )}
     </article>
   );
 }
@@ -175,10 +202,28 @@ function Count({
         : countTextClass[availability];
   return (
     <span className={cn("count-shift text-count", tone)}>
-      <span data-count>
-        {event.participantCount}/{event.maxParticipants}
+      <span data-count aria-hidden>
+        {event.joinedCount}/{event.maxParticipants}
       </span>
-      <span className="sr-only"> — {spotsTakenSentence(event.participantCount, event.maxParticipants)}</span>
+      <span className="sr-only"> — {spotsTakenSentence(event.joinedCount, event.maxParticipants)}</span>
+    </span>
+  );
+}
+
+/**
+ * The two count lines the browse card shows (spec): joined against capacity, and
+ * interested as a standalone tally. Interest reserves no spot, so it is shown
+ * beside — never summed into — the joined number.
+ */
+function Tally({ event }: { event: EventListItem }) {
+  return (
+    <span className="flex flex-col text-meta text-fg-muted leading-tight">
+      <span>
+        {"\u{1F465}"} {event.joinedCount}/{event.maxParticipants} joined
+      </span>
+      <span>
+        {"\u2B50"} {event.interestedCount} interested
+      </span>
     </span>
   );
 }

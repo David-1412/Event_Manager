@@ -32,6 +32,10 @@ export const createEventSchema = z
     endTime: z.string().min(1, "Pick an end time"),
     venueName: z.string().trim().min(1, "Search for a venue").max(120),
     address: z.string().trim().min(1),
+    // Optional upload. The form stores the URL the upload endpoint returned (or
+    // null), never the bytes, so there is nothing to validate beyond its shape -
+    // the image itself was size/type-checked when it was uploaded.
+    thumbnailUrl: z.string().trim().max(400).nullish(),
     latitude: z.number(),
     longitude: z.number(),
     maxParticipants: z.coerce
@@ -46,6 +50,13 @@ export const createEventSchema = z
       .refine((v) => !v || (Number.isFinite(Number(v)) && Number(v) >= 0), "Enter a number or leave it empty")
       .refine((v) => !v || Number(v) <= 1000, "That looks too high"),
     description: z.string().trim().max(1000, "Keep it under 1000 characters").optional(),
+    /**
+     * Discovery choice, mirrored by the API's `Visibility` rule. A native select
+     * always sends one of the two names, so this never arrives malformed from the
+     * form; the enum still guards a programmatically-set value against the same
+     * set the server accepts.
+     */
+    visibility: z.enum(["Public", "Private"], { message: "Pick public or private" }),
   })
   .superRefine((values, ctx) => {
     const start = new Date(`${values.date}T${values.startTime}`);
@@ -80,11 +91,15 @@ export const CREATE_EVENT_DEFAULTS: CreateEventValues = {
   endTime: "20:00",
   venueName: "",
   address: "",
+  thumbnailUrl: null,
   latitude: 0,
   longitude: 0,
   maxParticipants: 4,
   cost: "",
   description: "",
+  // Public by default: an event the host forgot to think about should be
+  // findable, not silently hidden from everyone including their friends.
+  visibility: "Public",
 };
 
 /**
@@ -111,11 +126,13 @@ export function toCreateEventPayload(values: z.output<typeof createEventSchema>)
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Melbourne",
     venueName: values.venueName,
     address: values.address,
+    thumbnailUrl: values.thumbnailUrl?.trim() ? values.thumbnailUrl.trim() : null,
     latitude: values.latitude,
     longitude: values.longitude,
     maxParticipants: values.maxParticipants,
     cost,
     description: values.description?.trim() ? values.description.trim() : null,
+    visibility: values.visibility,
   };
 }
 

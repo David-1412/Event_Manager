@@ -5,29 +5,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { toast } from "@/components/ui/toast";
-import { useAuth } from "@/lib/auth/auth-provider";
-import { refreshDraftQueue } from "@/features/create/use-drafts";
 import { runIngestion } from "@/features/create/ingest";
 import type { ExtractNowResponse } from "@/types/events";
 
 /**
- * The paste-to-draft surface (EMAIL_INGESTION_PLAN §7). A user drops in an email or
- * a Discord message; the backend runs it through ingestion (LLM extractor with the
- * heuristic as fallback) and creates a Pending draft. Extraction confidence and the
- * missing fields are shown as review guidance only — a low-confidence or incomplete
- * extract still produces a draft, which is the whole point of drafts: a human fills
- * the gaps before publishing.
+ * The paste-to-form surface (EMAIL_INGESTION_PLAN §7). A user drops in an email or
+ * a Discord message; the backend runs it through the extractor (LLM with the
+ * heuristic as fallback) as a **dry run** — nothing is saved as a draft. The
+ * extracted fields are handed to `onExtracted` so the create form fills in below,
+ * and the reviewer completes the gaps before publishing. Extraction confidence and
+ * the missing fields are shown as review guidance only — a low-confidence or
+ * incomplete extract still fills what it could, which is the whole point: a human
+ * finishes the job in the form rather than a half-extracted draft landing in a queue.
  */
 export function DraftsPastePanel({
-  onSaved,
   onExtracted,
 }: {
-  onSaved?: () => void;
   onExtracted?: (result: ExtractNowResponse) => void;
 }) {
-  const { user } = useAuth();
-  const uid = user?.uid ?? null;
-
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,7 +32,7 @@ export function DraftsPastePanel({
     missingFields: string[];
   } | null>(null);
 
-  async function createDraft() {
+  async function extract() {
     const text = body.trim();
     if (!text) {
       toast("Paste an email or Discord message first");
@@ -46,21 +41,23 @@ export function DraftsPastePanel({
     setBusy(true);
     setResult(null);
     try {
-      const payload = await runIngestion({ subject: subject.trim(), body: text });
+      const payload = await runIngestion({
+        subject: subject.trim(),
+        body: text,
+        dryRun: true,
+      });
       setResult({
         kind: payload.kind,
         confidence: payload.confidence,
         missingFields: payload.missingFields ?? [],
       });
-      if (payload.payload) onExtracted?.(payload);
-      if (payload.draftId) {
-        toast("Draft created");
-        refreshDraftQueue(uid);
-        onSaved?.();
+      if (payload.payload) {
+        onExtracted?.(payload);
+        toast("Filled the form from that message", "success");
       } else if (payload.kind === "no_event") {
         toast("No event found in that message");
       } else {
-        toast("Draft created");
+        toast("Nothing to fill from that message");
       }
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not run ingestion.");
@@ -75,8 +72,8 @@ export function DraftsPastePanel({
       <div>
         <h3 className="text-h3 text-fg">Create a draft from a message</h3>
         <p className="mt-1 text-meta text-fg-muted">
-          Paste the email or Discord message. The AI extracts what it can; anything missing becomes
-          a hint you complete during review.
+          Paste the email or Discord message. The AI extracts what it can and fills
+          the form below; anything missing stays a hint for you to complete.
         </p>
       </div>
 
@@ -105,8 +102,8 @@ export function DraftsPastePanel({
       </Field>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button onClick={createDraft} loading={busy}>
-          {busy ? "Extracting…" : "Create draft"}
+        <Button onClick={extract} loading={busy}>
+          {busy ? "Extracting…" : "Extract"}
         </Button>
         {result && (
           <div className="flex items-center gap-2 text-meta text-fg-muted" aria-live="polite">

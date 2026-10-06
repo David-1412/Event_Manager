@@ -33,6 +33,16 @@ public interface IEventService
     /// no identity is configured, so My events degrades to the Interested list.</summary>
     Task<IReadOnlyList<Guid>> ListMyJoinedAsync(CancellationToken ct = default);
 
+    /// <summary>Add or remove the current viewer's interest in one event (toggle).
+    /// Throws <see cref="DomainRuleException"/> when no identity is configured and
+    /// <see cref="NotFoundException"/> when the event is unknown. Returns the new
+    /// state (true = now interested).</summary>
+    Task<bool> ToggleInterestAsync(Guid eventId, CancellationToken ct = default);
+
+    /// <summary>Event ids the current viewer has marked interested. Empty (not an
+    /// error) when no identity is configured, mirroring ListMyJoinedAsync.</summary>
+    Task<IReadOnlyList<Guid>> ListMyInterestedAsync(CancellationToken ct = default);
+
     /// <summary>All events hosted by the current user, including cancelled and past events.</summary>
     Task<IReadOnlyList<EventListItemDto>> ListMyHostedAsync(CancellationToken ct = default);
 

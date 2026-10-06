@@ -22,6 +22,7 @@ public class VwEventFeed
 
     public string VenueName { get; set; } = string.Empty;
     public string? Address { get; set; }
+    public string? ThumbnailUrl { get; set; }
     public string? PlaceId { get; set; }
     public double Lat { get; set; }
     public double Lng { get; set; }
@@ -33,12 +34,29 @@ public class VwEventFeed
 
     public decimal? Cost { get; set; }
     public EventStatus Status { get; set; }
+
+    /// <summary>The view's text column, declared as text rather than as the
+    /// EventVisibility enum the events table maps to. A value-converted enum on a
+    /// keyless view projection makes EF bind its comparison constant as an integer
+    /// against this text column ("42883: operator does not exist: character varying
+    /// <> integer", measured against a real database), and Enum.ToString() is not
+    /// translatable either. The repository compares this against
+    /// nameof(EventVisibility.Private) and converts to the domain enum in ToEvent.
+    /// Status keeps its enum type: it is compared against a converted property on
+    /// both sides, which EF folds into a comparable constant fine.</summary>
+    public string Visibility { get; set; } = string.Empty;
     public DateTimeOffset? CancelledAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
     /// <summary>The COUNT over event_participants that the view derives.</summary>
     public int CurrentParticipants { get; set; }
+
+    /// <summary>The COUNT over event_interests that the view derives, alongside
+    /// current_participants. Computed in the view (not a stored counter) for the
+    /// same reason: a join/leave and an interest toggle never race a counter, and
+    /// a browse page resolves both counts in its single round-trip.</summary>
+    public int InterestedCount { get; set; }
 
     /// <summary>Comma-joined normalized tag names, ordered by name so the same
     /// tag set always serialises identically. Split back into a list in

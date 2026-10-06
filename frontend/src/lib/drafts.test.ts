@@ -26,11 +26,13 @@ describe("approveDraft", () => {
       timezone: "Australia/Melbourne",
       venueName: "Glen Waverley Track",
       address: "10 Example Road",
+      thumbnailUrl: null,
       latitude: -37.88,
       longitude: 145.16,
       maxParticipants: 4,
       cost: null,
       description: null,
+      visibility: "Public",
     };
 
     await approveDraft("draft-id", event);

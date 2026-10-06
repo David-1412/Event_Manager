@@ -16,6 +16,8 @@ export interface AuthUser {
   email: string;
   photoURL: string | null;
   emailVerified: boolean;
+  /** ISO timestamp the account was created, when the provider reports it. */
+  createdAt?: string;
 }
 
 /**

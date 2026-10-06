@@ -1,7 +1,8 @@
 "use client";
 
-import { Field, Input, Textarea } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { TagInput } from "@/components/event/tag-input";
+import { ThumbnailInput } from "@/components/event/thumbnail-input";
 import { VenueChips, VenuePicker } from "@/components/event/venue-picker";
 import type { VenueSelection } from "@/components/event/venue-picker";
 import type { CreateEventValues } from "@/features/create/create-event-schema";
@@ -21,6 +22,8 @@ export interface CreateGroupsProps {
   /** Tags are a controlled array, not a registerable native input. */
   onTags: (tags: Tag[]) => void;
   onVenue: (venue: VenueSelection | null) => void;
+  /** Uploaded thumbnail URL (or null). Controlled like tags, not a native input. */
+  onThumbnail: (url: string | null) => void;
 }
 
 export function CreateEventGroups(props: CreateGroupsProps) {
@@ -35,7 +38,7 @@ export function CreateEventGroups(props: CreateGroupsProps) {
   );
 }
 
-function WhatGroup({ values, errorFor, register, onTags }: CreateGroupsProps) {
+function WhatGroup({ values, errorFor, register, onTags, onThumbnail }: CreateGroupsProps) {
   return (
     <fieldset className="flex flex-col gap-4">
       <legend className="text-h3 text-fg">What</legend>
@@ -63,6 +66,14 @@ function WhatGroup({ values, errorFor, register, onTags }: CreateGroupsProps) {
             onChange={onTags}
             error={errorFor("tags")}
           />
+        )}
+      </Field>
+
+      {/* Optional photo. Uploads on pick (not on submit), so the live preview and
+          the browse card show the real image the moment it is chosen. */}
+      <Field label="Photo" hint="JPG, PNG or WebP up to 5 MB. Shown on the event card." optional>
+        {({ id }) => (
+          <ThumbnailInput id={id} value={values.thumbnailUrl} onChange={onThumbnail} />
         )}
       </Field>
     </fieldset>
@@ -114,32 +125,21 @@ function WhenGroup({ errorFor, register }: CreateGroupsProps) {
   );
 }
 
-function WhereGroup({ venue, errorFor, register, onVenue }: CreateGroupsProps) {
+function WhereGroup({ venue, errorFor, onVenue }: CreateGroupsProps) {
   return (
     <fieldset className="flex flex-col gap-4">
       <legend className="text-h3 text-fg">Where</legend>
-      <Field
-        label="Venue name"
-        error={errorFor("venueName")}
-        required
-      >
-        {({ id, describedBy, invalid }) => (
-          <Input
-            id={id}
-            placeholder="G13 Alan Finkel Building"
-            maxLength={120}
-            aria-describedby={describedBy}
-            aria-invalid={invalid || undefined}
-            {...register("venueName")}
-          />
-        )}
-      </Field>
-      <Field label="Map location" hint="Search or tap the map to set the event pin." error={errorFor("venueName")} required>
+      {/* No venue-name input: the picker reverse-geocodes every pick and writes
+          venueName/address itself, so a second box for the same value only ever
+          invited a mismatch with the pin. */}
+      <Field label="Map location" hint="Drop the pin, move it as needed, then Select." error={errorFor("venueName")} required>
         {() =>
           venue ? (
+            // The Field already shows the error once; don't pass it down or the
+            // picker would render a second identical red line.
             <VenueChips venue={venue} onChange={onVenue} />
           ) : (
-            <VenuePicker value={null} onChange={onVenue} error={errorFor("venueName")} />
+            <VenuePicker value={null} onChange={onVenue} />
           )
         }
       </Field>
@@ -184,6 +184,29 @@ function WhoGroup({ errorFor, register }: CreateGroupsProps) {
           )}
         </Field>
       </div>
+
+      {/* Discovery, not a password: a private event still opens for anyone holding
+          its link, it just stays out of Browse. The hint has to say that, because
+          "Private" otherwise reads as "only I can see it" - which is not what
+          happens, and the host would be waiting for people the link already lets in. */}
+      <Field
+        label="Who can find it"
+        hint="Private events skip Browse - share the link from the event page instead."
+        error={errorFor("visibility")}
+        required
+      >
+        {({ id, describedBy, invalid }) => (
+          <Select
+            id={id}
+            aria-describedby={describedBy}
+            aria-invalid={invalid || undefined}
+            {...register("visibility")}
+          >
+            <option value="Public">Public - listed on Browse</option>
+            <option value="Private">Private - link only</option>
+          </Select>
+        )}
+      </Field>
     </fieldset>
   );
 }

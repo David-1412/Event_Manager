@@ -22,7 +22,7 @@ import {
 } from "firebase/auth";
 import { getFirebaseAuth, getGoogleProvider } from "./client";
 import { describeAuthError, isAuthCancelled } from "./auth-error";
-import { establishSession, registerWithApi } from "./session";
+import { establishSession, registerWithApi, toAuthUser } from "./session";
 import { clearAccessToken, setAccessToken } from "./token-store";
 import type { AuthUser } from "./types";
 import { isFirebaseConfigured } from "./config";
@@ -77,16 +77,6 @@ const NO_PROVIDER = "Sign-in isn't configured for this deployment.";
  */
 const SESSION_TIMEOUT_MS = 8_000;
 
-function identityOf(firebaseUser: FirebaseUser): AuthUser {
-  return {
-    uid: firebaseUser.uid,
-    displayName: firebaseUser.displayName ?? firebaseUser.email?.split("@")[0] ?? "",
-    email: firebaseUser.email ?? "",
-    photoURL: firebaseUser.photoURL,
-    emailVerified: firebaseUser.emailVerified,
-  };
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -121,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Firebase still holds the session, so show the identity without the
       // API token and let the next `onIdTokenChanged` retry.
       if (ticket !== generation.current) return;
-      setUser(identityOf(firebaseUser));
+      setUser(toAuthUser(firebaseUser));
       setToken(null);
       setApiTrusted(false);
     }

@@ -35,6 +35,25 @@ public sealed class EventDraftService(
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
+    static EventDraftService()
+    {
+        // A stored payload is a serialized CreateEventDto, and CreateEventDto now
+        // carries EventVisibility?. These options objects are separate from the MVC
+        // ones, so the string converter has to be registered here too or the field
+        // falls back to System.Text.Json's numeric ordinal handling. Left numeric it
+        // breaks both directions: reading a draft the create form saved (which writes
+        // "visibility":"Public") throws "could not be converted to
+        // Nullable`1[EventVisibility]" the moment the reviewer opens it, and writing
+        // one would store an ordinal the create form cannot parse back. Both the
+        // nullable and non-nullable converters go on both options objects, matching
+        // JsonOptionsConfiguration, so read and write agree on the wire form.
+        foreach (var options in new[] { PayloadRead, PayloadWrite })
+        {
+            options.Converters.Add(new EventVisibilityJsonConverter());
+            options.Converters.Add(new NullableEventVisibilityJsonConverter());
+        }
+    }
+
     /// <summary>The create-form field names a saved payload answers, in the order
     /// the review UI lists them. Anything else the extractor flagged (latitude,
     /// longitude, the heuristic's "pastEvent" note) is derived or advisory and is
@@ -333,6 +352,10 @@ public sealed class EventDraftService(
         MaxParticipants = e.MaxParticipants,
         Cost = e.Cost,
         Description = e.Description,
+        // Forwarded, not defaulted: a reviewer who marked a draft private must not
+        // have it flip to public the moment they approve it. Null stays null here
+        // and CreateAsync reads that as Public.
+        Visibility = e.Visibility,
     };
 
     private static EventDraftDto Map(EventDraft d, IngestedEmail e) => new()

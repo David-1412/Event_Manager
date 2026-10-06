@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useCallback,
@@ -129,9 +129,9 @@ function EventPinMarker({
   const visual = (
     <Pin
       icon={event.sportIcon ?? PIN_FALLBACK_ICON}
-      count={`${event.participantCount}/${event.maxParticipants}`}
+      count={`${event.joinedCount}/${event.maxParticipants}`}
       selected={selected}
-      full={event.participantCount >= event.maxParticipants}
+      full={event.joinedCount >= event.maxParticipants}
     />
   );
 
@@ -139,7 +139,7 @@ function EventPinMarker({
     return (
       <AdvancedMarker
         position={{ lat: event.latitude, lng: event.longitude }}
-        title={`${event.title} ${event.participantCount}/${event.maxParticipants}`}
+        title={`${event.title} ${event.joinedCount}/${event.maxParticipants}`}
         onClick={() => onSelect(event.id)}
       >
         {visual}
@@ -149,11 +149,11 @@ function EventPinMarker({
   return (
     <OverlayPin
       position={{ lat: event.latitude, lng: event.longitude }}
-      title={`${event.title} ${event.participantCount}/${event.maxParticipants}`}
+      title={`${event.title} ${event.joinedCount}/${event.maxParticipants}`}
       icon={event.sportIcon ?? PIN_FALLBACK_ICON}
-      count={`${event.participantCount}/${event.maxParticipants}`}
+      count={`${event.joinedCount}/${event.maxParticipants}`}
       selected={selected}
-      full={event.participantCount >= event.maxParticipants}
+      full={event.joinedCount >= event.maxParticipants}
       onClick={() => onSelect(event.id)}
     />
   );

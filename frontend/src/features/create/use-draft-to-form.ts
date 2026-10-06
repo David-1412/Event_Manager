@@ -22,11 +22,15 @@ export function payloadToFormValues(payload: DraftPayload): CreateEventValues {
     endTime: hasEnd ? melbourneTimeInputValue(end) : "20:00",
     venueName: payload.venueName ?? "",
     address: payload.address ?? "",
+    thumbnailUrl: payload.thumbnailUrl ?? "",
     latitude: payload.latitude ?? 0,
     longitude: payload.longitude ?? 0,
     maxParticipants: payload.maxParticipants ?? 4,
     cost: payload.cost != null ? String(payload.cost) : "",
     tags: payload.tags ?? [],
+    // An ingested message never says "private", so a draft with no visibility
+    // lands on the form's default rather than on an empty select.
+    visibility: payload.visibility ?? "Public",
   };
 }
 

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
@@ -8,7 +8,9 @@ import { EventMap } from "@/components/map/event-map";
 import { ErrorState } from "@/components/state/empty-error";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/field";
 import { SkeletonBlock } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { useAuth } from "@/lib/auth/auth-provider";
@@ -72,16 +74,16 @@ function DetailBody({ event }: { event: EventDetail }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   useEffect(() => {
-    document.title = `${event.title} (${event.participantCount}/${event.maxParticipants}) - Event Manager`;
+    document.title = `${event.title} (${event.joinedCount}/${event.maxParticipants}) - Event Manager`;
     return () => {
       document.title = "Event Manager";
     };
-  }, [event.title, event.participantCount, event.maxParticipants]);
+  }, [event.title, event.joinedCount, event.maxParticipants]);
 
   const secondsUntilStart = Math.floor(
     (new Date(event.startAt).getTime() - now) / 1000,
   );
-  const isFull = event.participantCount >= event.maxParticipants;
+  const isFull = event.joinedCount >= event.maxParticipants;
   const derived = deriveJoinState({
     isHost: event.isHost,
     isCancelled: event.isCancelled,
@@ -114,7 +116,7 @@ function DetailBody({ event }: { event: EventDetail }) {
   const joinButton = (fullWidth: boolean) => (
     <JoinButton
       state={state}
-      current={event.participantCount}
+      current={event.joinedCount}
       max={event.maxParticipants}
       isHost={event.isHost}
       isCancelled={event.isCancelled}
@@ -185,6 +187,11 @@ function DetailBody({ event }: { event: EventDetail }) {
         <ParticipantList participants={event.participants} />
       </section>
 
+      {/* Only a private event needs this: it is absent from Browse, so the link is
+          the sole way anyone else reaches it. Mounted after the event resolves, so
+          window.location is defined. */}
+      {event.visibility === "Private" && <InviteLink eventId={event.id} />}
+
       <section className="mt-6" aria-labelledby="venue-heading">
         <h2 id="venue-heading" className="text-h3 text-fg">
           Venue
@@ -211,7 +218,7 @@ function DetailBody({ event }: { event: EventDetail }) {
         open={confirmCancel}
         titleId="cancel-event-title"
         title={`Cancel "${event.title}"?`}
-        body={`${event.participantCount} ${event.participantCount === 1 ? "person has" : "people have"} joined.`}
+        body={`${event.joinedCount} ${event.joinedCount === 1 ? "person has" : "people have"} joined.`}
         confirmLabel="Cancel event"
         onClose={() => setConfirmCancel(false)}
         onConfirm={() => {
@@ -283,12 +290,14 @@ function DetailHeader({
           </Badge>
         ))}
         {event.skillLevel && <Badge>{event.skillLevel}</Badge>}
+        {/* Discovery flag, not a lock: the event is open to anyone holding the link. */}
+        {event.visibility === "Private" && <Badge tone="warn">Private · link only</Badge>}
         {event.isCancelled && <Badge tone="info">Cancelled</Badge>}
       </div>
 
       <p className="mt-4 text-body text-fg">
         <span data-count className="font-semibold">
-          {spotsTakenSentence(event.participantCount, event.maxParticipants)}
+          {spotsTakenSentence(event.joinedCount, event.maxParticipants)}
         </span>
       </p>
 
@@ -356,6 +365,52 @@ function HostMenu({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The host-facing half of a private event: it is deliberately missing from
+ * Browse, so this page is the only place its URL surfaces. The absolute link is
+ * built at render time rather than in markup, since `window` does not exist
+ * during the server pass.
+ */
+function InviteLink({ eventId }: { eventId: string }) {
+  const [copied, setCopied] = useState(false);
+  const url = typeof window === "undefined" ? "" : `${window.location.origin}/events/${eventId}`;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      toast("Link copied - anyone with it can join", "success");
+    } catch {
+      // Clipboard access is denied outside a secure context or without permission;
+      // the field below is already selected-ready, so say what to do instead.
+      toast("Couldn't copy automatically - select the link and copy it");
+    }
+  }
+
+  return (
+    <section className="mt-6" aria-labelledby="invite-heading">
+      <h2 id="invite-heading" className="text-h3 text-fg">
+        Invite link
+      </h2>
+      <p className="mt-1 text-meta text-fg-muted">
+        This event is private, so it does not appear on Browse. Send this link to the people you
+        want - it opens for them and they can take a spot.
+      </p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <Input
+          readOnly
+          value={url}
+          aria-label="Private event link"
+          onFocus={(event) => event.currentTarget.select()}
+        />
+        <Button type="button" variant="secondary" onClick={() => void copy()} className="sm:w-40">
+          {copied ? "Copied" : "Copy link"}
+        </Button>
+      </div>
+    </section>
   );
 }
 

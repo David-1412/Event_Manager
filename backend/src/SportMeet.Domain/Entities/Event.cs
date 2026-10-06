@@ -25,6 +25,12 @@ public class Event
     public string VenueName { get; set; } = string.Empty;
     public string? Address { get; set; }
 
+    /// <summary>Optional event thumbnail. Holds the URL the upload endpoint hands
+    /// back (served from <c>/uploads/...</c>), not the bytes. Null means the host
+    /// uploaded no image, and every renderer (browse card, live preview, detail)
+    /// falls back to the no-image layout rather than a placeholder.</summary>
+    public string? ThumbnailUrl { get; set; }
+
     /// <summary>Google Place ID. Written only by the venue picker's real
     /// Places API path; unused in Milestone 1 because geo search is a stub.</summary>
     public string? PlaceId { get; set; }
@@ -52,6 +58,14 @@ public class Event
     public decimal? Cost { get; set; }
 
     public EventStatus Status { get; set; } = EventStatus.Scheduled;
+
+    /// <summary>
+    /// Discovery, not access: Public events appear in the browse feed, Private
+    /// ones only ever surface through their direct link (which the host can
+    /// share). Both remain readable through GET /api/events/{id} — hiding a
+    /// private event there would break the link-sharing the flag exists for.
+    /// </summary>
+    public EventVisibility Visibility { get; set; } = EventVisibility.Public;
 
     /// <summary>Set when Status becomes Cancelled. Exposed to the client as
     /// EventDetail.cancelledAt. Not written in Milestone 1 (no cancel endpoint) —

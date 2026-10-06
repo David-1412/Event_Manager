@@ -48,6 +48,8 @@ interface IdTokenCarrier {
   email: string | null;
   photoURL: string | null;
   emailVerified: boolean;
+  /** Firebase `User.metadata`; `creationTime` is an RFC 1123 date string. */
+  metadata?: { creationTime?: string };
 }
 
 export const AUTH_LOGIN_PATH = "/api/auth/login";
@@ -148,7 +150,7 @@ async function errorFrom(response: Response): Promise<ApiError> {
   return new ApiError({ code: "Unknown", ...problem });
 }
 
-function toAuthUser(user: IdTokenCarrier): AuthUser {
+export function toAuthUser(user: IdTokenCarrier): AuthUser {
   const email = user.email ?? "";
   return {
     uid: user.uid,
@@ -156,7 +158,13 @@ function toAuthUser(user: IdTokenCarrier): AuthUser {
     email,
     photoURL: user.photoURL,
     emailVerified: user.emailVerified,
+    createdAt: toIso(user.metadata?.creationTime),
   };
+}
+
+function toIso(value: string | undefined): string | undefined {
+  const time = value ? Date.parse(value) : NaN;
+  return Number.isNaN(time) ? undefined : new Date(time).toISOString();
 }
 
 /** The API row wins on identity fields; Firebase fills whatever it lacks. */

@@ -51,11 +51,12 @@ services:
       dockerfile: backend/Dockerfile
       secrets:
         - corp-ca
-      # `offline` gives backend/Dockerfile's restore the host NuGet folder as an
+      # `offline` gives backend/Dockerfile's restore a local NuGet source as an
       # extra package source, alongside the BuildKit package cache (see the
       # Dockerfile header for why the cache is the store that ends up complete).
-      # NUGET_PACKAGES_PATH is set by scripts/build.ps1; unset, the context is
-      # empty and the build restores from the registry alone.
+      # NUGET_PACKAGES_PATH is set by scripts/build.ps1 to the flat source folder
+      # that scripts/restore-cache.ps1 creates; unset, the context is empty and
+      # the build restores from the BuildKit cache and the registry alone.
       additional_contexts:
         - offline=${NUGET_PACKAGES_PATH:-scripts/empty-cache}
     container_name: sportmeet-api
@@ -83,6 +84,17 @@ services:
       AzureAd__MailboxAddress: ${AZUREAD_MAILBOX_ADDRESS:-}
       # LLM extraction; unset, the deterministic heuristic extractor is used.
       OpenAi__ApiKey: ${OPENAI_API_KEY:-}
+    # Runtime trust for TLS-intercepting corporate proxies: without it the API
+    # cannot fetch Firebase's signing keys (PartialChain) and every token 401s.
+    # .NET on Linux loads every PEM in /etc/ssl/certs.
+    volumes:
+      - ./corp-ca.pem:/etc/ssl/certs/corp-ca.pem:ro
+      # Persist host-uploaded event thumbnails across rebuilds. Mounted at the
+      # leaf uploads dir (not its App_Data parent): Docker seeds a fresh named
+      # volume from the image's directory, which is owned by the non-root app
+      # user, so the API can write into it. Mounting the parent would land a
+      # root-owned empty dir the app user cannot create uploads under.
+      - sportmeet-uploads:/app/App_Data/uploads
     ports:
       - "${API_PORT:-5000}:8080"
     depends_on:
@@ -151,3 +163,4 @@ secrets:
 
 volumes:
   sportmeet-pgdata:
+  sportmeet-uploads:

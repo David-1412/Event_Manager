@@ -16,6 +16,12 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
     {
         var (rows, totalCount) = await events.QueryAsync(query, ct);
 
+        // joinedCount and interestedCount ride in on the view (one round-trip, no
+        // N+1). The per-viewer isJoined / isInterested flags are deliberately NOT
+        // here: the browse list is anonymous (swr-fetcher sends no token until a
+        // session exists), so both relations resolve through the me/joined and
+        // me/interested side-channels the client joins by id. See use-events.tsx.
+        //
         // Distance is only computed when an origin exists; null here is what
         // tells the card to hide the distance row.
         var items = rows
@@ -44,13 +50,16 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             Timezone = row.Event.Timezone,
             VenueName = row.Event.VenueName,
             Address = row.Event.Address,
+            ThumbnailUrl = row.Event.ThumbnailUrl,
             Latitude = row.Event.Lat,
             Longitude = row.Event.Lng,
             Cost = row.Event.Cost,
             MaxParticipants = row.Event.MaxParticipants,
-            ParticipantCount = row.ParticipantCount,
+            JoinedCount = row.ParticipantCount,
+            InterestedCount = row.InterestedCount,
             Status = row.Event.Status.ToString(),
             IsCancelled = row.Event.Status == EventStatus.Cancelled,
+            Visibility = row.Event.Visibility.ToString(),
             DistanceKm = null,
             Description = row.Event.Description,
             Host = new ParticipantDto(row.Event.HostId, row.HostName, row.HostPhotoUrl),
@@ -60,6 +69,7 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             // verified token supplies it these lines do not change.
             IsHost = currentUser.UserId is { } host && host == row.Event.HostId,
             IsJoined = currentUser.UserId is { } joiner && await events.IsParticipantAsync(id, joiner, ct),
+            IsInterested = currentUser.UserId is { } admirer && await events.IsInterestedAsync(id, admirer, ct),
             Participants = participants
                 .Select(u => new ParticipantDto(u.Id, u.Name, u.PhotoUrl))
                 .ToList(),
@@ -94,6 +104,7 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             SportId = null,
             VenueName = dto.VenueName!.Trim(),
             Address = dto.Address!.Trim(),
+            ThumbnailUrl = string.IsNullOrWhiteSpace(dto.ThumbnailUrl) ? null : dto.ThumbnailUrl.Trim(),
             Lat = dto.Latitude!.Value,
             Lng = dto.Longitude!.Value,
             Timezone = string.IsNullOrWhiteSpace(dto.Timezone) ? "Australia/Melbourne" : dto.Timezone,
@@ -103,6 +114,10 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             SkillLevel = dto.SkillLevel,
             Cost = dto.Cost,
             Status = EventStatus.Scheduled,
+            // A caller that sends no visibility gets a public event, so an older
+            // client (or an older draft payload) cannot silently create something
+            // that never appears in browse.
+            Visibility = dto.Visibility ?? EventVisibility.Public,
         };
 
         await events.AddAsync(entity, ct);
@@ -176,6 +191,11 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             }
 
             await events.AddParticipantAsync(eventId, userId, DateTimeOffset.UtcNow, inner);
+
+            // Requirement: joining supersedes interest. Clear any interest row in
+            // the same transaction so the two sets never overlap and the
+            // Interested count never double-counts a joiner. No-op when absent.
+            await events.RemoveInterestAsync(eventId, userId, inner);
         }, ct);
 
         return await GetAsync(eventId, ct);
@@ -207,6 +227,44 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         }
 
         return await events.ListJoinedEventIdsAsync(userId.Value, ct);
+    }
+
+    /// <summary>Toggle the current viewer's interest in one event: adding when
+    /// uninterested, removing when interested (the composite key already forbids a
+    /// second row). Returns the post-toggle state so the client settles its button
+    /// and toast from the server rather than guessing. Interest reserves no spot and
+    /// is independent of capacity, so unlike Join there is nothing to lock.</summary>
+    public async Task<bool> ToggleInterestAsync(Guid eventId, CancellationToken ct = default)
+    {
+        var userId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to mark an event interested.");
+
+        // Existence check first so an unknown id is a 404 rather than a row written
+        // against a non-existent event (the FK would reject it as a 500 instead).
+        _ = await events.FindAsync(eventId, ct)
+            ?? throw new NotFoundException("Event", eventId, eventId);
+
+        if (await events.IsInterestedAsync(eventId, userId, ct))
+        {
+            await events.RemoveInterestAsync(eventId, userId, ct);
+            return false;
+        }
+
+        await events.AddInterestAsync(eventId, userId, DateTimeOffset.UtcNow, ct);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListMyInterestedAsync(CancellationToken ct = default)
+    {
+        // Mirrors ListMyJoinedAsync: no identity is an empty list, not an error, so
+        // My events degrades gracefully rather than blocking on a 401.
+        var userId = currentUser.UserId;
+        if (userId is null)
+        {
+            return [];
+        }
+
+        return await events.ListInterestedEventIdsAsync(userId.Value, ct);
     }
 
     public async Task<IReadOnlyList<EventListItemDto>> ListMyHostedAsync(CancellationToken ct = default)
@@ -270,13 +328,16 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         Timezone = e.Timezone,
         VenueName = e.VenueName,
         Address = e.Address,
+        ThumbnailUrl = e.ThumbnailUrl,
         Latitude = e.Lat,
         Longitude = e.Lng,
         Cost = e.Cost,
         MaxParticipants = e.MaxParticipants,
-        ParticipantCount = row.ParticipantCount,
+        JoinedCount = row.ParticipantCount,
+        InterestedCount = row.InterestedCount,
         Status = e.Status.ToString(),
         IsCancelled = e.Status == EventStatus.Cancelled,
+        Visibility = e.Visibility.ToString(),
         DistanceKm = distanceKm,
     };
 

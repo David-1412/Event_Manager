@@ -7,6 +7,14 @@ export type SkillLevel = "Beginner" | "Intermediate" | "Advanced";
 export type EventStatus = "Scheduled" | "Cancelled" | "Completed";
 
 /**
+ * Discovery, not access. `Public` events appear in the browse feed; `Private`
+ * ones never show up in `GET /api/events` and are reachable only through the
+ * direct link the host shares — which is why the detail page stays open to
+ * anyone who has that link. Mirrors the backend `EventVisibility` enum.
+ */
+export type EventVisibility = "Public" | "Private";
+
+/**
  * Free-text tag, always normalized (lowercase, no '#') by the server. Replaces
  * the old SportKey union: the vocabulary is no longer closed, so a new tag is a
  * keystroke rather than a type change and a redeploy.
@@ -42,14 +50,24 @@ export interface EventListItem {
   timezone: string;
   venueName: string;
   address: string;
+  /** Host-uploaded thumbnail URL (served from the API's /uploads/...), or null
+   * when the event has no image. The card/preview/detail hide the image on null. */
+  thumbnailUrl: string | null;
   latitude: number;
   longitude: number;
   /** null or 0 => renders `Free`. */
   cost: number | null;
   maxParticipants: number;
-  participantCount: number;
+  /** Participants with a real participant row. Formerly `participantCount`;
+   * renamed to pair with `interestedCount` and match the API's `joinedCount`. */
+  joinedCount: number;
+  /** Events marked Interested (a softer signal than joined; reserves no spot). */
+  interestedCount: number;
   status: EventStatus;
   isCancelled: boolean;
+  /** "Public" events are in the browse feed; "Private" ones only through their
+   * link. The detail page offers a copyable link when this is "Private". */
+  visibility: EventVisibility;
   distanceKm: number | null;
 }
 
@@ -59,6 +77,7 @@ export interface EventDetail extends EventListItem {
   host: ParticipantDto;
   isHost: boolean;
   isJoined: boolean;
+  isInterested: boolean;
   participants: ParticipantDto[];
   cancelledAt: string | null;
 }
@@ -115,6 +134,9 @@ export interface DraftPayload {
   timezone?: string;
   venueName?: string;
   address?: string;
+  /** Uploaded thumbnail URL, carried through the draft so it survives review and
+   * lands on the approved event. Absent means no image. */
+  thumbnailUrl?: string | null;
   latitude?: number;
   longitude?: number;
   maxParticipants?: number;
@@ -122,6 +144,8 @@ export interface DraftPayload {
   tags?: string[];
   /** Backend SkillLevel enum string, or null when the event has no level. */
   skillLevel?: string | null;
+  /** Backend EventVisibility enum string. Absent means Public on approve. */
+  visibility?: EventVisibility;
 }
 
 /**

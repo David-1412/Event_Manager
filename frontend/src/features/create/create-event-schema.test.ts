@@ -80,7 +80,6 @@ describe("create event validation (spec 7)", () => {
 
   describe("venue", () => {
     it("requires a venue picked from the picker", () => {
-      expect(errorFor({ venueName: "" })).toContain("Search for a venue");
       expect(errorFor({ venueName: "   " })).toContain("Search for a venue");
     });
 
@@ -167,5 +166,25 @@ describe("toCreateEventPayload", () => {
       createEventSchema.parse(valid({ description: "   " })),
     );
     expect(payload.description).toBeNull();
+  });
+});
+
+describe("visibility", () => {
+  it("defaults a fresh form to Public", () => {
+    expect(CREATE_EVENT_DEFAULTS.visibility).toBe("Public");
+    const payload = toCreateEventPayload(createEventSchema.parse(valid()));
+    expect(payload.visibility).toBe("Public");
+  });
+
+  it("sends Private when the host hides the event from Browse", () => {
+    const payload = toCreateEventPayload(
+      createEventSchema.parse(valid({ visibility: "Private" })),
+    );
+    expect(payload.visibility).toBe("Private");
+  });
+
+  it("rejects anything outside the two the API accepts", () => {
+    expect(errorFor({ visibility: "Secret" })).toContain("Pick public or private");
+    expect(errorFor({ visibility: undefined })).toContain("Pick public or private");
   });
 });

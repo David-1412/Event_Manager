@@ -40,6 +40,11 @@ public class EventListItemDto
     public required string Timezone { get; init; }
     public required string VenueName { get; init; }
     public string? Address { get; init; }
+
+    /// <summary>Host-uploaded thumbnail URL, or null when the event has no image.
+    /// Serializes as `thumbnailUrl`; the client hides the image area on null.</summary>
+    public string? ThumbnailUrl { get; init; }
+
     public required double Latitude { get; init; }
     public required double Longitude { get; init; }
 
@@ -49,9 +54,23 @@ public class EventListItemDto
     public decimal? Cost { get; init; }
 
     public required int MaxParticipants { get; init; }
-    public required int ParticipantCount { get; init; }
+
+    /// <summary>Joined participant count, derived by the feed view's COUNT over
+    /// event_participants (never a stored counter). Serializes as `joinedCount`.</summary>
+    public required int JoinedCount { get; init; }
+
+    /// <summary>Interested count, derived by the feed view's COUNT over
+    /// event_interests. Independent of capacity — interest reserves no spot.
+    /// Serializes as `interestedCount`.</summary>
+    public required int InterestedCount { get; init; }
+
     public required string Status { get; init; }
     public required bool IsCancelled { get; init; }
+
+    /// <summary>"Public" or "Private". Private means the event is absent from
+    /// <c>GET /api/events</c> and reachable only by its direct link, so the detail
+    /// page renders a copyable URL whenever this is Private.</summary>
+    public required string Visibility { get; init; }
 
     /// <summary>null when no origin coordinates were supplied or the sort is not
     /// distance-based; the client then hides the distance row.</summary>

@@ -38,6 +38,19 @@ export class ApiError extends Error {
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 export const usingFixtures = API_BASE_URL === "";
 
+/**
+ * Resolve an uploaded-media URL (a stored `/uploads/<key>` path) to something a
+ * browser <img> can load. The API serves uploads from its own origin, which is
+ * NOT the web app's origin, so a relative `/uploads/...` would 404 against the
+ * Next server. An already-absolute URL is returned untouched. Empty input stays
+ * empty so callers can branch on falsy rather than on this function's output.
+ */
+export function mediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${API_BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
 const TIMEOUT_MS = 10_000;
 
 interface RequestOptions {

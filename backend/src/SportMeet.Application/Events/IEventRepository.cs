@@ -16,7 +16,8 @@ public sealed record FeedRow(
     string? SportIcon,
     string HostName,
     string? HostPhotoUrl,
-    int ParticipantCount);
+    int ParticipantCount,
+    int InterestedCount);
 
 /// <summary>A tag plus how many currently-visible events carry it. Lives here
 /// rather than in Domain because "visible" is a query concern, not a property of
@@ -94,6 +95,21 @@ public interface IEventRepository
     /// exists; callers check membership first, so that only happens on a genuine
     /// race and stays a 500 rather than a silent double count.</summary>
     Task AddParticipantAsync(Guid eventId, Guid userId, DateTimeOffset joinedAt, CancellationToken ct = default);
+
+    /// <summary>Whether the user currently has an interest row on the event.</summary>
+    Task<bool> IsInterestedAsync(Guid eventId, Guid userId, CancellationToken ct = default);
+
+    /// <summary>Adds the interest row; no-op when it already exists, so a double
+    /// tap converges on "interested" instead of throwing on the composite key.</summary>
+    Task AddInterestAsync(Guid eventId, Guid userId, DateTimeOffset createdAt, CancellationToken ct = default);
+
+    /// <summary>Removes the interest row; no-op when absent.</summary>
+    Task RemoveInterestAsync(Guid eventId, Guid userId, CancellationToken ct = default);
+
+    /// <summary>Every event id the user is interested in, for the "My events →
+    /// Interested" list. Includes past events, matching ListJoinedEventIdsAsync —
+    /// the tab filters upcoming/past client-side rather than dropping history.</summary>
+    Task<List<Guid>> ListInterestedEventIdsAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>Changes status only for the owning host, expected current status, and not-yet-started events.</summary>
     Task<bool> TrySetStatusAsync(Guid eventId, Guid hostId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default);

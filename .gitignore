@@ -13,6 +13,11 @@ ClarityLMS/
 # Ad-hoc logs written to the repo root by local runs of the api/web servers.
 *.log
 
+# Local flat NuGet source that scripts/restore-cache.ps1 mirrors the host cache
+# into, so container builds work with the registry unreachable. Regenerable, and
+# hundreds of MB, so it never belongs in git.
+.nuget-sources/
+
 # EF Core build artifacts.
 bin/
 obj/
