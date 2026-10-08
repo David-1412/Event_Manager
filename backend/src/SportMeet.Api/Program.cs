@@ -54,6 +54,12 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// Per-user ceiling on paste-to-event imports; see ImportRateLimit.
+builder.Services.AddRateLimiter(limiter => ImportRateLimit.Configure(
+    limiter,
+    builder.Configuration.GetSection(SportMeet.Application.Imports.ImportOptions.SectionName)
+        .Get<SportMeet.Application.Imports.ImportOptions>() ?? new()));
+
 // Firebase bearer authentication, installed only when Firebase:ProjectId is set (see
 // AddFirebaseJwtBearer). Unconfigured it is a no-op and every endpoint stays anonymous
 // behind the configured demo identity, exactly as before.
@@ -103,6 +109,8 @@ app.UseMiddleware<ExceptionMiddleware>();
 // Firebase:ProjectId configures it.
 app.UseAuthentication();
 app.UseAuthorization();
+// After authentication: the import limiter partitions by the verified user.
+app.UseRateLimiter();
 
 
 if (app.Environment.IsDevelopment())

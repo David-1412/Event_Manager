@@ -6,7 +6,7 @@ import { ThumbnailInput } from "@/components/event/thumbnail-input";
 import { VenueChips, VenuePicker } from "@/components/event/venue-picker";
 import type { VenueSelection } from "@/components/event/venue-picker";
 import type { CreateEventValues } from "@/features/create/create-event-schema";
-import type { Tag } from "@/types/events";
+import type { ImportFlagField, Tag } from "@/types/events";
 
 /**
  * The five groups of `/create` (spec §8), each a `fieldset` with a `legend` so
@@ -18,6 +18,8 @@ export interface CreateGroupsProps {
   values: CreateEventValues;
   venue: VenueSelection | null;
   errorFor: (name: keyof CreateEventValues) => string | undefined;
+  /** The "check this" marker for an imported field, if one is still active. */
+  flagFor: (field: ImportFlagField) => { text: string; onDismiss: () => void } | undefined;
   register: <K extends keyof CreateEventValues>(name: K) => object;
   /** Tags are a controlled array, not a registerable native input. */
   onTags: (tags: Tag[]) => void;
@@ -38,12 +40,12 @@ export function CreateEventGroups(props: CreateGroupsProps) {
   );
 }
 
-function WhatGroup({ values, errorFor, register, onTags, onThumbnail }: CreateGroupsProps) {
+function WhatGroup({ values, errorFor, flagFor, register, onTags, onThumbnail }: CreateGroupsProps) {
   return (
     <fieldset className="flex flex-col gap-4">
       <legend className="text-h3 text-fg">What</legend>
 
-      <Field label="Name" error={errorFor("title")} required>
+      <Field label="Name" error={errorFor("title")} flag={flagFor("title")} required>
         {({ id, describedBy, invalid }) => (
           <Input
             id={id}
@@ -81,13 +83,13 @@ function WhatGroup({ values, errorFor, register, onTags, onThumbnail }: CreateGr
 }
 
 
-function WhenGroup({ errorFor, register }: CreateGroupsProps) {
+function WhenGroup({ errorFor, flagFor, register }: CreateGroupsProps) {
   const pair = { sm: "grid-cols-1 gap-4 sm:grid-cols-3" };
   return (
     <fieldset className="flex flex-col gap-4">
       <legend className="text-h3 text-fg">When</legend>
       <div className={"grid " + pair.sm}>
-        <Field label="Date" error={errorFor("date")} required>
+        <Field label="Date" error={errorFor("date")} flag={flagFor("startAt")} required>
           {({ id, describedBy, invalid }) => (
             <Input
               id={id}
@@ -109,7 +111,7 @@ function WhenGroup({ errorFor, register }: CreateGroupsProps) {
             />
           )}
         </Field>
-        <Field label="End" error={errorFor("endTime")} required>
+        <Field label="End" error={errorFor("endTime")} flag={flagFor("endAt")} required>
           {({ id, describedBy, invalid }) => (
             <Input
               id={id}
@@ -125,14 +127,20 @@ function WhenGroup({ errorFor, register }: CreateGroupsProps) {
   );
 }
 
-function WhereGroup({ venue, errorFor, onVenue }: CreateGroupsProps) {
+function WhereGroup({ venue, errorFor, flagFor, onVenue }: CreateGroupsProps) {
   return (
     <fieldset className="flex flex-col gap-4">
       <legend className="text-h3 text-fg">Where</legend>
       {/* No venue-name input: the picker reverse-geocodes every pick and writes
           venueName/address itself, so a second box for the same value only ever
           invited a mismatch with the pin. */}
-      <Field label="Map location" hint="Drop the pin, move it as needed, then Select." error={errorFor("venueName")} required>
+      <Field
+        label="Map location"
+        hint="Drop the pin, move it as needed, then Select."
+        error={errorFor("venueName")}
+        flag={flagFor("venue")}
+        required
+      >
         {() =>
           venue ? (
             // The Field already shows the error once; don't pass it down or the
@@ -147,7 +155,7 @@ function WhereGroup({ venue, errorFor, onVenue }: CreateGroupsProps) {
   );
 }
 
-function WhoGroup({ errorFor, register }: CreateGroupsProps) {
+function WhoGroup({ errorFor, flagFor, register }: CreateGroupsProps) {
   return (
     <fieldset className="flex flex-col gap-4">
       <legend className="text-h3 text-fg">Who &amp; how much</legend>
@@ -156,6 +164,7 @@ function WhoGroup({ errorFor, register }: CreateGroupsProps) {
           label="Spots"
           hint="Includes you, so 4 means three other people."
           error={errorFor("maxParticipants")}
+          flag={flagFor("maxParticipants")}
           required
         >
           {({ id, describedBy, invalid }) => (

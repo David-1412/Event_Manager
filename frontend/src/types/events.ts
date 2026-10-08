@@ -215,12 +215,49 @@ export interface ExtractNowResponse {
 }
 
 
+/** Why the import flagged a field. The client maps each to a sentence. */
+export type ImportFlagReason = "missing" | "assumed" | "unclear" | "past" | "unconfirmed";
+
+/** Fields the import can flag; `venue` covers the name, address and map pin. */
+export type ImportFlagField = "title" | "startAt" | "endAt" | "venue" | "maxParticipants";
+
+export interface ImportFlag {
+  field: ImportFlagField;
+  reason: ImportFlagReason;
+}
+
+/** POST /api/imports/text. `payload` is the body the create form posts. `basic` means
+ *  the heuristic extractor answered, which cannot read a venue or address. */
+export interface ImportDraftResponse {
+  importId: string;
+  kind: "extracted" | "no_event";
+  confidence: number | null;
+  missingFields: string[];
+  payload: DraftPayload | null;
+  flags: ImportFlag[];
+  geocode: { locationType: string; needsConfirm: boolean } | null;
+  basic: boolean;
+  detail: string | null;
+}
+
+/** Which route a published event took, for the create-time metric. */
+export type CreatePath = "manual" | "import" | "draft";
+
 /** Problem Details (RFC 9457) minus the noise we don't render. */
 export interface ProblemDetails {
   status: number;
   title: string;
   detail?: string;
-  code?: "EventFull" | "ValidationError" | "NotFound" | "Unknown";
+  code?:
+    | "EventFull"
+    | "ValidationError"
+    | "NotFound"
+    | "ImportEmptyInput"
+    | "ImportTooLong"
+    | "ImportUrlNotSupported"
+    | "ImportBusy"
+    | "ImportRateLimited"
+    | "Unknown";
   errors?: Record<string, string[]>;
 }
 

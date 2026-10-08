@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { availabilityOf, countTextClass } from "@/lib/cn";
@@ -68,10 +71,11 @@ export function EventCard({
   // glyph slot collapses rather than falling back to a generic emoji.
   const icon = event.sportIcon;
   const tagLine = formatTagLine(event.tags);
-  // Resolve the stored /uploads path to the API origin, or null when there is no
-  // image - the card then renders exactly as before, with no image area at all.
-  const thumbnailSrc = mediaUrl(event.thumbnailUrl);
-
+  // Resolve the stored /uploads path to the API origin. null (no image, or a
+  // failed load) drops the poster to its placeholder in the SAME slot, so the
+  // card keeps its size and never jumps (no layout shift, no broken-image box).
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const posterSrc = thumbFailed ? null : mediaUrl(event.thumbnailUrl);
 
   if (kind === "past") {
     return (
@@ -101,13 +105,14 @@ export function EventCard({
   return (
     <article
       className={cn(
-        "press group relative rounded-md border border-border bg-surface p-4",
-        // With a thumbnail the card splits into a row at >=768px: content fills the
-        // space beside a fixed-width image, and the card padding comes off so the
-        // image can bleed to the edge. Without one it stays a plain padded column.
-        thumbnailSrc && "md:flex md:items-center md:gap-4 md:p-0",
+        // Poster-first card: a column on mobile (poster on top, details below),
+        // a row at >=768px (details left, poster a fixed-width full-height
+        // column on the right). `overflow-hidden` clips the poster's hover zoom
+        // and the placeholder art to the card's rounded corners, so the poster
+        // always bleeds flush to the edges instead of floating inside padding.
+        "press group relative flex flex-col overflow-hidden rounded-md border border-border bg-surface md:flex-row",
         // hover lifts by translation only — `scale` would reflow the grid (spec §7)
-        "hover:-translate-y-px hover:shadow-raise",
+        "hover:-translate-y-0.5 hover:shadow-raise transition-[transform,box-shadow] duration-200",
         kind === "mine" && "border-l-[3px] border-l-brand-600",
         kind === "cancelled" && "bg-surface-2 text-fg-muted hover:translate-y-0 hover:shadow-none",
         kind === "ended" && "bg-surface-2 hover:translate-y-0 hover:shadow-none",
@@ -117,7 +122,9 @@ export function EventCard({
       aria-label={`${event.title}, ${countLabel}`}
       onClick={onSelect ? () => onSelect(event.id) : undefined}
     >
-      <div className={cn("min-w-0", thumbnailSrc && "md:p-4")}>
+      {/* Details first so they read first; on mobile the poster is pushed to the
+          top with `order-first`, on desktop it sits on the right. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1 p-4">
       <div className="flex items-center gap-2 text-meta text-fg-muted">
         {icon && <span aria-hidden>{icon}</span>}
         <span className="truncate">{tagLine}</span>
@@ -127,7 +134,7 @@ export function EventCard({
       </div>
 
 
-      <h3 className="mt-2 text-h3 text-fg">
+      <h3 className="text-h3 text-fg">
         <Link
           href={`/events/${event.id}`}
           className="no-underline after:absolute after:inset-0 after:content-[''] focus:outline-hidden"
@@ -136,12 +143,15 @@ export function EventCard({
         </Link>
       </h3>
 
-      <p className="mt-1 text-meta text-fg-muted">{event.venueName}</p>
-      <p className="mt-0.5 text-meta text-fg-muted">{meta}</p>
+      <p className="text-meta text-fg-muted">{event.venueName}</p>
+      <p className="text-meta text-fg-muted">{meta}</p>
 
       <div
         className={cn(
-          "mt-4 flex flex-wrap items-center gap-2",
+          // mt-auto pins the count + actions to the bottom of the details
+          // column, so they sit bottom-left regardless of how tall the poster
+          // makes the card.
+          "mt-auto flex flex-wrap items-center gap-2 pt-4",
           kind === "joined" && "-mx-4 -mb-4 rounded-b-md border-t border-border bg-brand-tint px-4 py-3",
         )}
       >
@@ -164,23 +174,67 @@ export function EventCard({
         )}
       </div>
       </div>
-      {thumbnailSrc && (
-        // Host-uploaded thumbnail. Plain <img> (not next/image): the bytes come
-        // from the API origin, which isn't a configured image domain, and these
-        // are the host's own files. alt="" - the title names the event; the image
-        // is decoration. Below 768px it is a full-width banner bleeding to the
-        // card's top edge; at >=768px the card is a row and it becomes a fixed
-        // 160px column that fills the card height, vertically centred, rounded on
-        // the card's right corners.
+      <Poster src={posterSrc} icon={icon} failed={thumbFailed} onError={() => setThumbFailed(true)} />
+    </article>
+  );
+}
+
+/**
+ * The poster panel — the card's dominant visual. On mobile a full-width banner
+ * above the details; at >=768px a fixed 280px column (roughly a third of the
+ * card) that fills the card's full
+ * height on the right. `object-cover` crops any source ratio (portrait,
+ * landscape, square) to fill without stretching, and the group-hover scale(1.03)
+ * is clipped by the card's `overflow-hidden`. With no image (or a failed load)
+ * it keeps the exact same footprint and shows a placeholder, so the layout never
+ * shifts between the two states.
+ */
+function Poster({
+  src,
+  icon,
+  failed,
+  onError,
+}: {
+  src: string | null;
+  icon: string | null;
+  failed: boolean;
+  onError: () => void;
+}) {
+  return (
+    <div
+      aria-hidden
+      className="relative order-first h-48 w-full shrink-0 overflow-hidden bg-surface-2 md:order-none md:h-auto md:w-70"
+    >
+      {src ? (
+        // Plain <img>, not next/image: the bytes come from the API origin, which
+        // isn't a configured image domain, and these are the host's own files.
+        // alt="" - the title names the event; the image is decoration.
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={thumbnailSrc}
+          src={src}
           alt=""
-          aria-hidden
-          className="-mx-4 -mt-4 mb-3 h-32 w-[calc(100%+2rem)] rounded-t-md object-cover md:mx-0 md:mt-0 md:mb-0 md:h-auto md:w-40 md:self-stretch md:rounded-l-none md:rounded-r-md"
+          onError={onError}
+          className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
         />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          {failed ? (
+            <span className="text-h1 opacity-40" aria-hidden>
+              {"\u{1F5BC}"}
+            </span>
+          ) : (
+            <>
+              <span className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,var(--brand),transparent_60%)] opacity-15" />
+              {icon && (
+                <span className="relative text-4xl opacity-60" aria-hidden>
+                  {icon}
+                </span>
+              )}
+            </>
+          )}
+        </div>
       )}
-    </article>
+    </div>
   );
 }
 

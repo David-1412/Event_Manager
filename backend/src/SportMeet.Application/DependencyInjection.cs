@@ -23,6 +23,9 @@ public static class DependencyInjection
         // the reader that satisfies it is an Infrastructure singleton registered there —
         // which is the direction the dependency rule requires.
         services.AddScoped<Ingestion.IEmailProcessor, Ingestion.EmailProcessor>();
+
+        // Paste-to-event import: extract, geocode, flag, record.
+        services.AddScoped<Imports.IImportService, Imports.ImportService>();
         return services;
     }
 }

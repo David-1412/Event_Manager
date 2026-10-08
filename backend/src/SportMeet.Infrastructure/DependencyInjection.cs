@@ -59,23 +59,49 @@ public static class DependencyInjection
         // provider is ever rebuilt (tests, hosted reuse) after configuration changes.
         services.AddSingleton<Ingestion.HeuristicEventExtractor>();
         services.AddSingleton<Ingestion.LlmEventExtractor>();
+        services.AddSingleton<Ingestion.ClaudeEventExtractor>();
         services.AddSingleton<SportMeet.Application.Ingestion.IEventExtractor>(sp =>
         {
-            var openAi = sp.GetRequiredService<IOptions<OpenAiOptions>>().Value;
             var heuristic = sp.GetRequiredService<Ingestion.HeuristicEventExtractor>();
-            if (!openAi.IsConfigured) return heuristic;
-
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(DependencyInjection));
+
+            // Provider priority: OpenAI, then Claude, then the heuristic. Both LLM providers
+            // keep the heuristic as their internal fallback, so a dead endpoint still
+            // degrades; this factory only decides which provider is primary. The check is
+            // `IsConfigured` (key + model + well-formed base URL), not key presence alone,
+            // so a half-filled section cannot select a provider that would fail every call.
+            var openAi = sp.GetRequiredService<IOptions<OpenAiOptions>>().Value;
+            if (openAi.IsConfigured)
+            {
+                logger.LogInformation(
+                    "Extraction: using {Model} (prompt {Prompt}); heuristic remains the fallback",
+                    openAi.Model, openAi.PromptVersion);
+                return sp.GetRequiredService<Ingestion.LlmEventExtractor>();
+            }
+
+            var claude = sp.GetRequiredService<IOptions<ClaudeOptions>>().Value;
+            if (claude.IsConfigured)
+            {
+                logger.LogInformation(
+                    "Extraction: OpenAI not configured, using {Model} (prompt {Prompt}); "
+                    + "heuristic remains the fallback",
+                    claude.Model, claude.PromptVersion);
+                return sp.GetRequiredService<Ingestion.ClaudeEventExtractor>();
+            }
+
+            // Neither key present: the heuristic answers alone. Logged at Information so a
+            // deployed container that expected an LLM is not silently heuristic-only.
             logger.LogInformation(
-                "Extraction: using {Model} (prompt {Prompt}); heuristic remains the fallback",
-                openAi.Model, openAi.PromptVersion);
-            return sp.GetRequiredService<Ingestion.LlmEventExtractor>();
+                "Extraction: no LLM key configured (OpenAI or Claude); using {Model}",
+                heuristic.Model);
+            return heuristic;
         });
 
         // Bound here for the same reason as IngestionOptions: IConfiguration belongs to
         // this layer. ApiKey must stay empty in appsettings.json — user-secrets in
         // Development, environment or Key Vault in deployment.
         services.Configure<OpenAiOptions>(config.GetSection(OpenAiOptions.SectionName));
+        services.Configure<ClaudeOptions>(config.GetSection(ClaudeOptions.SectionName));
 
         // Named client so the extractor gets its own timeout and handler pool: a shared
         // default client would inherit whatever timeout the next feature configures, and a
@@ -87,6 +113,17 @@ public static class DependencyInjection
         services.AddHttpClient("openai", client =>
         {
             client.Timeout = callTimeout + TimeSpan.FromSeconds(12);
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        });
+
+        // Same shape as the OpenAI client; a separate named client so the two providers keep
+        // independent handler pools and timeouts. Anthropic needs no default auth header -
+        // the extractor sets x-api-key and anthropic-version per request.
+        var claudeTimeout = TimeSpan.FromSeconds(Math.Max(
+            config.GetValue($"{ClaudeOptions.SectionName}:TimeoutSeconds", 30), 5));
+        services.AddHttpClient("claude", client =>
+        {
+            client.Timeout = claudeTimeout + TimeSpan.FromSeconds(12);
             client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         });
 
@@ -118,6 +155,18 @@ public static class DependencyInjection
             client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         });
         services.AddScoped<DemoSeeder>();
+
+        // --- Paste-to-event import ---------------------------------------
+        services.Configure<SportMeet.Application.Imports.ImportOptions>(
+            config.GetSection(SportMeet.Application.Imports.ImportOptions.SectionName));
+        services.Configure<Imports.GoogleGeocodingOptions>(
+            config.GetSection(Imports.GoogleGeocodingOptions.SectionName));
+        // RemoveAllLoggers: the geocoding request URL carries the API key, and the default
+        // HttpClient logging writes every URL at Information.
+        services.AddHttpClient(Imports.GoogleGeocoder.ClientName, client => client.Timeout = TimeSpan.FromSeconds(4))
+            .RemoveAllLoggers();
+        services.AddScoped<SportMeet.Application.Imports.IGeocoder, Imports.GoogleGeocoder>();
+        services.AddScoped<SportMeet.Application.Imports.IImportRepository, Persistence.EfImportRepository>();
 
         // --- Graph mail transport -----------------------------------------
         // Bound here rather than in Application for the same reason as IngestionOptions:

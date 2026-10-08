@@ -14,13 +14,20 @@ import { useAuth } from "@/lib/auth/auth-provider";
 import { updateDraft, createManualDraft, getDraft, approveDraft } from "@/lib/drafts";
 import { refreshDraftQueue } from "@/features/create/use-drafts";
 import { payloadToFormValues, payloadToVenue } from "@/features/create/use-draft-to-form";
+import { reportPublish } from "@/features/create/import-api";
+import {
+  activeFlags,
+  flagText,
+  raiseFlags,
+  type RaisedFlags,
+} from "@/features/create/field-flags";
 import {
   clearLocalDraftEdit,
   loadLocalDraftEdit,
   parseLocalDraftEdit,
   saveLocalDraftEdit,
 } from "@/features/create/draft-autosave";
-import { DraftsPastePanel } from "@/components/event/drafts-paste-panel";
+import { ImportTextPanel } from "@/components/event/import-text-panel";
 import { DraftsSection, DraftBanner } from "@/components/event/drafts-section";
 import { ConfirmDialog } from "@/components/ui/dialog";
 
@@ -38,7 +45,12 @@ import { fixtureAddDraft, fixtureSaveDraft } from "@/lib/fixtures";
 import { CreateEventGroups } from "@/components/event/create-event-groups";
 import { CreateEventFooter } from "@/components/event/create-event-footer";
 import { previewOf } from "@/components/event/create-event-preview";
-import type { DraftPayload, EventDraft, ExtractNowResponse } from "@/types/events";
+import type {
+  DraftPayload,
+  EventDraft,
+  ImportDraftResponse,
+  ImportFlagField,
+} from "@/types/events";
 
 /**
  * `/create` (spec §8): five groups - What / When / Where / Who and how much /
@@ -79,6 +91,18 @@ export function CreateEventView() {
   // user becomes the event's host. Missing fields and confidence are review
   // guidance, not blockers, so the form is always editable and saveable.
   const [draftId, setDraftId] = useState<string | null>(null);
+
+  // Paste-to-fill. The import id ties the published event back to what was proposed (for
+  // the accuracy measurement); the raised flags are the "check this" markers, which clear
+  // themselves when their field is edited or dismissed.
+  const [importId, setImportId] = useState<string | null>(null);
+  const [raised, setRaised] = useState<RaisedFlags>({});
+  const [dismissed, setDismissed] = useState<ReadonlySet<ImportFlagField>>(new Set());
+  // When the person opened Create Event: the start of the number this feature is judged by.
+  const openedAt = useRef<number | null>(null);
+  useEffect(() => {
+    openedAt.current = Date.now();
+  }, []);
   const [draftMissing, setDraftMissing] = useState<string[]>([]);
   const [draftConfidence, setDraftConfidence] = useState<number | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -256,26 +280,35 @@ export function CreateEventView() {
     form.setValue("longitude", next?.longitude ?? 0);
   }
 
-  // Fill the form from a dry-run extraction. Nothing was persisted (the paste
-  // panel runs the extractor as a dry run), so there is no draft id to adopt:
-  // this stays a plain create-event form, not a draft review — the "Editing
-  // draft" banner stays hidden and publishing goes through the normal
-  // POST /api/events path. The extracted values simply populate the fields.
-  function applyExtractedDraft(result: ExtractNowResponse) {
+  // Fill the form from an import. The import is recorded server-side but is not a draft,
+  // so this stays a plain create-event form: the "Editing draft" banner stays hidden and
+  // publishing goes through the normal POST /api/events path.
+  function applyImport(result: ImportDraftResponse) {
     if (!result.payload) return;
     const nextValues = payloadToFormValues(result.payload);
     const nextVenue = payloadToVenue(result.payload);
     form.reset(nextValues);
     setVenue(nextVenue);
     latestRef.current = { values: nextValues, venue: nextVenue };
-    setDraftMissing(result.missingFields ?? []);
-    setDraftConfidence(result.confidence);
+    setImportId(result.importId);
+    setRaised(raiseFlags(result.flags, nextValues, nextVenue));
+    setDismissed(new Set());
     setServerErrors({});
     setSubmitFailed(false);
     setSubmitErrors([]);
     setIsDirty(false);
   }
 
+  const active = activeFlags(raised, dismissed, values, venue);
+  const flagFor = (field: ImportFlagField) => {
+    const reason = active[field];
+    return reason
+      ? {
+          text: flagText(reason),
+          onDismiss: () => setDismissed((prev) => new Set(prev).add(field)),
+        }
+      : undefined;
+  };
 
   async function onSubmit(draft: CreateEventValues) {
     setSubmitFailed(false);
@@ -318,6 +351,12 @@ export function CreateEventView() {
           : await postEvent(payload);
       // The event is published; navigating away is no longer an unsaved-draft exit.
       publishedRef.current = true;
+      reportPublish({
+        eventId: created.id,
+        durationMs: Date.now() - (openedAt.current ?? Date.now()),
+        path: draftId ? "draft" : importId ? "import" : "manual",
+        importId,
+      });
       if (draftId) {
         clearLocalDraftEdit(draftId);
         refreshDraftQueue(uid);
@@ -359,6 +398,7 @@ export function CreateEventView() {
     >
       <div className="flex min-w-0 flex-col gap-8">
         <h1 className="text-h1 text-fg">Create an event</h1>
+        <ImportTextPanel onImported={applyImport} />
         {submitFailed && (
           <div
             role="alert"
@@ -386,6 +426,7 @@ export function CreateEventView() {
           values={values}
           venue={venue}
           errorFor={errorFor}
+          flagFor={flagFor}
           register={form.register}
           onTags={(tags) => form.setValue("tags", tags, { shouldValidate: true })}
           onVenue={applyVenue}
@@ -393,16 +434,14 @@ export function CreateEventView() {
         />
       </div>
 
-      {/* Right rail: the live preview on top, and the paste-to-extract panel
-          beneath it. The panel fills the form on the left (a dry run that saves
-          nothing), so it belongs beside the preview the fill updates. */}
+      {/* Right rail: the live preview. The paste panel is at the top of the form
+          instead, so it is visible on a phone too. */}
       <aside className="hidden lg:block">
         <div className="sticky top-20 flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <p className="text-meta text-fg-muted">Live preview</p>
             <EventCard event={previewOf(values, venue)} />
           </div>
-          <DraftsPastePanel onExtracted={applyExtractedDraft} />
         </div>
       </aside>
 

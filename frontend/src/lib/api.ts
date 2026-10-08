@@ -63,6 +63,8 @@ interface RequestOptions {
    * `token: null` to force an anonymous call. Ignored while fixtures are active.
    */
   token?: string | null;
+  /** Override the default 10 s ceiling for a call that is expected to be slow. */
+  timeoutMs?: number;
 }
 
 /**
@@ -73,7 +75,7 @@ interface RequestOptions {
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? TIMEOUT_MS);
   const signal = options.signal
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SportMeet.Application.Ingestion;
@@ -105,14 +106,38 @@ public sealed record LlmExtractionResponse
         if (string.IsNullOrWhiteSpace(json))
             throw new FormatException("Empty completion content");
 
-        var parsed = JsonSerializer.Deserialize<LlmExtractionResponse>(json, MapOptions)
-            ?? throw new FormatException("Completion content was not a JSON object");
+        // A model's reply is not machine-emitted JSON: a raw newline inside address/description,
+        // or a reply cut off mid-string, makes a strict parser reject text whose leading fields
+        // are all correct (the reader dies at the bad byte with "reached end of data"). Repair
+        // first so a good extraction is not discarded for a formatting defect, then parse.
+        var candidate = LlmJson.Repair(json)
+            ?? throw new FormatException(
+                $"Completion content was not parsable JSON, even after repair. raw={Truncate(json, 4000)}");
+
+        LlmExtractionResponse? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<LlmExtractionResponse>(candidate, MapOptions);
+        }
+        catch (JsonException ex)
+        {
+            // Embed the raw text so a diagnosis does not depend on a second log line: the
+            // exception surfaces in the extractor's fallback warning verbatim.
+            throw new FormatException(
+                $"{ex.Message} | raw={Truncate(json, 4000)}", ex);
+        }
+
+        if (parsed is null)
+            throw new FormatException("Completion content was not a JSON object");
 
         // Explicit false only. A response that omits isEvent has not declined, and treating
         // an absent discriminator as a rejection is how a whole inbox quietly produces
         // nothing while every log line stays green.
         return parsed.IsEvent == false ? null : parsed;
     }
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value[..max] + "…";
 
     /// <summary>Project onto the domain proposal, recording every field that had to be
     /// discarded on the way and why.
@@ -121,12 +146,14 @@ public sealed record LlmExtractionResponse
     /// start, a capacity of 500 or a zone the machine does not recognise are all cases where
     /// the model was confident and wrong, and the reviewer needs to see that the email said
     /// <em>something</em> about that field instead of an unexplained blank.</summary>
-    public ExtractedEvent ToExtractedEvent(string promptVersion, string model, string rawJson)
+    public ExtractedEvent ToExtractedEvent(
+        string promptVersion, string model, string rawJson, string? defaultTimezone = null)
     {
         var dropped = new List<string>();
 
-        var start = ParseInstant(StartAt, "startAt", dropped);
-        var end = ParseInstant(EndAt, "endAt", dropped);
+        var zone = ResolveZone(Timezone, dropped) ?? ResolveZone(defaultTimezone, new List<string>());
+        var start = AnchorInstant(ParseInstant(StartAt, "startAt", dropped), zone);
+        var end = AnchorInstant(ParseInstant(EndAt, "endAt", dropped), zone);
         if (start is not null && end is not null && end <= start)
         {
             // Keep the start — it is the field the reviewer cannot reconstruct from
@@ -134,8 +161,6 @@ public sealed record LlmExtractionResponse
             dropped.Add($"endAt ({EndAt}) is not after startAt");
             end = null;
         }
-
-        var zone = ResolveZone(Timezone, dropped);
 
         // Local, not a reassignment of MaxParticipants: the property is init-only, and
         // mutating a parsed response mid-projection would leave the two disagreeing for
@@ -246,6 +271,34 @@ public sealed record LlmExtractionResponse
 
         dropped.Add($"{field} ({value.Trim()}) could not be read as a date and time");
         return null;
+    }
+
+    /// <summary>
+    /// Re-anchor an instant whose <em>wall-clock</em> reading is right but whose <em>offset</em>
+    /// is not the event's zone.
+    ///
+    /// <para>The model is told to emit an RFC3339 instant with an offset, but a message that
+    /// states only a local wall-clock time ("7:30 PM", no offset) leaves it no offset to derive,
+    /// so it defaults to <c>+00:00</c>. The digits are the local time and the zone is the event's,
+    /// so the instant is off by exactly that zone's offset — a 7:30pm Melbourne night arrives as
+    /// <c>19:30+00:00</c>, which renders as 6:30am the next day once the UI shows it in Melbourne.
+    /// Reading the local time back against the zone recovers the instant the message described.</para>
+    ///
+    /// <para>Only the <c>+00:00</c>/<c>Z</c> sentinel is treated as a placeholder. A genuine,
+    /// non-zero offset the model supplies is trusted verbatim: it is either a real offset from the
+    /// text or one the model derived, and re-deriving it from the zone would fight the message.
+    /// A null zone (no stated or default zone) leaves the instant untouched.</para>
+    /// </summary>
+    private static DateTimeOffset? AnchorInstant(DateTimeOffset? instant, string? zoneId)
+    {
+        if (instant is not { } at || string.IsNullOrEmpty(zoneId)) return instant;
+        if (at.Offset != TimeSpan.Zero) return at; // an explicit non-UTC offset is trusted as-is
+        if (!TimeZoneInfo.TryFindSystemTimeZoneById(zoneId, out var zone)) return at;
+
+        // The UTC instant carries the local wall-clock digits (offset was zero), so read them
+        // back against the event's zone and convert to a true UTC instant.
+        var local = new DateTime(at.Year, at.Month, at.Day, at.Hour, at.Minute, at.Second);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, zone), TimeSpan.Zero);
     }
 
     /// <summary>Validate rather than trust: an invented zone would shift every instant in

@@ -54,12 +54,14 @@ namespace SportMeet.Infrastructure.Ingestion;
 public sealed class LlmEventExtractor(
     IHttpClientFactory httpFactory,
     IOptions<OpenAiOptions> options,
+    IOptions<Application.Ingestion.IngestionOptions> ingestionOptions,
     HeuristicEventExtractor fallback,
     ILogger<LlmEventExtractor> logger) : IEventExtractor
 {
     private const string HttpTemplateName = "openai";
 
     private readonly OpenAiOptions _options = options.Value;
+    private readonly string _defaultTimezone = ingestionOptions.Value.DefaultTimezone;
 
     public string PromptVersion => _options.PromptVersion;
 
@@ -101,7 +103,7 @@ public sealed class LlmEventExtractor(
                 return null;
             }
 
-            var proposal = parsed.ToExtractedEvent(_options.PromptVersion, _options.Model, raw);
+            var proposal = parsed.ToExtractedEvent(_options.PromptVersion, _options.Model, raw, _defaultTimezone);
             logger.LogDebug(
                 "LLM extraction ok: confidence={Confidence} missingCount={MissingCount}",
                 proposal.Confidence, proposal.MissingFields.Count);

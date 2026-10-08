@@ -30,6 +30,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<IngestedEmail> IngestedEmails => Set<IngestedEmail>();
     public DbSet<EventDraft> EventDrafts => Set<EventDraft>();
 
+    // Paste-to-event import: what was proposed, what was published, how long it took.
+    public DbSet<EventImport> EventImports => Set<EventImport>();
+    public DbSet<EventPublishMetric> EventPublishMetrics => Set<EventPublishMetric>();
+
 
     /// <summary>Read-only projection over v_event_feed. Never in SaveChanges -
     /// EF treats keyless entity types as read-only, and no DbSet of it is exposed

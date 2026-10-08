@@ -73,6 +73,10 @@ services:
       # to turn per-user draft ownership on; unset, the API keeps the configured
       # demo identity and the draft endpoints honestly answer 401.
       Firebase__ProjectId: ${FIREBASE_PROJECT_ID:-}
+      # Server-side geocoding for paste-to-event import. Use a key restricted to the
+      # Geocoding API, not the browser Maps key. Unset, imports still work and the
+      # venue is left for the user to pin on the map.
+      Google__GeocodingApiKey: ${GOOGLE_GEOCODING_API_KEY:-}
       # Graph mailbox polling. Everything stays empty (and inert) unless filled;
       # MailboxOwner is the user polled invitations become private drafts for.
       Ingestion__Enabled: ${INGESTION_ENABLED:-false}
@@ -82,8 +86,12 @@ services:
       AzureAd__ClientId: ${AZUREAD_CLIENT_ID:-}
       AzureAd__ClientSecret: ${AZUREAD_CLIENT_SECRET:-}
       AzureAd__MailboxAddress: ${AZUREAD_MAILBOX_ADDRESS:-}
-      # LLM extraction; unset, the deterministic heuristic extractor is used.
+      # LLM extraction; OpenAI is preferred. If OpenAi__ApiKey is unset, Claude is used;
+      # if both are unset, the deterministic heuristic extractor is used.
       OpenAi__ApiKey: ${OPENAI_API_KEY:-}
+      Claude__ApiKey: ${CLAUDE_API_KEY:-}
+      # Only needed for a key that is not scoped to one workspace (e.g. an sk-usr- user key).
+      Claude__WorkspaceId: ${CLAUDE_WORKSPACE_ID:-}
     # Runtime trust for TLS-intercepting corporate proxies: without it the API
     # cannot fetch Firebase's signing keys (PartialChain) and every token 401s.
     # .NET on Linux loads every PEM in /etc/ssl/certs.
