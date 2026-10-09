@@ -29,7 +29,7 @@ import {
 } from "@/features/create/draft-autosave";
 import { ImportTextPanel } from "@/components/event/import-text-panel";
 import { DraftsSection, DraftBanner } from "@/components/event/drafts-section";
-import { ConfirmDialog } from "@/components/ui/dialog";
+import { ConfirmDialog, Dialog } from "@/components/ui/dialog";
 
 
 import { signInReturnTo } from "@/lib/auth/types";
@@ -60,7 +60,7 @@ import type {
  */
 export function CreateEventView() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const uid = user?.uid ?? null;
 
   const [venue, setVenue] = useState<VenueSelection | null>(null);
@@ -109,6 +109,16 @@ export function CreateEventView() {
   const [saving, setSaving] = useState(false);
   const [promptExit, setPromptExit] = useState(false);
   const exitPathRef = useRef<string | null>(null);
+  // A non-admin's public event needs an administrator's approval before it reaches
+  // Browse, so submitting it is a decision with a consequence the user has to see
+  // coming. This holds the fully-validated payload of the submit that triggered the
+  // confirmation, and null means no confirmation is open. Held rather than
+  // recomputed on confirm: the form can be edited while the dialog is up, and
+  // silently publishing a different event than the one the user approved would be
+  // worse than the dialog existing at all.
+  const [pendingPublicSubmit, setPendingPublicSubmit] = useState<
+    ReturnType<typeof toCreateEventPayload> | null
+  >(null);
   const publishedRef = useRef(false);
   const draftRef = useRef<string | null>(null);
   const hydratedRef = useRef(false);
@@ -342,6 +352,27 @@ export function CreateEventView() {
       return;
     }
     const payload = toCreateEventPayload({ ...parsed.data, ...venue });
+    // The approval gate. A public event from anyone who is not an administrator
+    // lands in the review queue rather than on Browse, and that is a surprise worth
+    // stopping for - so hold the submit and say what will happen. Admins and private
+    // events publish immediately and skip the dialog entirely, because for them
+    // Create Event means exactly what the button says.
+    //
+    // The server decides the real status; this only decides whether to ask first.
+    // `isAdmin` comes from GET /api/auth/me, so a stale claim cannot skip the dialog
+    // and get a PendingReview event created behind the user's back - the toast below
+    // reads the status the server actually returned.
+    if (payload.visibility !== "Private" && !isAdmin) {
+      setPendingPublicSubmit(payload);
+      return;
+    }
+    await publishEvent(payload);
+  }
+
+  /** The write itself, reached once the user is entitled to publish straight away
+   *  or has confirmed the submission through the approval dialog. */
+  async function publishEvent(payload: ReturnType<typeof toCreateEventPayload>) {
+    setPendingPublicSubmit(null);
     try {
       // A draft publishes through approve — the draft closes, the approving user
       // becomes the host, and it leaves the queue; a plain create posts normally.
@@ -362,7 +393,16 @@ export function CreateEventView() {
         refreshDraftQueue(uid);
       }
       setIsDirty(false);
-      toast("Event created", "success");
+      // Say what actually happened. An event held for review is not "created" in the
+      // sense the user cares about - it is waiting - and claiming otherwise would
+      // send them looking for it on Browse. Fixtures mode returns no status, so it
+      // keeps the plain wording.
+      toast(
+        created.status === "PendingReview"
+          ? "Event submitted for approval. You can track its status in My Events."
+          : "Event created",
+        "success",
+      );
 
       router.push(`/events/${created.id}`);
     } catch (error) {
@@ -440,7 +480,7 @@ export function CreateEventView() {
         <div className="sticky top-20 flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <p className="text-meta text-fg-muted">Live preview</p>
-            <EventCard event={previewOf(values, venue)} />
+            <EventCard event={previewOf(values, venue)} hideImage />
           </div>
         </div>
       </aside>
@@ -459,6 +499,46 @@ export function CreateEventView() {
         <DraftsSection onOpenDraft={selectPendingDraft} />
       </div>
 
+
+      {/* Public events need an administrator's approval before they reach Browse, so
+          a non-admin's public submit stops here. Not a ConfirmDialog: that one is
+          destructive by construction ("Keep it" against a red button), and this is
+          the opposite - an ordinary step, with nothing being thrown away. Cancel
+          closes it and leaves the form exactly as it was, so the user can switch to
+          Private or fix something instead. */}
+      <Dialog
+        open={pendingPublicSubmit !== null}
+        onClose={() => setPendingPublicSubmit(null)}
+        labelledBy="public-approval-title"
+      >
+        <h2 id="public-approval-title" className="text-h3 text-fg">
+          Public events require approval
+        </h2>
+        <p className="mt-2 text-body text-fg-muted">
+          Public events are reviewed before appearing on Browse. Your event will be
+          submitted for approval and will remain hidden until approved by an
+          administrator. You can track its status from My Events.
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setPendingPublicSubmit(null)}
+            className="press h-11 rounded-md border border-border bg-surface px-5 text-body font-medium text-fg hover:bg-surface-2"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-autofocus
+            onClick={() => {
+              if (pendingPublicSubmit) void publishEvent(pendingPublicSubmit);
+            }}
+            className="press h-11 rounded-md bg-brand-600 px-5 text-body font-medium text-white"
+          >
+            Submit for Approval
+          </button>
+        </div>
+      </Dialog>
 
       <ConfirmDialog
         open={promptExit}
@@ -524,13 +604,19 @@ function toCamel(key: string): string {
 
 async function postEvent(
   payload: ReturnType<typeof toCreateEventPayload>,
-): Promise<{ id: string }> {
+): Promise<{ id: string; status?: string }> {
   if (usingFixtures) {
     // Offline we hand back a fixture the detail page can actually resolve,
     // rather than pretending a write happened.
     return { id: "evt-badminton-monday" };
   }
-  return request<{ id: string }>("/api/events", { method: "POST", body: payload });
+  // The full detail comes back either way; only these two fields are read. `status`
+  // is what lets the success message tell "created" from "submitted for approval"
+  // using the server's decision rather than the client's guess.
+  return request<{ id: string; status?: string }>("/api/events", {
+    method: "POST",
+    body: payload,
+  });
 }
 
 /**

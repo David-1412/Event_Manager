@@ -131,6 +131,113 @@ internal static class EventViewSql
         JOIN sportsmeet.users u ON u.id = e.host_id;
         """;
 
+    /// <summary>The shape as of Add_Event_Thumbnail (thumbnail_url last), plus the
+    /// host's role appended after it. Used only by this migration's Up(): a view's
+    /// SELECT is parsed when the view is created, so a column this string references
+    /// must already exist, and a shared constant would push it into the earlier
+    /// migrations that replay <see cref="Definition"/>. Kept here rather than inside
+    /// the migration file so every view shape stays in one place, which is what this
+    /// class exists for.
+    ///
+    /// The column order is the Add_Event_Thumbnail shape's, untouched, with
+    /// host_role appended: the migration drops and recreates the view, so order is
+    /// free here, but keeping it identical to the previous shape (plus one) is what
+    /// makes the two diffable by eye.</summary>
+    public const string AddEventReviewWorkflowView = """
+        CREATE OR REPLACE VIEW sportsmeet.v_event_feed AS
+        SELECT
+            e.id,
+            e.host_id,
+            e.title,
+            e.description,
+            e.sport_id,
+            e.venue_name,
+            e.address,
+            e.place_id,
+            e.lat,
+            e.lng,
+            e.timezone,
+            e.start_at,
+            e.end_at,
+            e.max_participants,
+            e.skill_level,
+            e.cost,
+            e.status,
+            e.cancelled_at,
+            e.created_at,
+            e.updated_at,
+            (SELECT COUNT(*)::int FROM sportsmeet.event_participants p WHERE p.event_id = e.id)
+                AS current_participants,
+            s.name AS sport_name,
+            s.slug AS sport_slug,
+            s.icon AS sport_icon,
+            u.name AS host_name,
+            u.photo_url AS host_photo_url,
+            (SELECT string_agg(t.name::text, ',' ORDER BY t.name)
+               FROM sportsmeet.event_tags et
+               JOIN sportsmeet.tags t ON t.id = et.tag_id
+              WHERE et.event_id = e.id) AS tags,
+            e.visibility,
+            (SELECT COUNT(*)::int FROM sportsmeet.event_interests i WHERE i.event_id = e.id)
+                AS interested_count,
+            e.thumbnail_url,
+            u.role AS host_role
+        FROM sportsmeet.events e
+        LEFT JOIN sportsmeet.sports s ON s.id = e.sport_id
+        JOIN sportsmeet.users u ON u.id = e.host_id;
+        """;
+
+    /// <summary>The shape as of Add_Event_Rejection_Reason: the review-workflow shape
+    /// plus the rejection reason the creator reads on their own event, and the browse
+    /// index widened to the two live statuses. Used only by that migration's Up(), for
+    /// the same reason <see cref="AddEventReviewWorkflowView"/> exists - the view's
+    /// SELECT is parsed when it is created, and an earlier migration must not reference
+    /// a column that is added later.</summary>
+    public const string AddEventRejectionReasonView = """
+        CREATE OR REPLACE VIEW sportsmeet.v_event_feed AS
+        SELECT
+            e.id,
+            e.host_id,
+            e.title,
+            e.description,
+            e.sport_id,
+            e.venue_name,
+            e.address,
+            e.place_id,
+            e.lat,
+            e.lng,
+            e.timezone,
+            e.start_at,
+            e.end_at,
+            e.max_participants,
+            e.skill_level,
+            e.cost,
+            e.status,
+            e.cancelled_at,
+            e.rejection_reason,
+            e.created_at,
+            e.updated_at,
+            (SELECT COUNT(*)::int FROM sportsmeet.event_participants p WHERE p.event_id = e.id)
+                AS current_participants,
+            s.name AS sport_name,
+            s.slug AS sport_slug,
+            s.icon AS sport_icon,
+            u.name AS host_name,
+            u.photo_url AS host_photo_url,
+            (SELECT string_agg(t.name::text, ',' ORDER BY t.name)
+               FROM sportsmeet.event_tags et
+               JOIN sportsmeet.tags t ON t.id = et.tag_id
+              WHERE et.event_id = e.id) AS tags,
+            e.visibility,
+            (SELECT COUNT(*)::int FROM sportsmeet.event_interests i WHERE i.event_id = e.id)
+                AS interested_count,
+            e.thumbnail_url,
+            u.role AS host_role
+        FROM sportsmeet.events e
+        LEFT JOIN sportsmeet.sports s ON s.id = e.sport_id
+        JOIN sportsmeet.users u ON u.id = e.host_id;
+        """;
+
     /// <summary>The shape Add_Tags replaces, used only by its Down(): inner join on
     /// sports, no tag aggregate. Kept here so a rollback does not have to hand-write
     /// SQL inside a migration body.</summary>

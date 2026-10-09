@@ -34,6 +34,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<EventImport> EventImports => Set<EventImport>();
     public DbSet<EventPublishMetric> EventPublishMetrics => Set<EventPublishMetric>();
 
+    // Append-only trail of privilege changes. Deliberately not reachable from any
+    // event or draft query: an audit line is not data the product filters over.
+    public DbSet<UserRoleAudit> UserRoleAudit => Set<UserRoleAudit>();
+
 
     /// <summary>Read-only projection over v_event_feed. Never in SaveChanges -
     /// EF treats keyless entity types as read-only, and no DbSet of it is exposed

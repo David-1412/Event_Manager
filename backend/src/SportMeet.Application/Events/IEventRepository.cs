@@ -17,7 +17,12 @@ public sealed record FeedRow(
     string HostName,
     string? HostPhotoUrl,
     int ParticipantCount,
-    int InterestedCount);
+    int InterestedCount,
+    /// <summary>The host's role. Carried through the read path rather than looked
+    /// up again so <c>GET /api/events/{id}</c> can decide in one round-trip whether
+    /// the caller may see an event that is not published yet - an administrator
+    /// reviews pending events through that very endpoint.</summary>
+    UserRole HostRole = UserRole.Member);
 
 /// <summary>A tag plus how many currently-visible events carry it. Lives here
 /// rather than in Domain because "visible" is a query concern, not a property of
@@ -113,6 +118,19 @@ public interface IEventRepository
 
     /// <summary>Changes status only for the owning host, expected current status, and not-yet-started events.</summary>
     Task<bool> TrySetStatusAsync(Guid eventId, Guid hostId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default);
+
+    /// <summary>The review queue: every event waiting for an administrator's decision,
+    /// oldest submission first. Not host-scoped - that is the point - so the caller is
+    /// expected to have been checked for the admin role before asking.</summary>
+    Task<List<FeedRow>> ListPendingReviewAsync(CancellationToken ct = default);
+
+    /// <summary>The review decision: moves an event out of PendingReview (or, on a
+    /// resubmission, back out of Rejected) to <paramref name="status"/>, guarded on the
+    /// status it was in when the admin opened it so two reviewers cannot both decide.
+    /// Unlike the host's cancel/reopen it is deliberately <em>not</em> bounded by
+    /// start_at - a pending event that has already started still deserves a decision,
+    /// even if approving it is a no-op for the feed.</summary>
+    Task<bool> TrySetReviewStatusAsync(Guid eventId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default);
 
     /// <summary>Removes the participant row; no-op when absent. Returns true when
     /// the event row itself was cancelled by this call (the host left).</summary>

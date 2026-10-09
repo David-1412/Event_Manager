@@ -151,6 +151,33 @@ public class EventsController(IEventService events) : ControllerBase
     public async Task<ActionResult<InterestResultDto>> RemoveInterest(Guid id, CancellationToken ct)
         => Ok(new InterestResultDto(await events.ToggleInterestAsync(id, ct)));
 
+    /// <summary>
+    /// The admin review queue: every public event awaiting a decision. Admin-only -
+    /// a member gets 404 rather than 403, because a queue of other people's
+    /// submissions is not a resource its existence should confirm to them.
+    /// </summary>
+    [HttpGet("reviews/pending")]
+    [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<EventListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<System.Collections.Generic.IReadOnlyList<EventListItemDto>>> PendingReviews(CancellationToken ct)
+        => Ok(await events.ListPendingReviewAsync(ct));
+
+    /// <summary>Approve a submitted event. It enters the public feed immediately,
+    /// which is what the creator is waiting for.</summary>
+    [HttpPost("{id:guid}/approve")]
+    [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<EventDetailDto>> Approve(Guid id, CancellationToken ct)
+        => Ok(await events.ApproveAsync(id, ct));
+
+    /// <summary>Reject a submitted event. It stays with its creator, who can edit and
+    /// resubmit it; it never reaches the public feed.</summary>
+    [HttpPost("{id:guid}/reject")]
+    [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<EventDetailDto>> Reject(Guid id, CancellationToken ct)
+        => Ok(await events.RejectAsync(id, ct));
+
     [HttpPatch("{id:guid}/cancel")]
     [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

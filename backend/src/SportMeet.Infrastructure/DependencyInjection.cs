@@ -33,6 +33,11 @@ public static class DependencyInjection
 
         services.AddScoped<IEventRepository, EventRepository>();
 
+        // Administrator user management. Paired with the service registered in
+        // AddApplication; the two FKs on user_role_audit are RESTRICT, so this
+        // repository is the only writer the audit table has.
+        services.AddScoped<SportMeet.Application.Admin.IUserAdminRepository, UserAdminRepository>();
+
         // Maps mailbox addresses (the polled mailbox's owner) to users rows,
         // creating the row on first sight so a polled invitation always has an
         // owner to be private to. See IMailboxOwnerResolver.

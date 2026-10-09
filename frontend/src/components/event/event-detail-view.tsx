@@ -30,6 +30,7 @@ import {
   spotsLeft,
 } from "@/lib/format";
 import type { EventDetail } from "@/types/events";
+import { isPendingReviewStatus } from "@/types/events";
 
 /**
  * `/events/[id]` (spec §8), poster-first: a full-bleed hero image opens the page
@@ -139,6 +140,22 @@ function DetailBody({ event }: { event: EventDetail }) {
 
   return (
     <>
+      {/* A host landing here straight after submitting a public event sees the page
+          they just wrote, and nothing on it says the event is not live yet. The
+          detail endpoint is open to the host precisely so they can check their own
+          unpublished event, so the state has to be stated here as well as in the
+          toast that is already on its way out. Only the host sees it: to everyone
+          else the event is simply not joinable, which the JoinButton already says. */}
+      {event.isHost && isPendingReviewStatus(event.status) && (
+        <div
+          role="status"
+          className="border-b border-warn/40 bg-warn-tint px-4 py-3 text-center text-meta text-fg"
+        >
+          Pending approval — this event is hidden from Browse until an administrator
+          approves it.
+        </div>
+      )}
+
       {/* Full-bleed hero: the poster is the first thing on the page, edge to
           edge, so context lands before a single word is read. */}
       <HeroPoster event={event} />

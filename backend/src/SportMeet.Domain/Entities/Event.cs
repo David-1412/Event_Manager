@@ -72,6 +72,13 @@ public class Event
     /// it exists now so the cancel milestone is a code change, not a migration.</summary>
     public DateTimeOffset? CancelledAt { get; set; }
 
+    /// <summary>Why an administrator rejected this event, set by the review decision
+    /// and cleared when the creator resubmits it (or when it is approved). Null means
+    /// "no rejection on file", which is what lets the detail page show the reason to
+    /// its creator without a second lookup. Read-only for everyone but the reviewer:
+    /// the edit path never accepts it.</summary>
+    public string? RejectionReason { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 

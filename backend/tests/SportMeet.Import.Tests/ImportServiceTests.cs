@@ -329,6 +329,7 @@ public class ImportServiceTests
         InterestedCount = 0,
         Status = "Scheduled",
         IsCancelled = false,
+        IsPublished = true,
         Visibility = "Public",
         Host = new ParticipantDto(UserId, "Host", null),
         IsHost = isHost,
@@ -343,6 +344,8 @@ public class ImportServiceTests
     {
         public Guid? UserId => id;
         public bool IsDemo => false;
+        // Imports run as ordinary members; nothing in this file tests a privilege.
+        public bool IsAdmin => false;
     }
 
     private sealed class FakeExtractor : IEventExtractor
@@ -411,6 +414,9 @@ public class ImportServiceTests
         public Task<IReadOnlyList<EventListItemDto>> ListMyHostedAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public Task<EventDetailDto> CancelAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<EventListItemDto>> ListPendingReviewAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<EventDetailDto> ApproveAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<EventDetailDto> RejectAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<PopularTag>> ListPopularTagsAsync(int limit = 12, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<string>> SuggestTagsAsync(string? prefix, int limit = 8, CancellationToken ct = default) => throw new NotImplementedException();
     }

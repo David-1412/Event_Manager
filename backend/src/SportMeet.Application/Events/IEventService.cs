@@ -50,6 +50,24 @@ public interface IEventService
 
     Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default);
 
+    /// <summary>The review queue: every public event awaiting an administrator's
+    /// decision, oldest submission first. Throws <see cref="DomainRuleException"/>
+    /// when nobody is signed in and <see cref="NotFoundException"/> for a caller
+    /// without the admin role - the same 404 the detail endpoint gives for a row the
+    /// caller may not see, so the queue does not advertise that it exists.</summary>
+    Task<IReadOnlyList<EventListItemDto>> ListPendingReviewAsync(CancellationToken ct = default);
+
+    /// <summary>Approve a submitted event: PendingReview (or a resubmitted Rejected)
+    /// becomes Published, which puts it in the public feed on the next request.
+    /// Throws <see cref="NotFoundException"/> for a non-admin caller or an event that
+    /// is not awaiting a decision.</summary>
+    Task<EventDetailDto> ApproveAsync(Guid eventId, CancellationToken ct = default);
+
+    /// <summary>Reject a submitted event. It stays readable by its creator - who can
+    /// edit and resubmit it - and never appears in the public feed. Same refusals as
+    /// <see cref="ApproveAsync"/>.</summary>
+    Task<EventDetailDto> RejectAsync(Guid eventId, CancellationToken ct = default);
+
     /// <summary>Most-used tags on currently-visible events, for the home page's
     /// filter chips. Empty on a fresh database (the demo seed creates no tags),
     /// which the client renders as an empty state rather than a stray divider.</summary>

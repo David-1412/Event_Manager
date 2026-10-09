@@ -33,7 +33,16 @@ public class VwEventFeed
     public SkillLevel? SkillLevel { get; set; }
 
     public decimal? Cost { get; set; }
-    public EventStatus Status { get; set; }
+
+    /// <summary>The view's status column, kept as the text the column holds rather
+    /// than as the <see cref="EventStatus"/> enum the events table maps to (see
+    /// VwEventFeedConfiguration). The browse filter excludes a <em>set</em> of
+    /// statuses, and EF cannot express that against a value-converted enum here: a
+    /// Contains binds its constants as integers, which Postgres refuses against a
+    /// varchar ("42883: operator does not exist: character varying = integer", the
+    /// same failure documented on <see cref="Visibility"/>), and
+    /// <c>v.Status.ToString()</c> is not translatable. Parsed back in ToEvent.</summary>
+    public string Status { get; set; } = string.Empty;
 
     /// <summary>The view's text column, declared as text rather than as the
     /// EventVisibility enum the events table maps to. A value-converted enum on a
@@ -42,8 +51,7 @@ public class VwEventFeed
     /// <> integer", measured against a real database), and Enum.ToString() is not
     /// translatable either. The repository compares this against
     /// nameof(EventVisibility.Private) and converts to the domain enum in ToEvent.
-    /// Status keeps its enum type: it is compared against a converted property on
-    /// both sides, which EF folds into a comparable constant fine.</summary>
+    /// Status is text here for the same structural reason - see its own remark.</summary>
     public string Visibility { get; set; } = string.Empty;
     public DateTimeOffset? CancelledAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -70,5 +78,12 @@ public class VwEventFeed
     public string? SportIcon { get; set; }
     public string HostName { get; set; } = string.Empty;
     public string? HostPhotoUrl { get; set; }
+
+    /// <summary>The host's role as the view's text column ('Member' | 'Admin').
+    /// Read so an unpublished event (pending review, or rejected) can be opened by
+    /// an administrator as well as by its creator; declared as text rather than the
+    /// <c>UserRole</c> enum for the reason documented on <see cref="Visibility"/>.
+    /// Never a query predicate, so no value conversion is configured for it.</summary>
+    public string HostRole { get; set; } = string.Empty;
 }
 

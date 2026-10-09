@@ -26,6 +26,10 @@ public static class DependencyInjection
 
         // Paste-to-event import: extract, geocode, flag, record.
         services.AddScoped<Imports.IImportService, Imports.ImportService>();
+
+        // Administrator user management. The last-admin guard is the reason this is
+        // a service rather than the controller calling its repository directly.
+        services.AddScoped<Admin.IUserAdminService, Admin.UserAdminService>();
         return services;
     }
 }

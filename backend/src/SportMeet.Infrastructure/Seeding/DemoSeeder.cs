@@ -28,6 +28,7 @@ public sealed class DemoSeeder(AppDbContext db, IOptions<DemoUserOptions> option
         await SeedSportsAsync(ct);
         await SeedDemoHostAsync(ct);
         await SeedDemoParticipantAsync(ct);
+        await SeedDemoAdminAsync(ct);
         await SeedDemoEventsAsync(ct);
 
         logger.LogInformation(
@@ -90,6 +91,41 @@ public sealed class DemoSeeder(AppDbContext db, IOptions<DemoUserOptions> option
             Name = options.Value.ParticipantName,
             Email = "participant@sportmeet.local",
         });
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>The third demo user: the reviewer. The approval workflow is only
+    /// demoable if somebody in a fresh database can approve, and role lives on the
+    /// users row rather than in configuration, so the role has to be seeded.
+    ///
+    /// It also backfills the role of the pre-workflow demo host. The role column
+    /// defaults to Member, which would leave a database that already has these rows
+    /// with nobody who can review; promoting the seeded host keeps an upgraded local
+    /// stack as usable as a fresh one. Both writes are idempotent.</summary>
+    private async Task SeedDemoAdminAsync(CancellationToken ct)
+    {
+        var id = DemoSeed.DefaultAdminId;
+        if (!await db.Users.AnyAsync(u => u.Id == id, ct))
+        {
+            db.Users.Add(new User
+            {
+                Id = id,
+                Name = DemoSeed.DefaultAdminName,
+                Email = DemoSeed.DefaultAdminEmail,
+                Role = UserRole.Admin,
+            });
+        }
+
+        var hostId = options.Value.SeedHostUserId;
+        var promote = await db.Users
+            .Where(u => u.Id == hostId && u.Role != UserRole.Admin)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(u => u.Role, UserRole.Admin), ct);
+
+        if (promote > 0)
+        {
+            logger.LogInformation("Demo seed promoted the seeded host to Admin so the review queue is reachable.");
+        }
+
         await db.SaveChangesAsync(ct);
     }
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useInterests, useToggleInterest } from "@/features/events/use-interests";
-import { useJoinedEvents } from "@/features/events/use-events";
+import { useJoinedEvents, useIsHosting } from "@/features/events/use-events";
 import { useCardJoin } from "@/features/events/use-card-join";
 
 interface CardActionsProps {
@@ -40,11 +40,15 @@ export function CardActions({
   const router = useRouter();
   const { isInterested } = useInterests();
   const { isJoined } = useJoinedEvents();
+  const { isHosting } = useIsHosting();
   const { join, failure, isJoining, isLeaving } = useCardJoin(eventId);
   const { toggle: toggleInterest, isPending: isToggling } = useToggleInterest(eventId);
 
   const interested = isInterested(eventId);
   const joined = isJoined(eventId);
+  // A browse card cannot see isHost, so derive it from the hosting set; the detail
+  // page passes isHost explicitly and that stays authoritative.
+  const hosting = isHost || isHosting(eventId);
 
   // Interest is a signed-in write now (a real event_interests row), so a signed-out
   // tap routes to sign-in like Join does, rather than persisting to this browser.
@@ -92,7 +96,7 @@ export function CardActions({
         <Button size={size} variant="secondary" fullWidth={fullWidth} disabled>
           Cancelled
         </Button>
-      ) : isHost ? (
+      ) : hosting ? (
         <Button size={size} variant="secondary" fullWidth={fullWidth} disabled>
           You&apos;re hosting
         </Button>

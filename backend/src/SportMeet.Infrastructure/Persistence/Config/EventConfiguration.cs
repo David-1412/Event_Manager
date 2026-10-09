@@ -69,6 +69,12 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
 
         b.Property(x => x.Cost).HasPrecision(6, 2);
 
+        // The reviewer's sentence to the creator. Length-bounded so the reason the
+        // admin types cannot outgrow the panel the creator reads it in; the API's
+        // validator carries the same number so a too-long reason is a 422, not a
+        // database error.
+        b.Property(x => x.RejectionReason).HasMaxLength(500);
+
         b.HasOne(x => x.Host).WithMany(u => u.HostedEvents).HasForeignKey(x => x.HostId).OnDelete(DeleteBehavior.Restrict);
 
         // Optional and Restrict: sport_id is an emoji lookup now, not a filter, so
@@ -78,6 +84,14 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
 
         b.HasIndex(x => x.StartAt).HasFilter("status = 'Scheduled'").HasDatabaseName("events_start_at_idx");
         b.HasIndex(x => new { x.Lat, x.Lng }).HasDatabaseName("events_geo_bbox_idx");
+
+        // The admin review queue's working query - pending events oldest first, so
+        // the one that has been waiting longest is the one an admin opens. Partial
+        // for the same reason as the draft queue's: everything else is dead weight
+        // in the index the review page hits on every reload.
+        b.HasIndex(x => x.CreatedAt)
+            .HasDatabaseName("events_pending_review_idx")
+            .HasFilter("status = 'PendingReview'");
 
 
         b.ToTable(t =>
@@ -100,8 +114,12 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
                 "events_skill_level_check",
                 "skill_level IN ('Beginner', 'Intermediate', 'Advanced')");
             t.HasCheckConstraint(
+                // The review workflow's four values alongside the original three.
+                // 'Scheduled' survives: it is what every pre-workflow row holds and
+                // what an admin's or a private creator's event is still written as,
+                // so "live" means Scheduled *or* Published (EventStatusExtensions).
                 "events_status_check",
-                "status IN ('Scheduled', 'Cancelled', 'Completed')");
+                "status IN ('Scheduled', 'Cancelled', 'Completed', 'Draft', 'PendingReview', 'Published', 'Rejected')");
             t.HasCheckConstraint(
                 "events_visibility_check",
                 "visibility IN ('Public', 'Private')");

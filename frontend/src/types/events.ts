@@ -4,7 +4,35 @@
  */
 
 export type SkillLevel = "Beginner" | "Intermediate" | "Advanced";
-export type EventStatus = "Scheduled" | "Cancelled" | "Completed";
+/**
+ * Mirrors the backend `EventStatus` enum. `Scheduled` and `Published` are both
+ * live (visible in Browse, joinable) — the review workflow introduced `Published`
+ * as the approved twin of the pre-existing `Scheduled`, so never test for one
+ * alone. `Draft`, `PendingReview` and `Rejected` are never publicly visible;
+ * `PendingReview` is what a regular user's public event becomes until an
+ * administrator decides, which is the state My Events has to surface.
+ */
+export type EventStatus =
+  | "Scheduled"
+  | "Cancelled"
+  | "Completed"
+  | "Draft"
+  | "PendingReview"
+  | "Published"
+  | "Rejected";
+
+/** True when the status means the event is live in Browse. Mirrors the backend's
+ * `EventStatusExtensions.IsPublished`, so the two sides cannot drift apart. */
+export function isPublishedStatus(status: EventStatus): boolean {
+  return status === "Scheduled" || status === "Published";
+}
+
+/** Awaiting an administrator's decision. Kept separate from `isPublishedStatus`
+ * because the UI needs to talk about this one state specifically: it drives the
+ * Pending Approval badge, the awaiting-review notice, and the submit dialog. */
+export function isPendingReviewStatus(status: EventStatus): boolean {
+  return status === "PendingReview";
+}
 
 /**
  * Discovery, not access. `Public` events appear in the browse feed; `Private`
@@ -43,6 +71,12 @@ export interface EventListItem {
   /** Server-supplied emoji (lives in the DB seed). null when the event has no
    * sport, since sport is decoration now and not required. */
   sportIcon: string | null;
+  /** The host's display name. Not rendered by the browse card; the admin review
+   * queue needs it, since a decision about someone else's public event has to say
+   * whose event it is. Absent from responses that predate the field, hence optional. */
+  hostName?: string | null;
+  /** Host photo URL; null renders the initials avatar. */
+  hostPhotoUrl?: string | null;
   /** null when the host chose no level; every renderer must hide the badge. */
   skillLevel: SkillLevel | null;
   startAt: string;

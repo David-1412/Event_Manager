@@ -32,6 +32,15 @@ public static class DemoSeed
 
     public const string DefaultParticipantName = "Sam Rivera";
 
+    /// <summary>The seeded reviewer. Role lives on the users row (not in config), so
+    /// an approval workflow needs a row that holds it; this is that row. It hosts no
+    /// events, so it also proves the review queue is not just "my own events".</summary>
+    public static readonly Guid DefaultAdminId = Guid.Parse("00000000-0000-0000-0000-000000000003");
+
+    public const string DefaultAdminName = "Casey Reviewer";
+
+    public const string DefaultAdminEmail = "admin@sportmeet.local";
+
     public static readonly Sport[] Sports =
     [
         new() { Id = 1, Name = "Badminton", Slug = "badminton", Icon = "\U0001F3F8" },

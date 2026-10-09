@@ -275,6 +275,30 @@ export function useHostedEvents() {
   };
 }
 
+/**
+ * Whether the current viewer hosts a given event, as the id-set twin of
+ * `useJoinedEvents`. A browse card cannot see `isHost` (the list DTO omits it),
+ * so without this it offers an enabled Join on the viewer's own event and the
+ * API rejects it with "You cannot join an event you are hosting" (422), which
+ * surfaces as a misleading "Try again". Deriving host-ness from `me/hosting`
+ * lets the card render the disabled "You're hosting" state instead.
+ *
+ * Shares `hostedKey()` with `useHostedEvents` (same SWR cache entry), so it adds
+ * no extra request when that hook is already mounted. Anonymous-tolerant like
+ * the joined set: no identity resolves to an empty set, never an error state.
+ */
+export function useIsHosting() {
+  const { items } = useHostedEvents();
+  const rawIds = useMemo(() => items.map((item) => item.id), [items]);
+  // Stable reference while the contents match, for the same reason as the joined
+  // set: a fresh array per revalidation would rebuild every consumer each render.
+  const idsKey = rawIds.join(",");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- idsKey is the content identity of rawIds
+  const ids = useMemo(() => rawIds, [idsKey]);
+  const isHosting = useCallback((id: string) => ids.includes(id), [ids]);
+  return { ids, isHosting };
+}
+
 const EMPTY_IDS: string[] = [];
 
 /** A detail payload satisfies every `EventListItem` field; keep only those. */

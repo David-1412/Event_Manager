@@ -22,7 +22,7 @@ import {
 } from "firebase/auth";
 import { getFirebaseAuth, getGoogleProvider } from "./client";
 import { describeAuthError, isAuthCancelled } from "./auth-error";
-import { establishSession, registerWithApi, toAuthUser } from "./session";
+import { establishSession, fetchRole, registerWithApi, toAuthUser } from "./session";
 import { clearAccessToken, setAccessToken } from "./token-store";
 import type { AuthUser } from "./types";
 import { isFirebaseConfigured } from "./config";
@@ -56,6 +56,18 @@ export interface AuthContextValue {
   available: boolean;
   /** True while the API has verified the token and issued its own. */
   apiTrusted: boolean;
+  /**
+   * True only when the API has confirmed this caller holds the Admin role.
+   *
+   * False while the role is unknown, which is the correct direction: the admin
+   * surface is meant to be invisible rather than merely forbidden to a Member, and a
+   * caller whose role has not loaded yet is indistinguishable from a Member here.
+   * Purely a rendering hint — every admin endpoint authorises on its own.
+   */
+  isAdmin: boolean;
+  /** Re-read the caller's role from the API. Called after a role change so the nav
+   * and the badges agree with the database without a full sign-out. */
+  refreshRole: () => Promise<void>;
   login: (email: string, password: string) => Promise<AuthResult>;
   register: (displayName: string, email: string, password: string) => Promise<AuthResult>;
   loginWithGoogle: () => Promise<AuthResult>;
@@ -89,6 +101,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * response labels the user signed-out after the fresh one signed them in.
    */
   const generation = useRef(0);
+
+  /**
+   * The current bearer token, mirrored into a ref so `refreshRole` can stay stable
+   * across renders. Reading `token` from state instead would put it in the callback's
+   * dependency list and hand out a new `refreshRole` on every token refresh, which
+   * would re-render every consumer of the context.
+   */
+  const tokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
 
   const applySession = useCallback(async (firebaseUser: FirebaseUser | null) => {
     const ticket = ++generation.current;
@@ -239,6 +262,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   }, []);
 
+  /**
+   * Re-read the role from the API and patch it onto the session.
+   *
+   * Needed because a role change made *by this very page* has no other route back
+   * into React state: Firebase's `onIdTokenChanged` does not fire for a role that
+   * lives on our `users` row, so without this the Admin nav item and the row badges
+   * would disagree with the database until a reload. A demote of the caller's own
+   * account has to be able to hide its own page.
+   *
+   * No-ops when signed out or when the role cannot be read — leaving the previous
+   * value is better than guessing, and the server still refuses the action.
+   */
+  const refreshRole = useCallback(async () => {
+    const current = tokenRef.current;
+    if (!current) return;
+    const role = await fetchRole(current);
+    if (role === null) return;
+    setUser((existing) => (existing ? { ...existing, role } : existing));
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -246,6 +289,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       available: isFirebaseConfigured,
       apiTrusted,
+      isAdmin: user?.role === "Admin",
+      refreshRole,
       login,
       register,
       loginWithGoogle,
@@ -258,6 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token,
       loading,
       apiTrusted,
+      refreshRole,
       login,
       register,
       loginWithGoogle,

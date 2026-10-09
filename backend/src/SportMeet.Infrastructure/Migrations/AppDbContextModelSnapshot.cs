@@ -77,6 +77,11 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("place_id");
 
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("rejection_reason");
+
                     b.Property<string>("SkillLevel")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
@@ -134,6 +139,10 @@ namespace SportMeet.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_events");
 
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("events_pending_review_idx")
+                        .HasFilter("status = 'PendingReview'");
+
                     b.HasIndex("HostId")
                         .HasDatabaseName("ix_events_host_id");
 
@@ -161,7 +170,7 @@ namespace SportMeet.Infrastructure.Migrations
 
                             t.HasCheckConstraint("events_skill_level_check", "skill_level IN ('Beginner', 'Intermediate', 'Advanced')");
 
-                            t.HasCheckConstraint("events_status_check", "status IN ('Scheduled', 'Cancelled', 'Completed')");
+                            t.HasCheckConstraint("events_status_check", "status IN ('Scheduled', 'Cancelled', 'Completed', 'Draft', 'PendingReview', 'Published', 'Rejected')");
 
                             t.HasCheckConstraint("events_time_range_check", "end_at > start_at");
 
@@ -681,6 +690,11 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("auth_uid");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasDefaultValueSql("now()")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
                     b.Property<string>("Email")
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)")
@@ -697,6 +711,12 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("character varying(2048)")
                         .HasColumnName("photo_url");
 
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("role");
+
                     b.HasKey("Id")
                         .HasName("pk_users");
 
@@ -708,7 +728,61 @@ namespace SportMeet.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_users_email");
 
-                    b.ToTable("users", "sportsmeet");
+                    b.ToTable("users", "sportsmeet", t =>
+                        {
+                            t.HasCheckConstraint("users_role_check", "role IN ('Member', 'Admin')");
+                        });
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.UserRoleAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FromRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("from_role");
+
+                    b.Property<string>("ToRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("to_role");
+
+                    b.Property<Guid>("TargetUserId")
+                        .IsRequired()
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_role_audit");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("TargetUserId", "CreatedAt")
+                        .HasDatabaseName("ix_user_role_audit_target_user_id_created_at");
+
+                    b.ToTable("user_role_audit", "sportsmeet", t =>
+                        {
+                            t.HasCheckConstraint("user_role_audit_no_op_check", "from_role <> to_role");
+                        });
                 });
 
             modelBuilder.Entity("SportMeet.Infrastructure.Persistence.VwEventFeed", b =>
@@ -753,6 +827,12 @@ namespace SportMeet.Infrastructure.Migrations
                     b.Property<string>("HostPhotoUrl")
                         .HasColumnType("text")
                         .HasColumnName("host_photo_url");
+
+                    b.Property<string>("HostRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("host_role");
 
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
@@ -804,7 +884,8 @@ namespace SportMeet.Infrastructure.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
                         .HasColumnName("status");
 
                     b.Property<string>("Tags")
@@ -1008,6 +1089,26 @@ namespace SportMeet.Infrastructure.Migrations
                     b.Navigation("Drafts");
 
                     b.Navigation("HostedEvents");
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.UserRoleAudit", b =>
+                {
+                    b.HasOne("SportMeet.Domain.Entities.User", "ActorUser")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_user_role_audit_users_actor_user_id");
+
+                    b.HasOne("SportMeet.Domain.Entities.User", "TargetUser")
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_role_audit_users_target_user_id");
+
+                    b.Navigation("ActorUser");
+
+                    b.Navigation("TargetUser");
                 });
 #pragma warning restore 612, 618
         }

@@ -203,6 +203,14 @@ public class RequireAuthenticatedUserTests
     {
         public Task<Guid> ResolveUserIdAsync(VerifiedIdentity identity, CancellationToken ct = default)
             => Task.FromResult(TestApi.IdOf(identity.AuthUid));
+
+        // Role is irrelevant to what this file tests (who counts as verified), so
+        // every identity comes back an ordinary member.
+        public Task<(Guid UserId, SportMeet.Domain.Enums.UserRole Role)> ResolveUserAsync(VerifiedIdentity identity, CancellationToken ct = default)
+            => Task.FromResult((TestApi.IdOf(identity.AuthUid), SportMeet.Domain.Enums.UserRole.Member));
+
+        public Task<SportMeet.Domain.Enums.UserRole> FindRoleByIdAsync(Guid userId, CancellationToken ct = default)
+            => Task.FromResult(SportMeet.Domain.Enums.UserRole.Member);
     }
 
     /// <summary>Records who the service believes the caller is. It receives the same scoped

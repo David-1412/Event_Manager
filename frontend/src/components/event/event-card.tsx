@@ -14,6 +14,7 @@ import {
   spotsTakenSentence,
 } from "@/lib/format";
 import type { EventListItem } from "@/types/events";
+import { isPendingReviewStatus } from "@/types/events";
 
 export type EventCardVariant =
   | "open"
@@ -23,7 +24,8 @@ export type EventCardVariant =
   | "mine"
   | "cancelled"
   | "ended"
-  | "past";
+  | "past"
+  | "pending-review";
 
 export interface EventCardProps {
   event: EventListItem;
@@ -36,17 +38,25 @@ export interface EventCardProps {
   selected?: boolean;
   /** Rendered in the footer slot; on `/` this is the JoinButton. */
   action?: React.ReactNode;
+  /** Hide the poster/image area. The create-event live preview uses this so the
+   *  card shows only the text fields; browse cards keep the image (default). */
+  hideImage?: boolean;
 }
 
 /**
- * Variant priority (spec §7): cancelled > mine (hosting) > joined > full >
- * one-spot > open. `past` is only ever passed explicitly by /my-events.
+ * Variant priority (spec §7): cancelled > pending-review > mine (hosting) >
+ * joined > full > one-spot > open. `past` is only ever passed explicitly by /my-events.
+ *
+ * Pending-review outranks `mine` deliberately. A public event a regular user
+ * created is not live yet, so rendering it as "You're hosting" with open
+ * availability would advertise slots for something nobody can find or join.
  */
 export function eventCardVariant(
   event: EventListItem,
   flags: { isJoined?: boolean; isHost?: boolean } = {},
 ): EventCardVariant {
   if (event.isCancelled) return "cancelled";
+  if (isPendingReviewStatus(event.status)) return "pending-review";
   if (event.status === "Completed") return "ended";
   if (flags.isHost) return "mine";
   if (flags.isJoined) return "joined";
@@ -64,6 +74,7 @@ export function EventCard({
   selected = false,
   action,
   onSelect,
+  hideImage = false,
 }: EventCardProps) {
   const kind = variant ?? eventCardVariant(event, { isJoined, isHost });
   const availability = availabilityOf(event.joinedCount, event.maxParticipants);
@@ -96,11 +107,9 @@ export function EventCard({
   }
 
   const countLabel = spotsTakenSentence(event.joinedCount, event.maxParticipants);
-  const meta = [
-    formatCardWhen(event),
-    formatDistance(event.distanceKm),
-    formatCost(event.cost),
-  ].join(" · ");
+  // The when-line is rendered separately in brand colour (see below) so the time
+  // reads as the card's key fact; distance and cost stay in the muted meta line.
+  const meta = [formatDistance(event.distanceKm), formatCost(event.cost)].join(" · ");
 
   return (
     <article
@@ -114,6 +123,9 @@ export function EventCard({
         // hover lifts by translation only — `scale` would reflow the grid (spec §7)
         "hover:-translate-y-0.5 hover:shadow-raise transition-[transform,box-shadow] duration-200",
         kind === "mine" && "border-l-[3px] border-l-brand-600",
+        // Not muted like cancelled/ended: a pending event is live-in-waiting, not
+        // dead. The left accent carries its state the way `mine` does.
+        kind === "pending-review" && "border-l-[3px] border-l-warn",
         kind === "cancelled" && "bg-surface-2 text-fg-muted hover:translate-y-0 hover:shadow-none",
         kind === "ended" && "bg-surface-2 hover:translate-y-0 hover:shadow-none",
         kind === "joined" && "bg-surface",
@@ -144,6 +156,7 @@ export function EventCard({
       </h3>
 
       <p className="text-meta text-fg-muted">{event.venueName}</p>
+      <p className="text-meta font-semibold text-brand-600">{formatCardWhen(event)}</p>
       <p className="text-meta text-fg-muted">{meta}</p>
 
       <div
@@ -160,6 +173,7 @@ export function EventCard({
         {kind === "one-spot" && <Badge tone="warn">1 spot left</Badge>}
         {kind === "full" && <Badge tone="danger">Full</Badge>}
         {kind === "mine" && <Badge tone="brand">You&apos;re hosting</Badge>}
+        {kind === "pending-review" && <Badge tone="warn">Pending Approval</Badge>}
         {kind === "cancelled" && <Badge tone="info">Cancelled</Badge>}
         {kind === "ended" && <Badge tone="neutral">Ended</Badge>}
         {kind === "ended" && event.isCancelled && <Badge tone="info">Cancelled</Badge>}
@@ -174,7 +188,9 @@ export function EventCard({
         )}
       </div>
       </div>
-      <Poster src={posterSrc} icon={icon} failed={thumbFailed} onError={() => setThumbFailed(true)} />
+      {!hideImage && (
+        <Poster src={posterSrc} icon={icon} failed={thumbFailed} onError={() => setThumbFailed(true)} />
+      )}
     </article>
   );
 }
@@ -249,7 +265,7 @@ function Count({
   availability: "open" | "one-spot" | "full";
 }) {
   const tone =
-    kind === "cancelled"
+    kind === "cancelled" || kind === "pending-review"
       ? "text-fg-muted"
       : kind === "full"
         ? "text-danger"

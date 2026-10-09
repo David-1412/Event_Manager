@@ -113,5 +113,7 @@ public static class JsonOptionsConfiguration
         options.Converters.Add(new NullableSkillLevelJsonConverter());
         options.Converters.Add(new EventVisibilityJsonConverter());
         options.Converters.Add(new NullableEventVisibilityJsonConverter());
+        options.Converters.Add(new UserRoleJsonConverter());
+        options.Converters.Add(new NullableUserRoleJsonConverter());
     }
 }
