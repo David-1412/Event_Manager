@@ -9,6 +9,7 @@ import { useHostedEvents, useMyEvents } from "@/features/events/use-events";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/cn";
 import type { EventListItem } from "@/types/events";
+import { isPendingReviewStatus } from "@/types/events";
 import { HostingActions } from "@/components/event/hosting-actions";
 
 type Tab = "upcoming" | "past" | "hosting";
@@ -22,7 +23,9 @@ const TABS: { key: Tab; label: string }[] = [
 /**
  * `/my-events` (spec §8): only events the viewer has a personal relation to —
  * Interested (localStorage) or Joined (a real participant row). The whole feed is
- * not "mine", so it is not listed here. Tabs carry counts in their labels.
+ * not "mine", so it is not listed here. Upcoming and Past bucket those events by
+ * date and already cover both relations, so there is no separate Interested tab.
+ * Tabs carry counts in their labels.
  *
  * Each card's actions reflect how it got here: a joined event offers Leave,
  * anything else offers Interest/Uninterest plus Join/Leave. Resolving ids hits
@@ -34,14 +37,16 @@ export function MyEventsView() {
   const my = useMyEvents();
   const hosted = useHostedEvents();
   const now = useNow(60_000);
+  // Stable reference for the buckets memo (the `my` object is fresh each render).
+  const { items } = my;
 
   const buckets = useMemo(() => {
-    const all = my.items.map((item) => ({ item, future: Date.parse(item.startAt) >= now }));
+    const all = items.map((item) => ({ item, future: Date.parse(item.startAt) >= now }));
     return {
       upcoming: all.filter((e) => e.future),
       past: all.filter((e) => !e.future),
     };
-  }, [my.items, now]);
+  }, [items, now]);
 
   const counts: Record<Tab, number> = {
     upcoming: buckets.upcoming.length,
@@ -128,11 +133,38 @@ function TabPanel({
 function HostingPanel({ items, now }: { items: EventListItem[]; now: number }) {
   if (items.length === 0) return <EmptyState title="You haven't hosted any events yet." />;
 
+  // Pending first: an event waiting on a decision is the one the host came here to
+  // check on, and burying it in start-date order behind next month's already-live
+  // event would hide it. The notice is the counterpart to the submit dialog's
+  // promise - it is what tells the host, on a later visit, that the wait is still on.
+  const pending = items.filter((item) => isPendingReviewStatus(item.status));
+  const rest = items.filter((item) => !isPendingReviewStatus(item.status));
+
   return (
     <>
-      {items.map((item) => {
+      {pending.length > 0 && (
+        <p
+          role="status"
+          className="rounded-md border border-warn/40 bg-warn-tint px-4 py-3 text-meta text-fg"
+        >
+          {pending.length === 1
+            ? "1 event is awaiting admin review. It stays hidden from Browse until an administrator approves it."
+            : `${pending.length} events are awaiting admin review. They stay hidden from Browse until an administrator approves them.`}
+        </p>
+      )}
+      {[...pending, ...rest].map((item) => {
+        const isPending = isPendingReviewStatus(item.status);
         const ended = item.status === "Completed" || Date.parse(item.startAt) <= now;
-        const variant = ended ? "ended" : item.isCancelled ? "cancelled" : "mine";
+        // Awaiting review outranks ended/mine. The status is the fact that matters
+        // about this card, and eventCardVariant already routes it to the yellow
+        // Pending Approval badge and the muted count.
+        const variant = isPending
+          ? "pending-review"
+          : ended
+            ? "ended"
+            : item.isCancelled
+              ? "cancelled"
+              : "mine";
         return (
           <EventCard
             key={item.id}
@@ -144,6 +176,7 @@ function HostingPanel({ items, now }: { items: EventListItem[]; now: number }) {
                 eventId={item.id}
                 isCancelled={item.isCancelled}
                 isEnded={ended}
+                awaitingReview={isPending}
               />
             )}
           />
@@ -159,7 +192,7 @@ function emptyCopyFor(tab: Tab): string {
     case "upcoming":
       return "Nothing you're interested in or joined yet. Tap Interested or Join on any event.";
     case "past":
-      return "Nothing here yet. Past games you were interested in or joined show up here.";
+      return "Nothing here yet. Past Events you were interested in or joined show up here.";
     case "hosting":
       return "You haven't hosted any events yet.";
   }

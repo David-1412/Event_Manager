@@ -7,6 +7,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { useSyncExternalStore } from "react";
 import { AdvancedMarker, useMap } from "@vis.gl/react-google-maps";
 import {
   DEFAULT_CENTER,
@@ -22,6 +23,8 @@ import {
 } from "@/components/map/map-types";
 import { MELBOURNE_CBD } from "@/lib/sports";
 import { haversineKm } from "@/lib/fixtures";
+import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui/button";
 
 export interface VenueSelection {
   venueName: string;
@@ -33,14 +36,17 @@ export interface VenueSelection {
 /**
  * `/create` "Where" control: pick a spot on Google Maps.
  *
- * Three ways in, one output (`VenueSelection`):
+ * Two-step, three ways in, one output (`VenueSelection`):
  *  - type a place name - debounced (250 ms) Geocoder suggestions, up to 8,
  *    arrow keys + Enter pick the highlighted row;
  *  - click anywhere on the map - the red pin drops there;
- *  - drag the red pin - the selection follows on release (dragging keeps
- *    working even when Google refuses to serve tiles or geocodes).
- * Every pick is reverse-geocoded so `venueName`/`address` stay honest even for
- * a bare coordinate, and `Change` returns to the map with the pin in place.
+ *  - drag the red pin - the pin follows on release (dragging keeps working
+ *    even when Google refuses to serve tiles or geocodes).
+ * A drop or drag only *stages* the pin: nothing reaches the form until the
+ * user presses **Select**, so the pin can be repositioned as many times as
+ * they like first. The staged spot is reverse-geocoded (so the preview reads
+ * like a place, not a bare coordinate) and, once selected, `Change` returns to
+ * the map with the pin back on it.
  *
  * When Google rejects the key (the "This page can't load Google Maps
  * correctly" state), the map surface stays usable and a banner explains the
@@ -62,7 +68,7 @@ export function VenuePicker({
   error?: string;
 }) {
   return value ? (
-    <VenueChips venue={value} onChange={onChange} />
+    <VenueChips venue={value} onChange={onChange} error={error} />
   ) : (
     <VenuePickerOpen onChange={onChange} error={error} />
   );
@@ -81,12 +87,23 @@ function VenuePickerOpen({
   const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState(-1);
   const [mapCentre, setMapCentre] = useState<LatLng>(DEFAULT_CENTER);
+  // The staged pin, held locally until the user presses Select. Null until the
+  // first drop/drag/search pick; the pin renders here (falling back to
+  // mapCentre, which starts as the city view with no pin).
+  const [pending, setPending] = useState<VenueSelection | null>(null);
   const [mapsIssue, setMapsIssue] = useState<string | null>(lastMapsFailureReason);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeqRef = useRef(0);
   const commitSeqRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = "venue-suggestions";
+  // SSR-safe "is the browser here" flag, so the Enter-to-enter-address handler
+  // is a no-op during prerender (no window/Geocoder access on the server).
+  const hydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   // Google refused something (key, tiles, or a geocode call) - explain it once
   // under the map instead of letting it look like an empty search result.
@@ -102,12 +119,28 @@ function VenuePickerOpen({
     [],
   );
 
-  const commit = useCallback(
+  // Hand a finished selection to the form. Called only by Select (or a
+  // suggestion pick), never by a bare drop - that just stages the pin.
+  const commitSelection = useCallback(
+    (venue: VenueSelection) => {
+      commitSeqRef.current += 1; // drop any in-flight reverse-geocode
+      setMapCentre({ lat: venue.latitude, lng: venue.longitude });
+      setPending(null);
+      onChange(venue);
+    },
+    [onChange],
+  );
+
+  // Stage a pin at a spot (map click, drag release, or a search pick). Moves
+  // the pin and reverse-geocodes it so the preview shows a real place. Nothing
+  // reaches the form until Select; the sequence number drops a late answer if
+  // the pin moved again.
+  const stage = useCallback(
     async (position: LatLng, known?: { name: string; address: string }) => {
       const point = { lat: position.lat, lng: position.lng };
       setMapCentre(point);
       if (known) {
-        onChange({
+        setPending({
           venueName: known.name,
           address: known.address,
           latitude: point.lat,
@@ -115,22 +148,26 @@ function VenuePickerOpen({
         });
         return;
       }
-      // Bare coordinate from a click or drag: reverse-geocode so the chips
-      // show something a human can recognise. On failure keep the raw point
-      // with coordinate labels rather than blocking event creation. The
-      // sequence number drops a late answer if the user moved the pin again.
+      // Bare coordinate from a click or drag: reverse-geocode so the preview
+      // reads like a place. On failure keep the raw point with coordinate
+      // labels rather than blocking a selection.
       const seq = ++commitSeqRef.current;
       const match = await reverseGeocode(point);
       if (seq !== commitSeqRef.current) return;
-      onChange({
+      setPending({
         venueName: match?.name ?? `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`,
         address: match?.address ?? `Pinned at ${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`,
         latitude: point.lat,
         longitude: point.lng,
       });
     },
-    [onChange],
+    [],
   );
+
+  // Confirm the staged pin and hand it to the form.
+  function select() {
+    if (pending) commitSelection(pending);
+  }
 
   // 250 ms debounce so a burst of typing costs one geocode; the sequence
   // number drops a response for a term the user already replaced. A blank or
@@ -166,10 +203,33 @@ function VenuePickerOpen({
     setTerm("");
     setSuggestions([]);
     setHighlight(-1);
-    void commit(
+    void stage(
       { lat: result.lat, lng: result.lng },
       { name: result.name, address: result.address },
     );
+  }
+
+  // Pressing Enter with a typed address and no suggestion highlighted still
+  // sets a location: geocode the text and, if nothing matches, drop the pin at
+  // the current map centre labelled with the typed address. `stage` is a stable
+  // callback, so this reads the current mapCentre/onChange without a ref.
+  async function enterTypedAddress(raw: string) {
+    const query = raw.trim();
+    if (!query) return;
+    const results = MAPS_API_KEY ? await geocodeSearch(query, mapCentre) : offlineSearch(query);
+    const match = results[0];
+    if (match) {
+      setOpen(false);
+      setTerm("");
+      setSuggestions([]);
+      setHighlight(-1);
+      void stage(
+        { lat: match.lat, lng: match.lng },
+        { name: match.name, address: match.address },
+      );
+      return;
+    }
+    void stage(mapCentre, { name: query, address: query });
   }
 
   // Combobox keyboard model: Down/Up walk the list, Enter (or Tab) accepts the
@@ -177,6 +237,15 @@ function VenuePickerOpen({
   // open dropdown did nothing and the click looked "not picked up".
   function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (!open || suggestions.length === 0) {
+      // No list to walk: Enter commits whatever was typed as the location, even
+      // when no place matched (it drops the pin at the typed address).
+      if (event.key === "Enter") {
+        const query = term.trim();
+        if (!query) return;
+        event.preventDefault();
+        if (hydrated) void enterTypedAddress(query);
+        return;
+      }
       if (event.key === "Escape") setOpen(false);
       return;
     }
@@ -187,9 +256,11 @@ function VenuePickerOpen({
       event.preventDefault();
       setHighlight((h) => (h <= 0 ? suggestions.length - 1 : h - 1));
     } else if (event.key === "Enter" || event.key === "Tab") {
-      if (highlight < 0) return;
+      // With results open, Enter accepts the highlighted row - or the first
+      // when nothing is highlighted, so Enter always sets a location.
+      const index = highlight >= 0 ? highlight : 0;
       event.preventDefault();
-      pick(suggestions[highlight]);
+      pick(suggestions[index]);
     } else if (event.key === "Escape") {
       setOpen(false);
       setHighlight(-1);
@@ -214,16 +285,42 @@ function VenuePickerOpen({
         heightClass={PICKER_HEIGHT}
         ariaLabel="Pick a venue location"
         keepMapOnFailure
-        onMapClick={(position) => void commit(position)}
+        onMapClick={(position) => void stage(position)}
       >
         <div className="contents">
-          <PinMarker
-            position={mapCentre}
-            onDrag={(position) => setMapCentre(position)}
-            onDragEnd={(position) => void commit(position)}
-          />
+          {pending && (
+            <PinMarker
+              position={{ lat: pending.latitude, lng: pending.longitude }}
+              onDrag={(position) => setMapCentre(position)}
+              onDragEnd={(position) => void stage(position)}
+            />
+          )}
         </div>
       </MapSurface>
+
+      {pending ? (
+        // Staged: show where the pin sits and let the user confirm or keep
+        // moving it. Nothing has reached the form yet.
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-surface-2 p-3 text-meta">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-fg">{pending.venueName}</p>
+              <p className="truncate text-fg-muted">{pending.address}</p>
+            </div>
+            <Button size="sm" onClick={select} className="shrink-0">
+              Select
+            </Button>
+          </div>
+          <p className="text-meta text-fg-muted">
+            Tap the map or drag the red pin to move it, then Select to confirm.
+          </p>
+        </div>
+      ) : (
+        <p className="text-meta text-fg-muted">
+          Tap the map, drag the red pin, or search above - then Select to confirm the location.
+        </p>
+      )}
+
       <div className="relative">
         <input
           ref={inputRef}
@@ -234,7 +331,7 @@ function VenuePickerOpen({
           onKeyDown={onKeyDown}
           onFocus={() => suggestions.length > 0 && setOpen(true)}
           onBlur={() => setOpen(false)}
-          placeholder="Search a venue, park or address"
+          placeholder="Enter address"
           aria-label="Venue"
           aria-expanded={open}
           aria-autocomplete="list"
@@ -266,7 +363,8 @@ function VenuePickerOpen({
           >
             {showEmptyHint && (
               <li className="px-3 py-2 text-meta text-fg-muted">
-                No place matched &quot;{term.trim()}&quot; - tap the map or drag the red pin.
+                No place matched &quot;{term.trim()}&quot; - press Enter to use it as the address,
+                or tap the map or drag the red pin.
               </li>
             )}
             {suggestions.map((row, i) => (
@@ -413,13 +511,20 @@ function AdvancedPinMarker({
 export function VenueChips({
   venue,
   onChange,
+  error,
 }: {
   venue: VenueSelection;
   onChange: (venue: VenueSelection | null) => void;
+  error?: string;
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <dl className="flex flex-col gap-1 rounded-md border border-border bg-surface-2 p-3 text-meta">
+      <dl
+        className={cn(
+          "flex flex-col gap-1 rounded-md border border-border bg-surface-2 p-3 text-meta",
+          error && "border-danger",
+        )}
+      >
         <div>
           <dt className="sr-only">Venue</dt>
           <dd className="font-medium text-fg">{venue.venueName}</dd>
@@ -429,6 +534,7 @@ export function VenueChips({
           <dd className="text-fg-muted">{venue.address}</dd>
         </div>
       </dl>
+      {error && <p className="text-meta text-danger">{error}</p>}
       <button
         type="button"
         onClick={() => onChange(null)}

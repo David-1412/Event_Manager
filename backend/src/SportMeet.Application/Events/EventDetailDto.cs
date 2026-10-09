@@ -25,6 +25,11 @@ public sealed class EventDetailDto : EventListItemDto
     /// <summary>True when ICurrentUser has a row in event_participants.</summary>
     public required bool IsJoined { get; init; }
 
+    /// <summary>True when ICurrentUser has a row in event_interests. Independent
+    /// of IsJoined: the join path clears interest, so in steady state a joiner is
+    /// not also interested, but the two are computed from their own tables.</summary>
+    public required bool IsInterested { get; init; }
+
     public required IReadOnlyList<ParticipantDto> Participants { get; init; }
 
     public DateTimeOffset? CancelledAt { get; init; }

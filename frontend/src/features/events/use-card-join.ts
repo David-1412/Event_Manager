@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useState } from "react";
 import { useSWRConfig } from "swr";
 import { ApiError, request } from "@/lib/api";
-import { detailKey, eventsKey, joinedKey } from "./use-events";
+import { detailKey, eventsKey, interestedKey, joinedKey } from "./use-events";
 import type { JoinFailure } from "@/types/events";
 
 /**
@@ -24,14 +24,16 @@ export function useCardJoin(eventId: string) {
       setFailure(null);
       setPending(method === "POST" ? "join" : "leave");
       try {
-        await request<{ participantCount: number } | undefined>(
+        await request<{ joinedCount: number } | undefined>(
           `/api/events/${eventId}/participants`,
           { method },
         );
         // Refresh the joined set (My events + card Join/Leave) and this event's
         // detail (its participant count), and let a re-fetched browse list settle
-        // the count everywhere else.
+        // the count everywhere else. Joining also clears interest server-side, so
+        // the interested set moves too.
         void mutate(joinedKey(), undefined, { revalidate: true });
+        void mutate(interestedKey(), undefined, { revalidate: true });
         void mutate(detailKey(eventId), undefined, { revalidate: true });
         void mutate(eventsKey(), undefined, { revalidate: true });
         return { ok: true } as const;

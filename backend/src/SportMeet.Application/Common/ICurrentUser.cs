@@ -1,5 +1,7 @@
 namespace SportMeet.Application.Common;
 
+using SportMeet.Domain.Enums;
+
 /// <summary>
 /// The identity the current request acts as.
 ///
@@ -21,6 +23,14 @@ public interface ICurrentUser
     /// <summary>True while the identity comes from configuration rather than a
     /// verified token. Lets logging and responses flag demo data honestly.</summary>
     bool IsDemo { get; }
+
+    /// <summary>True when the acting user holds <c>UserRole.Admin</c> - the role
+    /// that publishes public events without review and works the pending-review
+    /// queue. Resolved from the user's database row, so it is a fact about the
+    /// person rather than about the token that carried them in, and a demotion
+    /// takes effect on the next request instead of when the token expires.
+    /// False for an anonymous caller.</summary>
+    bool IsAdmin { get; }
 }
 
 /// <summary>A verified caller: the Firebase UID pulled from a validated ID token,
@@ -47,6 +57,17 @@ public interface IUserStore
     /// <c>users</c> row if it does not exist yet. Best-effort on name/photo (the
     /// token is the source of truth for the uid, not for the display name).</summary>
     Task<Guid> ResolveUserIdAsync(VerifiedIdentity identity, CancellationToken ct = default);
+
+    /// <summary>The internal id <em>and</em> role for this Firebase identity, in one
+    /// round-trip. The identity the request acts as needs both, and asking for them
+    /// through two members would read the same row twice per request; a caller that
+    /// only needs the id keeps using <see cref="ResolveUserIdAsync"/>.</summary>
+    Task<(Guid UserId, UserRole Role)> ResolveUserAsync(VerifiedIdentity identity, CancellationToken ct = default);
+
+    /// <summary>The role stored on an existing user's row, or
+    /// <see cref="UserRole.Member"/> when no such row exists. Used by the demo
+    /// identity, which has no token to carry a role and must not invent one.</summary>
+    Task<UserRole> FindRoleByIdAsync(Guid userId, CancellationToken ct = default);
 }
 
 /// <summary>

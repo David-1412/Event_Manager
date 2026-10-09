@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api";
+import type { UserRole } from "@/types/admin";
 import type { AuthUser } from "./types";
 
 /**
@@ -40,6 +41,47 @@ export interface UserDto {
   avatarUrl: string | null;
 }
 
+/** Mirror of `CurrentUserDto` from `GET /api/auth/me`. */
+export interface MeDto {
+  id: string;
+  /** The PascalCase role name — see `UserRoleJsonConverter`. */
+  role: UserRole;
+  email: string | null;
+  displayName: string | null;
+}
+
+export const AUTH_ME_PATH = "/api/auth/me";
+
+/**
+ * Read the caller's role back from the API.
+ *
+ * This has to be a separate call from the login exchange because the role is not a
+ * Firebase claim: it lives on the API's `users` row precisely so a demotion bites on
+ * the next request rather than when the current ID token expires. Nowhere else can
+ * the client learn it, and it is what decides whether the Admin nav item renders.
+ *
+ * Never throws. A missing endpoint, a 401, or a transport failure all resolve null,
+ * meaning "unknown", which every consumer reads as *not an admin*. Failing the
+ * session over a privilege lookup would log people out because a read-only probe
+ * was unavailable, and the server authorises every admin action on its own side
+ * regardless of what this returned.
+ */
+export async function fetchRole(token: string, signal?: AbortSignal): Promise<UserRole | null> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+  try {
+    const response = await fetch(`${base}${AUTH_ME_PATH}`, {
+      signal,
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    const dto = (await response.json()) as MeDto;
+    // Guard the wire value: a role outside the union must not reach the badges.
+    return dto.role === "Admin" ? "Admin" : dto.role === "Member" ? "Member" : null;
+  } catch {
+    return null;
+  }
+}
+
 interface IdTokenCarrier {
   /** Firebase UID — the field the API keys its own user row on. */
   uid: string;
@@ -48,6 +90,8 @@ interface IdTokenCarrier {
   email: string | null;
   photoURL: string | null;
   emailVerified: boolean;
+  /** Firebase `User.metadata`; `creationTime` is an RFC 1123 date string. */
+  metadata?: { creationTime?: string };
 }
 
 export const AUTH_LOGIN_PATH = "/api/auth/login";
@@ -82,7 +126,17 @@ export async function establishSession(
       throw await errorFrom(response);
     }
     const payload = (await response.json()) as LoginResponse;
-    return { user: mergeUser(firebaseUser, payload.user), token: payload.token, apiTrusted: true };
+    const user = mergeUser(firebaseUser, payload.user);
+    // The role read is best-effort and deliberately not awaited in a way that can
+    // fail the login: a null leaves the caller a Member in the UI's eyes, which is
+    // the safe direction. It uses the API token the exchange just produced, not the
+    // Firebase ID token, because that is the credential /api/auth/me accepts.
+    const role = await fetchRole(payload.token, signal);
+    return {
+      user: role ? { ...user, role } : user,
+      token: payload.token,
+      apiTrusted: true,
+    };
   } catch (error) {
     if (error instanceof ApiError && isMissingEndpoint(error.status)) return fallback;
     // Aborts belong to whoever owns the signal, not to us.
@@ -148,7 +202,7 @@ async function errorFrom(response: Response): Promise<ApiError> {
   return new ApiError({ code: "Unknown", ...problem });
 }
 
-function toAuthUser(user: IdTokenCarrier): AuthUser {
+export function toAuthUser(user: IdTokenCarrier): AuthUser {
   const email = user.email ?? "";
   return {
     uid: user.uid,
@@ -156,7 +210,13 @@ function toAuthUser(user: IdTokenCarrier): AuthUser {
     email,
     photoURL: user.photoURL,
     emailVerified: user.emailVerified,
+    createdAt: toIso(user.metadata?.creationTime),
   };
+}
+
+function toIso(value: string | undefined): string | undefined {
+  const time = value ? Date.parse(value) : NaN;
+  return Number.isNaN(time) ? undefined : new Date(time).toISOString();
 }
 
 /** The API row wins on identity fields; Firebase fills whatever it lacks. */

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useCallback,
@@ -10,6 +10,8 @@ import {
 import { AdvancedMarker, InfoWindow, useMap } from "@vis.gl/react-google-maps";
 import { MapInfoCard } from "@/components/map/map-fallback";
 import {
+  BROWSE_CENTER,
+  BROWSE_ZOOM,
   DEFAULT_CENTER,
   MapSurface,
   useAdvancedMarkerSupport,
@@ -45,22 +47,30 @@ export function EventMap({
   const [pendingCentre, setPendingCentre] = useState<{ lat: number; lng: number } | null>(null);
   const anchorRef = useRef<{ lat: number; lng: number } | null>(null);
 
+  // The map's opening centre. Browse opens on Monash Clayton; the detail map
+  // anchors on its own event (or Melbourne CBD if that event lacks coordinates).
   const centre = useMemo(() => {
-    const selected = events.find((e) => e.id === selectedEventId);
-    if (selected) return { lat: selected.latitude, lng: selected.longitude };
+    if (variant === "browse") return BROWSE_CENTER;
     const first = events[0];
     if (first) return { lat: first.latitude, lng: first.longitude };
     return DEFAULT_CENTER;
+  }, [events, variant]);
+
+  // Where a pin tap flies to. Browse is deliberately *uncontrolled* (see below)
+  // so panning is free, but selecting a pin still glides the map to that event.
+  const flyTo = useMemo(() => {
+    const selected = events.find((e) => e.id === selectedEventId);
+    return selected ? { lat: selected.latitude, lng: selected.longitude } : null;
   }, [events, selectedEventId]);
 
   return (
     <MapSurface
-      center={centre}
-      zoom={variant === "detail" ? 15 : 12}
+      center={flyTo ?? centre}
+      zoom={variant === "detail" ? 15 : BROWSE_ZOOM}
       className={className}
       heightClass={variant === "detail" ? "h-[200px]" : "h-full min-h-48"}
       ariaLabel={variant === "detail" ? "Map of venue" : "Map of events"}
-      flyToCenterOnChange
+      flyToCenterOnChange={variant !== "browse"}
       onMapClick={() => onSelect(null)}
       onCameraChanged={(next) => {
         if (!onSearchThisArea || variant !== "browse") return;
@@ -129,9 +139,9 @@ function EventPinMarker({
   const visual = (
     <Pin
       icon={event.sportIcon ?? PIN_FALLBACK_ICON}
-      count={`${event.participantCount}/${event.maxParticipants}`}
+      count={`${event.joinedCount}/${event.maxParticipants}`}
       selected={selected}
-      full={event.participantCount >= event.maxParticipants}
+      full={event.joinedCount >= event.maxParticipants}
     />
   );
 
@@ -139,7 +149,7 @@ function EventPinMarker({
     return (
       <AdvancedMarker
         position={{ lat: event.latitude, lng: event.longitude }}
-        title={`${event.title} ${event.participantCount}/${event.maxParticipants}`}
+        title={`${event.title} ${event.joinedCount}/${event.maxParticipants}`}
         onClick={() => onSelect(event.id)}
       >
         {visual}
@@ -149,11 +159,11 @@ function EventPinMarker({
   return (
     <OverlayPin
       position={{ lat: event.latitude, lng: event.longitude }}
-      title={`${event.title} ${event.participantCount}/${event.maxParticipants}`}
+      title={`${event.title} ${event.joinedCount}/${event.maxParticipants}`}
       icon={event.sportIcon ?? PIN_FALLBACK_ICON}
-      count={`${event.participantCount}/${event.maxParticipants}`}
+      count={`${event.joinedCount}/${event.maxParticipants}`}
       selected={selected}
-      full={event.participantCount >= event.maxParticipants}
+      full={event.joinedCount >= event.maxParticipants}
       onClick={() => onSelect(event.id)}
     />
   );

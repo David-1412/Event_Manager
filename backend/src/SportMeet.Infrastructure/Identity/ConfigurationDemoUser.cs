@@ -11,15 +11,32 @@ namespace SportMeet.Infrastructure.Identity;
 /// the demo id is not a constant, and nothing in Application knows it exists.
 /// Replacing this with the token-backed implementation is a one-line change in
 /// DependencyInjection, with no edits to EventService or the repository.
+///
+/// <b>Not registered.</b> <c>AddSportMeetInfrastructure</c> binds
+/// <see cref="ICurrentUser"/> to <see cref="TokenCurrentUser"/>, which is the
+/// only implementation the API resolves; this class remains as the shape the
+/// demo fallback documents and as the type the demo options are bound on. Its
+/// <see cref="IsAdmin"/> is deliberately non-privileged so that reviving it as
+/// the acting identity cannot silently hand every anonymous caller the review
+/// queue - see that member.
 /// </summary>
 public sealed class ConfigurationDemoUser(IOptions<DemoUserOptions> options) : ICurrentUser
 {
     public Guid? UserId => options.Value.AsUserId;
 
-    /// <summary>Always true here. The name is what surfaces in logs and in the
-    /// "demo mode" startup warning, so nothing can mistake this for a verified
-    /// caller.</summary>
+    /// <summary>True exactly when a demo id is configured. The name is what
+    /// surfaces in logs and in the "demo mode" startup warning, so nothing can
+    /// mistake this for a verified caller.</summary>
     public bool IsDemo => options.Value.AsUserId is not null;
+
+    /// <summary>Always false. Presence of a configured id proves nothing about
+    /// privileges, and unlike <see cref="TokenCurrentUser"/> this class has no
+    /// database to look the role up in - so it asserts none. The demo review
+    /// queue is reached through TokenCurrentUser, which reads the demo id's
+    /// users.role row and therefore still requires an actual Admin row.
+    /// Returning true here was a standing privilege grant keyed on a config
+    /// value; nothing consumed it, and nothing should.</summary>
+    public bool IsAdmin => false;
 }
 
 /// <summary>

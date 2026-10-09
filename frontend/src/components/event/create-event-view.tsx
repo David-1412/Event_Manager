@@ -14,15 +14,22 @@ import { useAuth } from "@/lib/auth/auth-provider";
 import { updateDraft, createManualDraft, getDraft, approveDraft } from "@/lib/drafts";
 import { refreshDraftQueue } from "@/features/create/use-drafts";
 import { payloadToFormValues, payloadToVenue } from "@/features/create/use-draft-to-form";
+import { reportPublish } from "@/features/create/import-api";
+import {
+  activeFlags,
+  flagText,
+  raiseFlags,
+  type RaisedFlags,
+} from "@/features/create/field-flags";
 import {
   clearLocalDraftEdit,
   loadLocalDraftEdit,
   parseLocalDraftEdit,
   saveLocalDraftEdit,
 } from "@/features/create/draft-autosave";
-import { DraftsPastePanel } from "@/components/event/drafts-paste-panel";
+import { ImportTextPanel } from "@/components/event/import-text-panel";
 import { DraftsSection, DraftBanner } from "@/components/event/drafts-section";
-import { ConfirmDialog } from "@/components/ui/dialog";
+import { ConfirmDialog, Dialog } from "@/components/ui/dialog";
 
 
 import { signInReturnTo } from "@/lib/auth/types";
@@ -38,7 +45,12 @@ import { fixtureAddDraft, fixtureSaveDraft } from "@/lib/fixtures";
 import { CreateEventGroups } from "@/components/event/create-event-groups";
 import { CreateEventFooter } from "@/components/event/create-event-footer";
 import { previewOf } from "@/components/event/create-event-preview";
-import type { DraftPayload, EventDraft, ExtractNowResponse } from "@/types/events";
+import type {
+  DraftPayload,
+  EventDraft,
+  ImportDraftResponse,
+  ImportFlagField,
+} from "@/types/events";
 
 /**
  * `/create` (spec §8): five groups - What / When / Where / Who and how much /
@@ -48,12 +60,17 @@ import type { DraftPayload, EventDraft, ExtractNowResponse } from "@/types/event
  */
 export function CreateEventView() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const uid = user?.uid ?? null;
 
   const [venue, setVenue] = useState<VenueSelection | null>(null);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const [submitFailed, setSubmitFailed] = useState(false);
+  // The banner used to say "see the highlights below", but an error on a field
+  // with no visible control (venue is set through the map picker, not a text box)
+  // or scrolled off-screen left the user staring at a message with nothing to act
+  // on. Keep the human labels of whatever just failed and print them in the banner.
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 
   const form = useForm<CreateEventValues>({
     resolver: zodResolver(createEventSchema),
@@ -74,12 +91,34 @@ export function CreateEventView() {
   // user becomes the event's host. Missing fields and confidence are review
   // guidance, not blockers, so the form is always editable and saveable.
   const [draftId, setDraftId] = useState<string | null>(null);
+
+  // Paste-to-fill. The import id ties the published event back to what was proposed (for
+  // the accuracy measurement); the raised flags are the "check this" markers, which clear
+  // themselves when their field is edited or dismissed.
+  const [importId, setImportId] = useState<string | null>(null);
+  const [raised, setRaised] = useState<RaisedFlags>({});
+  const [dismissed, setDismissed] = useState<ReadonlySet<ImportFlagField>>(new Set());
+  // When the person opened Create Event: the start of the number this feature is judged by.
+  const openedAt = useRef<number | null>(null);
+  useEffect(() => {
+    openedAt.current = Date.now();
+  }, []);
   const [draftMissing, setDraftMissing] = useState<string[]>([]);
   const [draftConfidence, setDraftConfidence] = useState<number | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [promptExit, setPromptExit] = useState(false);
   const exitPathRef = useRef<string | null>(null);
+  // A non-admin's public event needs an administrator's approval before it reaches
+  // Browse, so submitting it is a decision with a consequence the user has to see
+  // coming. This holds the fully-validated payload of the submit that triggered the
+  // confirmation, and null means no confirmation is open. Held rather than
+  // recomputed on confirm: the form can be edited while the dialog is up, and
+  // silently publishing a different event than the one the user approved would be
+  // worse than the dialog existing at all.
+  const [pendingPublicSubmit, setPendingPublicSubmit] = useState<
+    ReturnType<typeof toCreateEventPayload> | null
+  >(null);
   const publishedRef = useRef(false);
   const draftRef = useRef<string | null>(null);
   const hydratedRef = useRef(false);
@@ -119,6 +158,7 @@ export function CreateEventView() {
     setDraftConfidence(draft.confidence);
     setServerErrors({});
     setSubmitFailed(false);
+    setSubmitErrors([]);
     setIsDirty(false);
     publishedRef.current = false;
     hydratedRef.current = true;
@@ -250,27 +290,49 @@ export function CreateEventView() {
     form.setValue("longitude", next?.longitude ?? 0);
   }
 
-  function applyExtractedDraft(result: ExtractNowResponse) {
+  // Fill the form from an import. The import is recorded server-side but is not a draft,
+  // so this stays a plain create-event form: the "Editing draft" banner stays hidden and
+  // publishing goes through the normal POST /api/events path.
+  function applyImport(result: ImportDraftResponse) {
     if (!result.payload) return;
     const nextValues = payloadToFormValues(result.payload);
     const nextVenue = payloadToVenue(result.payload);
     form.reset(nextValues);
     setVenue(nextVenue);
     latestRef.current = { values: nextValues, venue: nextVenue };
-    setDraftId(result.draftId);
-    setDraftMissing(result.missingFields ?? []);
-    setDraftConfidence(result.confidence);
+    setImportId(result.importId);
+    setRaised(raiseFlags(result.flags, nextValues, nextVenue));
+    setDismissed(new Set());
     setServerErrors({});
     setSubmitFailed(false);
+    setSubmitErrors([]);
     setIsDirty(false);
   }
 
+  const active = activeFlags(raised, dismissed, values, venue);
+  const flagFor = (field: ImportFlagField) => {
+    const reason = active[field];
+    return reason
+      ? {
+          text: flagText(reason),
+          onDismiss: () => setDismissed((prev) => new Set(prev).add(field)),
+        }
+      : undefined;
+  };
 
   async function onSubmit(draft: CreateEventValues) {
     setSubmitFailed(false);
+    setSubmitErrors([]);
     setServerErrors({});
     const parsed = createEventSchema.safeParse(draft);
     if (!parsed.success) {
+      const issues = parsed.error.issues.map((i) => ({
+        field: String(i.path[0]),
+        message: i.message,
+      }));
+      setSubmitErrors(
+        issues.map((i) => `${FIELD_LABELS[i.field] ?? i.field}: ${i.message}`),
+      );
       parsed.error.issues.forEach((issue) =>
         form.setError(String(issue.path[0]) as keyof CreateEventValues, {
           message: issue.message,
@@ -281,12 +343,36 @@ export function CreateEventView() {
       return;
     }
     if (!venue) {
+      // One error line only: the inline field error under the picker. The
+      // summary banner stays empty so the same message isn't shown twice.
+      setSubmitErrors([]);
       form.setError("venueName", { message: "Search for a venue" });
       focusFirstError(["venueName"]);
       setSubmitFailed(true);
       return;
     }
     const payload = toCreateEventPayload({ ...parsed.data, ...venue });
+    // The approval gate. A public event from anyone who is not an administrator
+    // lands in the review queue rather than on Browse, and that is a surprise worth
+    // stopping for - so hold the submit and say what will happen. Admins and private
+    // events publish immediately and skip the dialog entirely, because for them
+    // Create Event means exactly what the button says.
+    //
+    // The server decides the real status; this only decides whether to ask first.
+    // `isAdmin` comes from GET /api/auth/me, so a stale claim cannot skip the dialog
+    // and get a PendingReview event created behind the user's back - the toast below
+    // reads the status the server actually returned.
+    if (payload.visibility !== "Private" && !isAdmin) {
+      setPendingPublicSubmit(payload);
+      return;
+    }
+    await publishEvent(payload);
+  }
+
+  /** The write itself, reached once the user is entitled to publish straight away
+   *  or has confirmed the submission through the approval dialog. */
+  async function publishEvent(payload: ReturnType<typeof toCreateEventPayload>) {
+    setPendingPublicSubmit(null);
     try {
       // A draft publishes through approve — the draft closes, the approving user
       // becomes the host, and it leaves the queue; a plain create posts normally.
@@ -296,12 +382,27 @@ export function CreateEventView() {
           : await postEvent(payload);
       // The event is published; navigating away is no longer an unsaved-draft exit.
       publishedRef.current = true;
+      reportPublish({
+        eventId: created.id,
+        durationMs: Date.now() - (openedAt.current ?? Date.now()),
+        path: draftId ? "draft" : importId ? "import" : "manual",
+        importId,
+      });
       if (draftId) {
         clearLocalDraftEdit(draftId);
         refreshDraftQueue(uid);
       }
       setIsDirty(false);
-      toast("Event created", "success");
+      // Say what actually happened. An event held for review is not "created" in the
+      // sense the user cares about - it is waiting - and claiming otherwise would
+      // send them looking for it on Browse. Fixtures mode returns no status, so it
+      // keeps the plain wording.
+      toast(
+        created.status === "PendingReview"
+          ? "Event submitted for approval. You can track its status in My Events."
+          : "Event created",
+        "success",
+      );
 
       router.push(`/events/${created.id}`);
     } catch (error) {
@@ -311,10 +412,19 @@ export function CreateEventView() {
           mapped[toCamel(key)] = messages[0] ?? "Check this value";
         });
         setServerErrors(mapped);
+        setSubmitErrors(
+          Object.entries(mapped).map(
+            ([key, message]) => `${FIELD_LABELS[key] ?? key}: ${message}`,
+          ),
+        );
         Object.entries(mapped).forEach(([key, message]) =>
           form.setError(key as keyof CreateEventValues, { message }),
         );
         focusFirstError(Object.keys(mapped));
+      } else {
+        setSubmitErrors([
+          error instanceof Error && error.message ? error.message : "Could not create the event",
+        ]);
       }
       setSubmitFailed(true);
     }
@@ -328,34 +438,50 @@ export function CreateEventView() {
     >
       <div className="flex min-w-0 flex-col gap-8">
         <h1 className="text-h1 text-fg">Create an event</h1>
+        <ImportTextPanel onImported={applyImport} />
         {submitFailed && (
-          <p
+          <div
             role="alert"
             className="rounded-md border border-danger bg-surface p-3 text-meta text-danger"
           >
-            Some fields need attention - see the highlights below.
-          </p>
+            <p className="font-medium">
+              {submitErrors.length > 0
+                ? "Some fields need attention:"
+                : "Some fields need attention - see the highlights below."}
+            </p>
+            {submitErrors.length > 0 && (
+              <ul className="mt-1 list-disc pl-5">
+                {submitErrors.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         {draftId && (
           <DraftBanner title={values.title} confidence={draftConfidence} missingFields={draftMissing} />
         )}
-        <DraftsPastePanel onExtracted={applyExtractedDraft} />
         <CreateEventGroups
 
           values={values}
           venue={venue}
           errorFor={errorFor}
+          flagFor={flagFor}
           register={form.register}
           onTags={(tags) => form.setValue("tags", tags, { shouldValidate: true })}
           onVenue={applyVenue}
+          onThumbnail={(url) => form.setValue("thumbnailUrl", url)}
         />
       </div>
 
-      {/* Live preview: the cheapest way to teach what the listing will look like. */}
+      {/* Right rail: the live preview. The paste panel is at the top of the form
+          instead, so it is visible on a phone too. */}
       <aside className="hidden lg:block">
-        <div className="sticky top-20 flex flex-col gap-2">
-          <p className="text-meta text-fg-muted">Live preview</p>
-          <EventCard event={previewOf(values, venue)} />
+        <div className="sticky top-20 flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <p className="text-meta text-fg-muted">Live preview</p>
+            <EventCard event={previewOf(values, venue)} hideImage />
+          </div>
         </div>
       </aside>
 
@@ -373,6 +499,46 @@ export function CreateEventView() {
         <DraftsSection onOpenDraft={selectPendingDraft} />
       </div>
 
+
+      {/* Public events need an administrator's approval before they reach Browse, so
+          a non-admin's public submit stops here. Not a ConfirmDialog: that one is
+          destructive by construction ("Keep it" against a red button), and this is
+          the opposite - an ordinary step, with nothing being thrown away. Cancel
+          closes it and leaves the form exactly as it was, so the user can switch to
+          Private or fix something instead. */}
+      <Dialog
+        open={pendingPublicSubmit !== null}
+        onClose={() => setPendingPublicSubmit(null)}
+        labelledBy="public-approval-title"
+      >
+        <h2 id="public-approval-title" className="text-h3 text-fg">
+          Public events require approval
+        </h2>
+        <p className="mt-2 text-body text-fg-muted">
+          Public events are reviewed before appearing on Browse. Your event will be
+          submitted for approval and will remain hidden until approved by an
+          administrator. You can track its status from My Events.
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setPendingPublicSubmit(null)}
+            className="press h-11 rounded-md border border-border bg-surface px-5 text-body font-medium text-fg hover:bg-surface-2"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-autofocus
+            onClick={() => {
+              if (pendingPublicSubmit) void publishEvent(pendingPublicSubmit);
+            }}
+            className="press h-11 rounded-md bg-brand-600 px-5 text-body font-medium text-white"
+          >
+            Submit for Approval
+          </button>
+        </div>
+      </Dialog>
 
       <ConfirmDialog
         open={promptExit}
@@ -397,6 +563,25 @@ export function CreateEventView() {
   );
 }
 
+/** Human labels for the submit banner. Keyed by schema field so a failure on a
+ *  field with no visible control (venue, lat/lng) still reads as something the
+ *  user can act on rather than a raw camelCase key. */
+const FIELD_LABELS: Record<string, string> = {
+  title: "Name",
+  tags: "Tags",
+  date: "Date",
+  startTime: "Start",
+  endTime: "Finish",
+  venueName: "Map location",
+  address: "Map location",
+  latitude: "Map location",
+  longitude: "Map location",
+  maxParticipants: "Spots",
+  cost: "Cost per person",
+  description: "Description",
+  visibility: "Who can find it",
+};
+
 /** Focus the first invalid control so keyboard users are never stranded. */
 function focusFirstError(names: string[]) {
   for (const name of names) {
@@ -419,13 +604,19 @@ function toCamel(key: string): string {
 
 async function postEvent(
   payload: ReturnType<typeof toCreateEventPayload>,
-): Promise<{ id: string }> {
+): Promise<{ id: string; status?: string }> {
   if (usingFixtures) {
     // Offline we hand back a fixture the detail page can actually resolve,
     // rather than pretending a write happened.
     return { id: "evt-badminton-monday" };
   }
-  return request<{ id: string }>("/api/events", { method: "POST", body: payload });
+  // The full detail comes back either way; only these two fields are read. `status`
+  // is what lets the success message tell "created" from "submitted for approval"
+  // using the server's decision rather than the client's guess.
+  return request<{ id: string; status?: string }>("/api/events", {
+    method: "POST",
+    body: payload,
+  });
 }
 
 /**
@@ -453,10 +644,14 @@ function buildDraftPayload(
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Melbourne",
     venueName: venue?.venueName ?? v.venueName ?? "",
     address: venue?.address ?? v.address ?? "",
+    ...(v.thumbnailUrl?.trim() ? { thumbnailUrl: v.thumbnailUrl.trim() } : {}),
     ...(venue ? { latitude: venue.latitude, longitude: venue.longitude } : {}),
     ...(Number.isFinite(spots) && spots >= 2 && spots <= 50 ? { maxParticipants: Math.trunc(spots) } : {}),
     ...(v.cost?.trim() && Number.isFinite(cost) ? { cost } : {}),
     ...(v.description?.trim() ? { description: v.description.trim() } : {}),
+    // Always sent: the select has a valid value even on a half-filled form, and an
+    // approved draft must not silently fall back to Public on the reviewer's choice.
+    visibility: v.visibility === "Private" ? "Private" : "Public",
   };
 }
 

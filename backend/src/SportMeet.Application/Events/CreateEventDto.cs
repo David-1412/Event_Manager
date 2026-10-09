@@ -28,9 +28,20 @@ public sealed class CreateEventDto
     public string? Timezone { get; init; }
     public string? VenueName { get; init; }
     public string? Address { get; init; }
+    /// <summary>Optional. The URL an earlier POST to /api/events/thumbnail handed
+    /// back; the create form uploads the picked image and forwards the URL here.
+    /// Null means no image, and the browse/preview/detail renderers hide the
+    /// thumbnail rather than showing a placeholder.</summary>
+    public string? ThumbnailUrl { get; init; }
     public double? Latitude { get; init; }
     public double? Longitude { get; init; }
     public int? MaxParticipants { get; init; }
     public decimal? Cost { get; init; }
     public string? Description { get; init; }
+
+    /// <summary>Discovery only: Public events appear in the browse feed, Private
+    /// ones are reachable solely through the link the host shares. Null is
+    /// Public — a client that predates the field must not accidentally create a
+    /// hidden event, and the draft-approval path forwards whatever it was given.</summary>
+    public EventVisibility? Visibility { get; init; }
 }

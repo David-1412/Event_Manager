@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using SportMeet.Application.Imports;
 
 namespace SportMeet.Api.Common;
 
@@ -95,6 +96,37 @@ public static class ProblemDetailsDefaults
         Detail = "Sign in to view or manage your drafts.",
         Status = StatusCodes.Status401Unauthorized,
         Extensions = { ["code"] = "Unauthorized" },
+    };
+
+    /// <summary>A refusal from the import pipeline that the user can act on. The title is
+    /// the sentence shown in the UI, so it is written for a person.</summary>
+    public static ProblemDetails Import(ImportErrorCode code, string message)
+    {
+        var (status, name) = code switch
+        {
+            ImportErrorCode.EmptyInput => (StatusCodes.Status422UnprocessableEntity, "ImportEmptyInput"),
+            ImportErrorCode.TooLong => (StatusCodes.Status422UnprocessableEntity, "ImportTooLong"),
+            ImportErrorCode.UrlNotSupported => (StatusCodes.Status422UnprocessableEntity, "ImportUrlNotSupported"),
+            ImportErrorCode.Busy => (StatusCodes.Status503ServiceUnavailable, "ImportBusy"),
+            _ => (StatusCodes.Status422UnprocessableEntity, "Unknown"),
+        };
+        return new ProblemDetails
+        {
+            Type = Type,
+            Title = message,
+            Status = status,
+            Detail = message,
+            Extensions = { ["code"] = name },
+        };
+    }
+
+    public static ProblemDetails RateLimited() => new()
+    {
+        Type = Type,
+        Title = "Too many imports.",
+        Status = StatusCodes.Status429TooManyRequests,
+        Detail = "You've imported a lot in the last hour. Try again shortly, or fill the form in directly.",
+        Extensions = { ["code"] = "ImportRateLimited" },
     };
 
     /// <summary>Catch-all. The client gets a stable shape and no internals; the

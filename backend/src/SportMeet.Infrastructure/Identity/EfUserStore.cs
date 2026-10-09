@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SportMeet.Application.Common;
 using SportMeet.Domain.Entities;
+using SportMeet.Domain.Enums;
 using SportMeet.Infrastructure.Persistence;
 
 namespace SportMeet.Infrastructure.Identity;
@@ -18,13 +19,16 @@ namespace SportMeet.Infrastructure.Identity;
 public sealed class EfUserStore(AppDbContext db) : IUserStore
 {
     public async Task<Guid> ResolveUserIdAsync(VerifiedIdentity identity, CancellationToken ct = default)
+        => (await ResolveUserAsync(identity, ct)).UserId;
+
+    public async Task<(Guid UserId, UserRole Role)> ResolveUserAsync(VerifiedIdentity identity, CancellationToken ct = default)
     {
         var existing = await db.Users.FirstOrDefaultAsync(u => u.AuthUid == identity.AuthUid, ct);
         if (existing is not null)
         {
             Touch(existing, identity);
             if (db.ChangeTracker.HasChanges()) await db.SaveChangesAsync(ct);
-            return existing.Id;
+            return (existing.Id, existing.Role);
         }
 
         var created = new User
@@ -38,11 +42,17 @@ public sealed class EfUserStore(AppDbContext db) : IUserStore
                  : "Member",
             Email = string.IsNullOrWhiteSpace(identity.Email) ? null : Truncate(identity.Email, 320),
             PhotoUrl = string.IsNullOrWhiteSpace(identity.PhotoUrl) ? null : Truncate(identity.PhotoUrl, 2048),
+            // Role deliberately not taken from the token: a first-time sign-in is a
+            // member, and promoting a person is an explicit write against their row.
         };
         db.Users.Add(created);
         await db.SaveChangesAsync(ct);
-        return created.Id;
+        return (created.Id, created.Role);
     }
+
+    public async Task<UserRole> FindRoleByIdAsync(Guid userId, CancellationToken ct = default)
+        => await db.Users.Where(u => u.Id == userId).Select(u => u.Role).FirstOrDefaultAsync(ct);
+
 
     private static void Touch(User user, VerifiedIdentity identity)
     {

@@ -3,7 +3,7 @@ import { AccountView } from "@/components/account/account-view";
 
 export const metadata: Metadata = {
   title: "Account",
-  description: "Your name, your sign-in, and your session.",
+  description: "Your profile, activity and preferences.",
 };
 
 /**

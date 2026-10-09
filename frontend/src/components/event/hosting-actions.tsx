@@ -11,10 +11,15 @@ export function HostingActions({
   eventId,
   isCancelled,
   isEnded,
+  awaitingReview = false,
 }: {
   eventId: string;
   isCancelled: boolean;
   isEnded: boolean;
+  /** Waiting on an administrator's decision. Not a live event, so there is nothing
+   * for the host to cancel: the submission is still in flight, and the review queue
+   * is the only place it can be moved on from. */
+  awaitingReview?: boolean;
 }) {
   const [isSaving, setIsSaving] = useState(false);
 
@@ -33,6 +38,16 @@ export function HostingActions({
     } finally {
       setIsSaving(false);
     }
+  }
+
+  // Ahead of the isEnded branch: a pending event is usually in the future, so
+  // checking isEnded first would label it "Ended" and that is a lie.
+  if (awaitingReview) {
+    return (
+      <Button size="sm" variant="secondary" disabled>
+        Awaiting review
+      </Button>
+    );
   }
 
   if (isEnded) {

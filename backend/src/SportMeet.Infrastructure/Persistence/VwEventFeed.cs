@@ -22,6 +22,7 @@ public class VwEventFeed
 
     public string VenueName { get; set; } = string.Empty;
     public string? Address { get; set; }
+    public string? ThumbnailUrl { get; set; }
     public string? PlaceId { get; set; }
     public double Lat { get; set; }
     public double Lng { get; set; }
@@ -32,13 +33,38 @@ public class VwEventFeed
     public SkillLevel? SkillLevel { get; set; }
 
     public decimal? Cost { get; set; }
-    public EventStatus Status { get; set; }
+
+    /// <summary>The view's status column, kept as the text the column holds rather
+    /// than as the <see cref="EventStatus"/> enum the events table maps to (see
+    /// VwEventFeedConfiguration). The browse filter excludes a <em>set</em> of
+    /// statuses, and EF cannot express that against a value-converted enum here: a
+    /// Contains binds its constants as integers, which Postgres refuses against a
+    /// varchar ("42883: operator does not exist: character varying = integer", the
+    /// same failure documented on <see cref="Visibility"/>), and
+    /// <c>v.Status.ToString()</c> is not translatable. Parsed back in ToEvent.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>The view's text column, declared as text rather than as the
+    /// EventVisibility enum the events table maps to. A value-converted enum on a
+    /// keyless view projection makes EF bind its comparison constant as an integer
+    /// against this text column ("42883: operator does not exist: character varying
+    /// <> integer", measured against a real database), and Enum.ToString() is not
+    /// translatable either. The repository compares this against
+    /// nameof(EventVisibility.Private) and converts to the domain enum in ToEvent.
+    /// Status is text here for the same structural reason - see its own remark.</summary>
+    public string Visibility { get; set; } = string.Empty;
     public DateTimeOffset? CancelledAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
     /// <summary>The COUNT over event_participants that the view derives.</summary>
     public int CurrentParticipants { get; set; }
+
+    /// <summary>The COUNT over event_interests that the view derives, alongside
+    /// current_participants. Computed in the view (not a stored counter) for the
+    /// same reason: a join/leave and an interest toggle never race a counter, and
+    /// a browse page resolves both counts in its single round-trip.</summary>
+    public int InterestedCount { get; set; }
 
     /// <summary>Comma-joined normalized tag names, ordered by name so the same
     /// tag set always serialises identically. Split back into a list in
@@ -52,5 +78,12 @@ public class VwEventFeed
     public string? SportIcon { get; set; }
     public string HostName { get; set; } = string.Empty;
     public string? HostPhotoUrl { get; set; }
+
+    /// <summary>The host's role as the view's text column ('Member' | 'Admin').
+    /// Read so an unpublished event (pending review, or rejected) can be opened by
+    /// an administrator as well as by its creator; declared as text rather than the
+    /// <c>UserRole</c> enum for the reason documented on <see cref="Visibility"/>.
+    /// Never a query predicate, so no value conversion is configured for it.</summary>
+    public string HostRole { get; set; } = string.Empty;
 }
 

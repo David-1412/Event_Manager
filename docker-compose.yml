@@ -51,11 +51,12 @@ services:
       dockerfile: backend/Dockerfile
       secrets:
         - corp-ca
-      # `offline` gives backend/Dockerfile's restore the host NuGet folder as an
+      # `offline` gives backend/Dockerfile's restore a local NuGet source as an
       # extra package source, alongside the BuildKit package cache (see the
       # Dockerfile header for why the cache is the store that ends up complete).
-      # NUGET_PACKAGES_PATH is set by scripts/build.ps1; unset, the context is
-      # empty and the build restores from the registry alone.
+      # NUGET_PACKAGES_PATH is set by scripts/build.ps1 to the flat source folder
+      # that scripts/restore-cache.ps1 creates; unset, the context is empty and
+      # the build restores from the BuildKit cache and the registry alone.
       additional_contexts:
         - offline=${NUGET_PACKAGES_PATH:-scripts/empty-cache}
     container_name: sportmeet-api
@@ -72,6 +73,10 @@ services:
       # to turn per-user draft ownership on; unset, the API keeps the configured
       # demo identity and the draft endpoints honestly answer 401.
       Firebase__ProjectId: ${FIREBASE_PROJECT_ID:-}
+      # Server-side geocoding for paste-to-event import. Use a key restricted to the
+      # Geocoding API, not the browser Maps key. Unset, imports still work and the
+      # venue is left for the user to pin on the map.
+      Google__GeocodingApiKey: ${GOOGLE_GEOCODING_API_KEY:-}
       # Graph mailbox polling. Everything stays empty (and inert) unless filled;
       # MailboxOwner is the user polled invitations become private drafts for.
       Ingestion__Enabled: ${INGESTION_ENABLED:-false}
@@ -81,8 +86,23 @@ services:
       AzureAd__ClientId: ${AZUREAD_CLIENT_ID:-}
       AzureAd__ClientSecret: ${AZUREAD_CLIENT_SECRET:-}
       AzureAd__MailboxAddress: ${AZUREAD_MAILBOX_ADDRESS:-}
-      # LLM extraction; unset, the deterministic heuristic extractor is used.
+      # LLM extraction; OpenAI is preferred. If OpenAi__ApiKey is unset, Claude is used;
+      # if both are unset, the deterministic heuristic extractor is used.
       OpenAi__ApiKey: ${OPENAI_API_KEY:-}
+      Claude__ApiKey: ${CLAUDE_API_KEY:-}
+      # Only needed for a key that is not scoped to one workspace (e.g. an sk-usr- user key).
+      Claude__WorkspaceId: ${CLAUDE_WORKSPACE_ID:-}
+    # Runtime trust for TLS-intercepting corporate proxies: without it the API
+    # cannot fetch Firebase's signing keys (PartialChain) and every token 401s.
+    # .NET on Linux loads every PEM in /etc/ssl/certs.
+    volumes:
+      - ./corp-ca.pem:/etc/ssl/certs/corp-ca.pem:ro
+      # Persist host-uploaded event thumbnails across rebuilds. Mounted at the
+      # leaf uploads dir (not its App_Data parent): Docker seeds a fresh named
+      # volume from the image's directory, which is owned by the non-root app
+      # user, so the API can write into it. Mounting the parent would land a
+      # root-owned empty dir the app user cannot create uploads under.
+      - sportmeet-uploads:/app/App_Data/uploads
     ports:
       - "${API_PORT:-5000}:8080"
     depends_on:
@@ -151,3 +171,4 @@ secrets:
 
 volumes:
   sportmeet-pgdata:
+  sportmeet-uploads:

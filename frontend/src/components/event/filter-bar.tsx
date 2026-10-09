@@ -28,11 +28,18 @@ export function FilterBar({
   onPatch,
   onReset,
   popularTags = [],
+  mapOpen = true,
+  onToggleMap,
 }: {
   query: EventQuery;
   onPatch: (patch: Partial<EventQuery>) => void;
   onReset: () => void;
   popularTags?: readonly PopularTag[];
+  /** Desktop map visibility, so the button can read "Hide map"/"Show map". */
+  mapOpen?: boolean;
+  /** Toggles the desktop map. When omitted the button is not rendered (the map
+   * is fixed open, as on pages that don't offer a split view). */
+  onToggleMap?: () => void;
 }) {
   const [scrolled, setScrolled] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -102,6 +109,17 @@ export function FilterBar({
                 className="press h-9 rounded-md px-3 text-meta font-medium text-brand-600 hover:bg-brand-tint"
               >
                 Reset
+              </button>
+            )}
+            {onToggleMap && (
+              <button
+                type="button"
+                onClick={onToggleMap}
+                aria-pressed={mapOpen}
+                className="press inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-border bg-surface px-3 text-meta font-medium text-fg hover:bg-surface-2"
+              >
+                <span aria-hidden>{"\u25C6"}</span>
+                {mapOpen ? "Hide map" : "Show map"}
               </button>
             )}
           </div>

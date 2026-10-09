@@ -14,6 +14,17 @@ const links = [
 ] as const;
 
 /**
+ * The admin destination, rendered only when the API has confirmed the role.
+ *
+ * Hidden rather than shown-and-refused: requirement is that a Member cannot *see*
+ * the admin page, and the backend's 404-for-non-admins is built on the same idea —
+ * the surface should be indistinguishable from absent. `isAdmin` is false while the
+ * role is still loading, so the link appears a beat after the session restores
+ * rather than flashing at a Member.
+ */
+const adminLink = { href: "/admin/users", label: "Admin" } as const;
+
+/**
  * The header is a client component now that it renders the session. The mark
  * and nav markup are unchanged, so server rendering still produces them —
  * `AuthProvider` resolves on the client and only the account control changes
@@ -25,6 +36,8 @@ const links = [
  */
 export function SiteHeader() {
   const pathname = usePathname();
+  const { isAdmin } = useAuth();
+  const visibleLinks = isAdmin ? [...links, adminLink] : links;
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface shadow-raise">
       <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-4 px-4">
@@ -41,7 +54,7 @@ export function SiteHeader() {
         </Link>
 
         <nav aria-label="Primary" className="flex items-center gap-1 overflow-x-auto">
-          {links.map((l) => (
+          {visibleLinks.map((l) => (
             <Link
               key={l.href}
               href={l.href}

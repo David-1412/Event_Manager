@@ -4,7 +4,43 @@
  */
 
 export type SkillLevel = "Beginner" | "Intermediate" | "Advanced";
-export type EventStatus = "Scheduled" | "Cancelled" | "Completed";
+/**
+ * Mirrors the backend `EventStatus` enum. `Scheduled` and `Published` are both
+ * live (visible in Browse, joinable) — the review workflow introduced `Published`
+ * as the approved twin of the pre-existing `Scheduled`, so never test for one
+ * alone. `Draft`, `PendingReview` and `Rejected` are never publicly visible;
+ * `PendingReview` is what a regular user's public event becomes until an
+ * administrator decides, which is the state My Events has to surface.
+ */
+export type EventStatus =
+  | "Scheduled"
+  | "Cancelled"
+  | "Completed"
+  | "Draft"
+  | "PendingReview"
+  | "Published"
+  | "Rejected";
+
+/** True when the status means the event is live in Browse. Mirrors the backend's
+ * `EventStatusExtensions.IsPublished`, so the two sides cannot drift apart. */
+export function isPublishedStatus(status: EventStatus): boolean {
+  return status === "Scheduled" || status === "Published";
+}
+
+/** Awaiting an administrator's decision. Kept separate from `isPublishedStatus`
+ * because the UI needs to talk about this one state specifically: it drives the
+ * Pending Approval badge, the awaiting-review notice, and the submit dialog. */
+export function isPendingReviewStatus(status: EventStatus): boolean {
+  return status === "PendingReview";
+}
+
+/**
+ * Discovery, not access. `Public` events appear in the browse feed; `Private`
+ * ones never show up in `GET /api/events` and are reachable only through the
+ * direct link the host shares — which is why the detail page stays open to
+ * anyone who has that link. Mirrors the backend `EventVisibility` enum.
+ */
+export type EventVisibility = "Public" | "Private";
 
 /**
  * Free-text tag, always normalized (lowercase, no '#') by the server. Replaces
@@ -35,6 +71,12 @@ export interface EventListItem {
   /** Server-supplied emoji (lives in the DB seed). null when the event has no
    * sport, since sport is decoration now and not required. */
   sportIcon: string | null;
+  /** The host's display name. Not rendered by the browse card; the admin review
+   * queue needs it, since a decision about someone else's public event has to say
+   * whose event it is. Absent from responses that predate the field, hence optional. */
+  hostName?: string | null;
+  /** Host photo URL; null renders the initials avatar. */
+  hostPhotoUrl?: string | null;
   /** null when the host chose no level; every renderer must hide the badge. */
   skillLevel: SkillLevel | null;
   startAt: string;
@@ -42,14 +84,24 @@ export interface EventListItem {
   timezone: string;
   venueName: string;
   address: string;
+  /** Host-uploaded thumbnail URL (served from the API's /uploads/...), or null
+   * when the event has no image. The card/preview/detail hide the image on null. */
+  thumbnailUrl: string | null;
   latitude: number;
   longitude: number;
   /** null or 0 => renders `Free`. */
   cost: number | null;
   maxParticipants: number;
-  participantCount: number;
+  /** Participants with a real participant row. Formerly `participantCount`;
+   * renamed to pair with `interestedCount` and match the API's `joinedCount`. */
+  joinedCount: number;
+  /** Events marked Interested (a softer signal than joined; reserves no spot). */
+  interestedCount: number;
   status: EventStatus;
   isCancelled: boolean;
+  /** "Public" events are in the browse feed; "Private" ones only through their
+   * link. The detail page offers a copyable link when this is "Private". */
+  visibility: EventVisibility;
   distanceKm: number | null;
 }
 
@@ -59,6 +111,7 @@ export interface EventDetail extends EventListItem {
   host: ParticipantDto;
   isHost: boolean;
   isJoined: boolean;
+  isInterested: boolean;
   participants: ParticipantDto[];
   cancelledAt: string | null;
 }
@@ -115,6 +168,9 @@ export interface DraftPayload {
   timezone?: string;
   venueName?: string;
   address?: string;
+  /** Uploaded thumbnail URL, carried through the draft so it survives review and
+   * lands on the approved event. Absent means no image. */
+  thumbnailUrl?: string | null;
   latitude?: number;
   longitude?: number;
   maxParticipants?: number;
@@ -122,6 +178,8 @@ export interface DraftPayload {
   tags?: string[];
   /** Backend SkillLevel enum string, or null when the event has no level. */
   skillLevel?: string | null;
+  /** Backend EventVisibility enum string. Absent means Public on approve. */
+  visibility?: EventVisibility;
 }
 
 /**
@@ -191,12 +249,49 @@ export interface ExtractNowResponse {
 }
 
 
+/** Why the import flagged a field. The client maps each to a sentence. */
+export type ImportFlagReason = "missing" | "assumed" | "unclear" | "past" | "unconfirmed";
+
+/** Fields the import can flag; `venue` covers the name, address and map pin. */
+export type ImportFlagField = "title" | "startAt" | "endAt" | "venue" | "maxParticipants";
+
+export interface ImportFlag {
+  field: ImportFlagField;
+  reason: ImportFlagReason;
+}
+
+/** POST /api/imports/text. `payload` is the body the create form posts. `basic` means
+ *  the heuristic extractor answered, which cannot read a venue or address. */
+export interface ImportDraftResponse {
+  importId: string;
+  kind: "extracted" | "no_event";
+  confidence: number | null;
+  missingFields: string[];
+  payload: DraftPayload | null;
+  flags: ImportFlag[];
+  geocode: { locationType: string; needsConfirm: boolean } | null;
+  basic: boolean;
+  detail: string | null;
+}
+
+/** Which route a published event took, for the create-time metric. */
+export type CreatePath = "manual" | "import" | "draft";
+
 /** Problem Details (RFC 9457) minus the noise we don't render. */
 export interface ProblemDetails {
   status: number;
   title: string;
   detail?: string;
-  code?: "EventFull" | "ValidationError" | "NotFound" | "Unknown";
+  code?:
+    | "EventFull"
+    | "ValidationError"
+    | "NotFound"
+    | "ImportEmptyInput"
+    | "ImportTooLong"
+    | "ImportUrlNotSupported"
+    | "ImportBusy"
+    | "ImportRateLimited"
+    | "Unknown";
   errors?: Record<string, string[]>;
 }
 

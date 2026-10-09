@@ -56,6 +56,20 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         return rows.Select(ToRow).ToList();
     }
 
+    /// <summary>The admin review queue. Oldest first because the queue is worked in
+    /// the order it fills, and <c>Id</c> breaks a tie inside one submission burst so a
+    /// reload cannot reshuffle the list under the reviewer's cursor.</summary>
+    public async Task<List<FeedRow>> ListPendingReviewAsync(CancellationToken ct = default)
+    {
+        var rows = await db.EventFeed.AsNoTracking()
+            .Where(v => v.Status == nameof(EventStatus.PendingReview))
+            .OrderBy(v => v.CreatedAt)
+            .ThenBy(v => v.Id)
+            .ToListAsync(ct);
+
+        return rows.Select(ToRow).ToList();
+    }
+
     public Task<Sport?> FindSportBySlugAsync(string slug, CancellationToken ct = default)
         => db.Sports.AsNoTracking().FirstOrDefaultAsync(s => s.Slug == slug, ct);
 
@@ -216,6 +230,47 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task<bool> IsInterestedAsync(Guid eventId, Guid userId, CancellationToken ct = default)
+        => await db.EventInterests.AnyAsync(i => i.EventId == eventId && i.UserId == userId, ct);
+
+    public async Task AddInterestAsync(Guid eventId, Guid userId, DateTimeOffset createdAt, CancellationToken ct = default)
+    {
+        // No-op when the row already exists: the composite key already guarantees
+        // one-per-user, so a re-tap converges on "interested" rather than throwing
+        // on a duplicate key. The service toggles, so this is reached only when the
+        // caller has just confirmed the user is not yet interested.
+        var exists = await db.EventInterests.AnyAsync(i => i.EventId == eventId && i.UserId == userId, ct);
+        if (exists)
+        {
+            return;
+        }
+
+        db.EventInterests.Add(new EventInterest
+        {
+            EventId = eventId,
+            UserId = userId,
+            CreatedAt = createdAt,
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveInterestAsync(Guid eventId, Guid userId, CancellationToken ct = default)
+    {
+        // Set-based delete: no-op when absent and one statement either way, so the
+        // join path (which clears interest unconditionally) costs nothing when the
+        // user was never interested.
+        await db.EventInterests
+            .Where(i => i.EventId == eventId && i.UserId == userId)
+            .ExecuteDeleteAsync(ct);
+    }
+
+    public async Task<List<Guid>> ListInterestedEventIdsAsync(Guid userId, CancellationToken ct = default)
+        => await db.EventInterests
+            .AsNoTracking()
+            .Where(i => i.UserId == userId)
+            .Select(i => i.EventId)
+            .ToListAsync(ct);
+
     public async Task<bool> TrySetStatusAsync(
         Guid eventId,
         Guid hostId,
@@ -228,6 +283,22 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(e => e.Status, status)
                 .SetProperty(e => e.CancelledAt, status == EventStatus.Cancelled ? now : (DateTimeOffset?)null)
+                .SetProperty(e => e.UpdatedAt, now), ct) == 1;
+
+    /// <summary>The reviewer's decision, guarded on the status the event held when the
+    /// admin opened it. No host predicate: the authorization is the caller's admin role,
+    /// which this repository cannot see. No start_at bound either - refusing to record a
+    /// decision because the date slipped past would leave the event stuck in review.</summary>
+    public async Task<bool> TrySetReviewStatusAsync(
+        Guid eventId,
+        EventStatus expectedStatus,
+        EventStatus status,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+        => await db.Events
+            .Where(e => e.Id == eventId && e.Status == expectedStatus)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(e => e.Status, status)
                 .SetProperty(e => e.UpdatedAt, now), ct) == 1;
 
     public async Task<bool> RemoveParticipantAsync(Guid eventId, Guid userId, DateTimeOffset cancelledAt, CancellationToken ct = default)
@@ -261,8 +332,38 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
     private static IQueryable<VwEventFeed> ApplyFilters(IQueryable<VwEventFeed> source, EventQueryModel query)
     {
         // Cancelled events stay out of browse; the client has no control asking
-        // for them, and spec §11 keeps them off the feed.
-        source = source.Where(v => v.Status != EventStatus.Cancelled);
+        // for them, and spec §11 keeps them off the feed. Status is the view's
+        // text column, so the constant is text too - see VwEventFeed.Status.
+        source = source.Where(v => v.Status != nameof(EventStatus.Cancelled));
+
+        // The review workflow's unpublished states are the other thing the feed must
+        // never show: a public event a regular user created is invisible until an
+        // administrator approves it, and a rejected one stays invisible for good
+        // unless it is resubmitted. Enumerated as the excluded set rather than
+        // "status IN ('Scheduled','Published')" so a status added later fails
+        // closed - it stays out of browse until this line says otherwise.
+        var unpublished = new[]
+        {
+            nameof(EventStatus.Draft),
+            nameof(EventStatus.PendingReview),
+            nameof(EventStatus.Rejected),
+        };
+        source = source.Where(v => !unpublished.Contains(v.Status));
+
+        // Private events stay out of browse for the same structural reason: the
+        // feed is the discovery surface, and a private event is one the host chose
+        // not to publish. This is the *only* place the rule lives — the detail
+        // endpoint stays open to every caller, which is what lets the host hand
+        // someone the link and have it work.
+        //
+        // Compared against the string, not the enum. VwEventFeed.Visibility is the
+        // view's text column and is deliberately not value-converted: EF binds an
+        // enum constant as its underlying integer, so `!= EventVisibility.Private`
+        // reaches Postgres as `v.visibility <> 1` and every browse request dies with
+        // "42883: operator does not exist: character varying <> integer" (measured
+        // against a real database). Enum.ToString() is no escape either - EF 8
+        // cannot translate it. Both sides as text is what translates.
+        source = source.Where(v => v.Visibility != nameof(EventVisibility.Private));
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -334,7 +435,11 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         v.SportIcon,
         v.HostName,
         v.HostPhotoUrl,
-        v.CurrentParticipants);
+        v.CurrentParticipants,
+        v.InterestedCount,
+        // Same tolerant parse as Visibility: an unexpected spelling is an ordinary
+        // member, which is the safe direction for a privilege.
+        Enum.TryParse<UserRole>(v.HostRole, out var hostRole) ? hostRole : UserRole.Member);
 
     /// <summary>The view returns tags as one comma-joined string (see the
     /// string_agg note in Init_Views); empty list rather than null when the event
@@ -358,6 +463,7 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         SportId = v.SportId,
         VenueName = v.VenueName,
         Address = v.Address,
+        ThumbnailUrl = v.ThumbnailUrl,
         PlaceId = v.PlaceId,
         Lat = v.Lat,
         Lng = v.Lng,
@@ -367,7 +473,16 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
         MaxParticipants = v.MaxParticipants,
         SkillLevel = v.SkillLevel,
         Cost = v.Cost,
-        Status = v.Status,
+        // Text on the view (see VwEventFeed.Status), enum on the entity. An
+        // unrecognisable spelling parses to the enum's default rather than throwing
+        // inside a read path - the same choice already made for Visibility below.
+        Status = Enum.TryParse<EventStatus>(v.Status, out var status) ? status : default,
+        // The view carries visibility as text; parse back rather than converting, so
+        // an unexpected value surfaces as the enum's default (Public) instead of
+        // throwing inside a read path.
+        Visibility = Enum.TryParse<EventVisibility>(v.Visibility, out var visibility)
+            ? visibility
+            : EventVisibility.Public,
         CancelledAt = v.CancelledAt,
         CreatedAt = v.CreatedAt,
         UpdatedAt = v.UpdatedAt,

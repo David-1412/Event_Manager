@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SportMeet.Application.Common;
 using SportMeet.Domain.Enums;
 
 namespace SportMeet.Api.Serialization;
@@ -97,10 +98,22 @@ public static class JsonOptionsConfiguration
 {
     /// <summary>Registered explicitly rather than via JsonStringEnumConverter so
     /// the unknown-value behaviour above is ours and not a framework default that
-    /// a servicing release is free to change.</summary>
+    /// a servicing release is free to change. EventVisibility's converters live in
+    /// Application.Common (shared with EventDraftService's stored-payload reader)
+    /// and are registered here too so the MVC request/response path uses the same
+    /// wire form. Both nullable and non-nullable forms are required - STJ matches a
+    /// converter on the property's exact type, so one declared only for
+    /// EventVisibility? is skipped for a bare EventVisibility property (and vice
+    /// versa), which then falls back to the numeric ordinal. That is exactly how
+    /// "visibility":"Public" came back as "could not be converted to
+    /// Nullable`1[EventVisibility]".</summary>
     public static void ConfigureEnumConverters(JsonSerializerOptions options)
     {
         options.Converters.Add(new SkillLevelJsonConverter());
         options.Converters.Add(new NullableSkillLevelJsonConverter());
+        options.Converters.Add(new EventVisibilityJsonConverter());
+        options.Converters.Add(new NullableEventVisibilityJsonConverter());
+        options.Converters.Add(new UserRoleJsonConverter());
+        options.Converters.Add(new NullableUserRoleJsonConverter());
     }
 }

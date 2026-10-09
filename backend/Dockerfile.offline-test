@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+# TEMPORARY verification harness for the offline restore path. No cache mount, so
+# it behaves like a cold machine: everything must come from /offline.
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+COPY backend/Directory.Build.props backend/
+COPY backend/build.nuget.config backend/
+COPY backend/src/SportMeet.Api/ backend/src/SportMeet.Api/
+COPY backend/src/SportMeet.Application/ backend/src/SportMeet.Application/
+COPY backend/src/SportMeet.Domain/ backend/src/SportMeet.Domain/
+COPY backend/src/SportMeet.Infrastructure/ backend/src/SportMeet.Infrastructure/
+
+RUN --mount=from=offline,target=/offline,ro \
+    echo "=== /offline contents: $(ls -A /offline 2>/dev/null | wc -l) entries ===" && \
+    echo "=== global-packages folder ===" && dotnet nuget locals global-packages --list && \
+    dotnet restore --locked-mode --configfile backend/build.nuget.config --source /offline backend/src/SportMeet.Api/SportMeet.Api.csproj && \
+    dotnet publish --no-restore backend/src/SportMeet.Api/SportMeet.Api.csproj -c Release -o /app/publish /p:UseAppHost=false

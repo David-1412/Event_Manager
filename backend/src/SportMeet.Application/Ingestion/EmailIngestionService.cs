@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using SportMeet.Application.Common;
 using SportMeet.Application.Events;
 using SportMeet.Domain.Entities;
 using SportMeet.Domain.Enums;
@@ -31,6 +32,18 @@ public sealed class EmailIngestionService(
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
+
+    static EmailIngestionService()
+    {
+        // ToPayload returns a CreateEventDto, which carries EventVisibility?. Without
+        // the string converter a non-null visibility would serialize as its numeric
+        // ordinal into the stored draft payload, which EventDraftService's reader (and
+        // the create form) expect as the PascalCase name. Extraction never sets
+        // visibility today, so this is a guard against a future ToPayload that does -
+        // matching JsonOptionsConfiguration and EventDraftService.
+        PayloadWrite.Converters.Add(new EventVisibilityJsonConverter());
+        PayloadWrite.Converters.Add(new NullableEventVisibilityJsonConverter());
+    }
 
     public async Task<IngestResult> IngestAsync(
         Guid ownerUserId,

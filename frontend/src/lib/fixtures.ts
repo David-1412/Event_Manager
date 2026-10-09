@@ -32,8 +32,12 @@ type Seed = {
   cost: number | null;
   max: number;
   count: number;
+  /** Interested count for the offline card display; absent means 0. */
+  interested?: number;
   cancelled?: boolean;
   description?: string;
+  /** Absent means Public; set on the one fixture that must not appear in Browse. */
+  visibility?: "Public" | "Private";
 };
 
 const seeds: Seed[] = [
@@ -52,6 +56,7 @@ const seeds: Seed[] = [
     cost: 15,
     max: 4,
     count: 2,
+    interested: 8,
     description:
       "Two courts booked 6–8pm. Bring your own racket, shuttlecocks provided. Doubles format, rotate partners every game.",
   },
@@ -70,6 +75,7 @@ const seeds: Seed[] = [
     cost: null,
     max: 8,
     count: 7,
+    interested: 3,
     description: "Four easy k's at a pace where nobody gets dropped. Water fountains on the north side.",
   },
   {
@@ -104,6 +110,7 @@ const seeds: Seed[] = [
     cost: 12.5,
     max: 6,
     count: 5,
+    interested: 1,
     description: "Half-court, winner stays. Competitive but nobody keeps score.",
   },
   {
@@ -175,6 +182,26 @@ const seeds: Seed[] = [
     count: 4,
     description: "Newcomers welcome — we teach the positions on the night.",
   },
+  {
+    // Link-only, so it is absent from fixtureList() and reachable only by its id -
+    // the offline mirror of a private event the host has to send someone the URL for.
+    id: "evt-private-friday-pickleball",
+    title: "Friday Pickleball (friends only)",
+    tags: ["pickleball"],
+    icon: "🏓",
+    skill: "Beginner",
+    start: at(4, 18),
+    end: at(4, 20),
+    venue: "Northcott Community Centre",
+    address: "203 Hope St, Brunswick VIC 3056",
+    lat: -37.7653,
+    lng: 144.9606,
+    cost: 5,
+    max: 6,
+    count: 3,
+    visibility: "Private",
+    description: "Courts are booked under my name, so come through the side gate.",
+  },
 ];
 
 const HOST = { id: "usr-host", displayName: "Priya Raman", avatarUrl: null };
@@ -221,19 +248,29 @@ function toListItem(seed: Seed, distanceKm: number): EventListItem {
     timezone: "Australia/Melbourne",
     venueName: seed.venue,
     address: seed.address,
+    // Fixture events ship without a thumbnail; the card renders its no-image
+    // layout, which is the common case and what these fixtures are for.
+    thumbnailUrl: null,
     latitude: seed.lat,
     longitude: seed.lng,
     cost: seed.cost,
     maxParticipants: seed.max,
-    participantCount: seed.count,
+    joinedCount: seed.count,
+    interestedCount: seed.interested ?? 0,
     status: seed.cancelled ? "Cancelled" : "Scheduled",
     isCancelled: Boolean(seed.cancelled),
+    visibility: seed.visibility ?? "Public",
     distanceKm,
   };
 }
 
 export function fixtureList(): EventListItem[] {
-  return seeds.map((s) => toListItem(s, distanceFromCentre(s)));
+  // Mirrors the server's browse rule: private events never reach the feed. The
+  // detail route below still resolves them, exactly as GET /api/events/{id} does,
+  // so the link-only path is reachable offline.
+  return seeds
+    .filter((s) => s.visibility !== "Private")
+    .map((s) => toListItem(s, distanceFromCentre(s)));
 }
 
 export function fixtureDetail(id: string): EventDetail | undefined {
@@ -246,6 +283,7 @@ export function fixtureDetail(id: string): EventDetail | undefined {
     // One fixture per relation so every EventCard variant is reachable offline.
     isHost: seed.id === "evt-badminton-wednesday",
     isJoined: seed.id === "evt-basketball-thursday",
+    isInterested: seed.id === "evt-thursday-run",
     participants: ROSTER.slice(0, Math.min(seed.count, ROSTER.length)),
     cancelledAt: seed.cancelled ? at(0, 9) : null,
   };

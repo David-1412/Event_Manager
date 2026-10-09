@@ -77,6 +77,11 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("place_id");
 
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("rejection_reason");
+
                     b.Property<string>("SkillLevel")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
@@ -95,6 +100,11 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("status");
+
+                    b.Property<string>("ThumbnailUrl")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("thumbnail_url");
 
                     b.Property<string>("Timezone")
                         .IsRequired()
@@ -120,8 +130,18 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("character varying(120)")
                         .HasColumnName("venue_name");
 
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("visibility");
+
                     b.HasKey("Id")
                         .HasName("pk_events");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("events_pending_review_idx")
+                        .HasFilter("status = 'PendingReview'");
 
                     b.HasIndex("HostId")
                         .HasDatabaseName("ix_events_host_id");
@@ -150,13 +170,15 @@ namespace SportMeet.Infrastructure.Migrations
 
                             t.HasCheckConstraint("events_skill_level_check", "skill_level IN ('Beginner', 'Intermediate', 'Advanced')");
 
-                            t.HasCheckConstraint("events_status_check", "status IN ('Scheduled', 'Cancelled', 'Completed')");
+                            t.HasCheckConstraint("events_status_check", "status IN ('Scheduled', 'Cancelled', 'Completed', 'Draft', 'PendingReview', 'Published', 'Rejected')");
 
                             t.HasCheckConstraint("events_time_range_check", "end_at > start_at");
 
                             t.HasCheckConstraint("events_title_length_check", "char_length(title) BETWEEN 3 AND 120");
 
                             t.HasCheckConstraint("events_venue_length_check", "char_length(venue_name) BETWEEN 1 AND 120");
+
+                            t.HasCheckConstraint("events_visibility_check", "visibility IN ('Public', 'Private')");
                         });
                 });
 
@@ -244,6 +266,128 @@ namespace SportMeet.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SportMeet.Domain.Entities.EventImport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Confidence")
+                        .HasColumnType("numeric(4,3)")
+                        .HasColumnName("confidence");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("ExtractedData")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("extracted_data");
+
+                    b.Property<string>("FieldOutcomes")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("field_outcomes");
+
+                    b.Property<string>("FinalData")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("final_data");
+
+                    b.Property<string>("Flags")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("flags");
+
+                    b.Property<string>("Geocode")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("geocode");
+
+                    b.Property<string>("InputKind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("input_kind");
+
+                    b.Property<int>("LatencyMs")
+                        .HasColumnType("integer")
+                        .HasColumnName("latency_ms");
+
+                    b.Property<List<string>>("MissingFields")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("missing_fields");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("model");
+
+                    b.Property<string>("PromptVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("prompt_version");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<Guid?>("PublishedEventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("published_event_id");
+
+                    b.Property<string>("SourceText")
+                        .HasColumnType("text")
+                        .HasColumnName("source_text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_event_imports");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_event_imports_created_at");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_event_imports_user_id_created_at");
+
+                    b.ToTable("event_imports", "sportsmeet", t =>
+                        {
+                            t.HasCheckConstraint("event_imports_confidence_check", "confidence >= 0 AND confidence <= 1");
+                        });
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.EventInterest", b =>
+                {
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("interested_at");
+
+                    b.HasKey("EventId", "UserId")
+                        .HasName("pk_event_interests");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_event_interests_user_id");
+
+                    b.ToTable("event_interests", "sportsmeet");
+                });
+
             modelBuilder.Entity("SportMeet.Domain.Entities.EventParticipant", b =>
                 {
                     b.Property<Guid>("EventId")
@@ -265,6 +409,63 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasDatabaseName("ix_event_participants_user_id");
 
                     b.ToTable("event_participants", "sportsmeet");
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.EventPublishMetric", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_ms");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<Guid?>("ImportId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("import_id");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("path");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_event_publish_metrics");
+
+                    b.HasIndex("EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_event_publish_metrics_event_id");
+
+                    b.HasIndex("ImportId")
+                        .HasDatabaseName("ix_event_publish_metrics_import_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_event_publish_metrics_user_id");
+
+                    b.HasIndex("Path", "CreatedAt")
+                        .HasDatabaseName("ix_event_publish_metrics_path_created_at");
+
+                    b.ToTable("event_publish_metrics", "sportsmeet", t =>
+                        {
+                            t.HasCheckConstraint("event_publish_metrics_duration_check", "duration_ms >= 0");
+
+                            t.HasCheckConstraint("event_publish_metrics_path_check", "path IN ('manual', 'import', 'draft')");
+                        });
                 });
 
             modelBuilder.Entity("SportMeet.Domain.Entities.EventTag", b =>
@@ -489,6 +690,11 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("auth_uid");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasDefaultValueSql("now()")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
                     b.Property<string>("Email")
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)")
@@ -505,6 +711,12 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("character varying(2048)")
                         .HasColumnName("photo_url");
 
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("role");
+
                     b.HasKey("Id")
                         .HasName("pk_users");
 
@@ -516,7 +728,61 @@ namespace SportMeet.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_users_email");
 
-                    b.ToTable("users", "sportsmeet");
+                    b.ToTable("users", "sportsmeet", t =>
+                        {
+                            t.HasCheckConstraint("users_role_check", "role IN ('Member', 'Admin')");
+                        });
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.UserRoleAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FromRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("from_role");
+
+                    b.Property<string>("ToRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("to_role");
+
+                    b.Property<Guid>("TargetUserId")
+                        .IsRequired()
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_role_audit");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("TargetUserId", "CreatedAt")
+                        .HasDatabaseName("ix_user_role_audit_target_user_id_created_at");
+
+                    b.ToTable("user_role_audit", "sportsmeet", t =>
+                        {
+                            t.HasCheckConstraint("user_role_audit_no_op_check", "from_role <> to_role");
+                        });
                 });
 
             modelBuilder.Entity("SportMeet.Infrastructure.Persistence.VwEventFeed", b =>
@@ -562,9 +828,19 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("host_photo_url");
 
+                    b.Property<string>("HostRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("host_role");
+
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<int>("InterestedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("interested_count");
 
                     b.Property<double>("Lat")
                         .HasColumnType("double precision")
@@ -608,12 +884,17 @@ namespace SportMeet.Infrastructure.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
                         .HasColumnName("status");
 
                     b.Property<string>("Tags")
                         .HasColumnType("text")
                         .HasColumnName("tags");
+
+                    b.Property<string>("ThumbnailUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("thumbnail_url");
 
                     b.Property<string>("Timezone")
                         .IsRequired()
@@ -633,6 +914,11 @@ namespace SportMeet.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("venue_name");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("visibility");
 
                     b.ToTable((string)null);
 
@@ -680,6 +966,37 @@ namespace SportMeet.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("SportMeet.Domain.Entities.EventImport", b =>
+                {
+                    b.HasOne("SportMeet.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_event_imports_users_user_id");
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.EventInterest", b =>
+                {
+                    b.HasOne("SportMeet.Domain.Entities.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_event_interests_events_event_id");
+
+                    b.HasOne("SportMeet.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_event_interests_users_user_id");
+
+                    b.Navigation("Event");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("SportMeet.Domain.Entities.EventParticipant", b =>
                 {
                     b.HasOne("SportMeet.Domain.Entities.Event", "Event")
@@ -699,6 +1016,29 @@ namespace SportMeet.Infrastructure.Migrations
                     b.Navigation("Event");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.EventPublishMetric", b =>
+                {
+                    b.HasOne("SportMeet.Domain.Entities.Event", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_event_publish_metrics_events_event_id");
+
+                    b.HasOne("SportMeet.Domain.Entities.EventImport", null)
+                        .WithMany()
+                        .HasForeignKey("ImportId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_event_publish_metrics_event_imports_import_id");
+
+                    b.HasOne("SportMeet.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_event_publish_metrics_users_user_id");
                 });
 
             modelBuilder.Entity("SportMeet.Domain.Entities.EventTag", b =>
@@ -749,6 +1089,26 @@ namespace SportMeet.Infrastructure.Migrations
                     b.Navigation("Drafts");
 
                     b.Navigation("HostedEvents");
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.UserRoleAudit", b =>
+                {
+                    b.HasOne("SportMeet.Domain.Entities.User", "ActorUser")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_user_role_audit_users_actor_user_id");
+
+                    b.HasOne("SportMeet.Domain.Entities.User", "TargetUser")
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_role_audit_users_target_user_id");
+
+                    b.Navigation("ActorUser");
+
+                    b.Navigation("TargetUser");
                 });
 #pragma warning restore 612, 618
         }

@@ -33,12 +33,40 @@ public interface IEventService
     /// no identity is configured, so My events degrades to the Interested list.</summary>
     Task<IReadOnlyList<Guid>> ListMyJoinedAsync(CancellationToken ct = default);
 
+    /// <summary>Add or remove the current viewer's interest in one event (toggle).
+    /// Throws <see cref="DomainRuleException"/> when no identity is configured and
+    /// <see cref="NotFoundException"/> when the event is unknown. Returns the new
+    /// state (true = now interested).</summary>
+    Task<bool> ToggleInterestAsync(Guid eventId, CancellationToken ct = default);
+
+    /// <summary>Event ids the current viewer has marked interested. Empty (not an
+    /// error) when no identity is configured, mirroring ListMyJoinedAsync.</summary>
+    Task<IReadOnlyList<Guid>> ListMyInterestedAsync(CancellationToken ct = default);
+
     /// <summary>All events hosted by the current user, including cancelled and past events.</summary>
     Task<IReadOnlyList<EventListItemDto>> ListMyHostedAsync(CancellationToken ct = default);
 
     Task<EventDetailDto> CancelAsync(Guid eventId, CancellationToken ct = default);
 
     Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default);
+
+    /// <summary>The review queue: every public event awaiting an administrator's
+    /// decision, oldest submission first. Throws <see cref="DomainRuleException"/>
+    /// when nobody is signed in and <see cref="NotFoundException"/> for a caller
+    /// without the admin role - the same 404 the detail endpoint gives for a row the
+    /// caller may not see, so the queue does not advertise that it exists.</summary>
+    Task<IReadOnlyList<EventListItemDto>> ListPendingReviewAsync(CancellationToken ct = default);
+
+    /// <summary>Approve a submitted event: PendingReview (or a resubmitted Rejected)
+    /// becomes Published, which puts it in the public feed on the next request.
+    /// Throws <see cref="NotFoundException"/> for a non-admin caller or an event that
+    /// is not awaiting a decision.</summary>
+    Task<EventDetailDto> ApproveAsync(Guid eventId, CancellationToken ct = default);
+
+    /// <summary>Reject a submitted event. It stays readable by its creator - who can
+    /// edit and resubmit it - and never appears in the public feed. Same refusals as
+    /// <see cref="ApproveAsync"/>.</summary>
+    Task<EventDetailDto> RejectAsync(Guid eventId, CancellationToken ct = default);
 
     /// <summary>Most-used tags on currently-visible events, for the home page's
     /// filter chips. Empty on a fresh database (the demo seed creates no tags),

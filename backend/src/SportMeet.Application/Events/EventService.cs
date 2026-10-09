@@ -16,6 +16,12 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
     {
         var (rows, totalCount) = await events.QueryAsync(query, ct);
 
+        // joinedCount and interestedCount ride in on the view (one round-trip, no
+        // N+1). The per-viewer isJoined / isInterested flags are deliberately NOT
+        // here: the browse list is anonymous (swr-fetcher sends no token until a
+        // session exists), so both relations resolve through the me/joined and
+        // me/interested side-channels the client joins by id. See use-events.tsx.
+        //
         // Distance is only computed when an origin exists; null here is what
         // tells the card to hide the distance row.
         var items = rows
@@ -29,6 +35,20 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
     {
         var row = await events.FindAsync(id, ct)
             ?? throw new NotFoundException("Event", id);
+
+        // An event that has not been published exists only for the two people who
+        // have a reason to read it: the creator, and the administrator who has to
+        // decide on it. Everyone else gets the same 404 an unknown id gets - the
+        // review queue is not something a stranger should be able to probe for by
+        // id, and a 403 would confirm that the submission is real.
+        //
+        // Published events (Scheduled or Published) are readable by anyone, exactly
+        // as a private event always was: this rule is about the review state, not
+        // about the visibility flag, and the link-sharing contract is unchanged.
+        if (!row.Event.Status.IsPublished() && !CanManage(row))
+        {
+            throw new NotFoundException("Event", id);
+        }
 
         var participants = await events.ListParticipantsAsync(id, ct);
 
@@ -44,13 +64,17 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             Timezone = row.Event.Timezone,
             VenueName = row.Event.VenueName,
             Address = row.Event.Address,
+            ThumbnailUrl = row.Event.ThumbnailUrl,
             Latitude = row.Event.Lat,
             Longitude = row.Event.Lng,
             Cost = row.Event.Cost,
             MaxParticipants = row.Event.MaxParticipants,
-            ParticipantCount = row.ParticipantCount,
+            JoinedCount = row.ParticipantCount,
+            InterestedCount = row.InterestedCount,
             Status = row.Event.Status.ToString(),
             IsCancelled = row.Event.Status == EventStatus.Cancelled,
+            IsPublished = row.Event.Status.IsPublished(),
+            Visibility = row.Event.Visibility.ToString(),
             DistanceKm = null,
             Description = row.Event.Description,
             Host = new ParticipantDto(row.Event.HostId, row.HostName, row.HostPhotoUrl),
@@ -60,6 +84,7 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             // verified token supplies it these lines do not change.
             IsHost = currentUser.UserId is { } host && host == row.Event.HostId,
             IsJoined = currentUser.UserId is { } joiner && await events.IsParticipantAsync(id, joiner, ct),
+            IsInterested = currentUser.UserId is { } admirer && await events.IsInterestedAsync(id, admirer, ct),
             Participants = participants
                 .Select(u => new ParticipantDto(u.Id, u.Name, u.PhotoUrl))
                 .ToList(),
@@ -87,6 +112,8 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         {
             Id = Guid.NewGuid(),
             HostId = hostId,
+            CreatedAt = now,
+            UpdatedAt = now,
             Title = dto.Title!.Trim(),
             Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),
             // Null: tags replaced the sport vocabulary and the create form sends no
@@ -94,6 +121,7 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             SportId = null,
             VenueName = dto.VenueName!.Trim(),
             Address = dto.Address!.Trim(),
+            ThumbnailUrl = string.IsNullOrWhiteSpace(dto.ThumbnailUrl) ? null : dto.ThumbnailUrl.Trim(),
             Lat = dto.Latitude!.Value,
             Lng = dto.Longitude!.Value,
             Timezone = string.IsNullOrWhiteSpace(dto.Timezone) ? "Australia/Melbourne" : dto.Timezone,
@@ -102,7 +130,19 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             MaxParticipants = dto.MaxParticipants!.Value,
             SkillLevel = dto.SkillLevel,
             Cost = dto.Cost,
-            Status = EventStatus.Scheduled,
+            // The approval workflow's one decision point. A public event written by
+            // anyone who is not an administrator waits for review, so it is stored as
+            // PendingReview and the feed filter keeps it out of browse until an admin
+            // approves it; a private event is the creator's own to share and publishes
+            // straight away, and an admin's public event publishes because publishing
+            // is exactly what the role is for.
+            Status = dto.Visibility != EventVisibility.Private && !currentUser.IsAdmin
+                ? EventStatus.PendingReview
+                : EventStatus.Scheduled,
+            // A caller that sends no visibility gets a public event, so an older
+            // client (or an older draft payload) cannot silently create something
+            // that never appears in browse.
+            Visibility = dto.Visibility ?? EventVisibility.Public,
         };
 
         await events.AddAsync(entity, ct);
@@ -148,8 +188,14 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             var locked = await events.FindWithLockAsync(eventId, inner)
                 ?? throw new NotFoundException("Event", eventId, eventId);
 
-            if (locked.Status != EventStatus.Scheduled)
+            if (!locked.Status.IsPublished())
             {
+                // Cancelled, Completed, or still in the review workflow: none of them
+                // is an event anybody can join. The unpublished case cannot be reached
+                // through the UI (the client hides Join while isPublished is false), so
+                // this is the API refusing a direct call rather than a message a user
+                // reads - but it must refuse, or a pending event could be filled with
+                // participants before an admin ever saw it.
                 throw new DomainRuleException("This event is no longer open for joining.");
             }
 
@@ -176,6 +222,11 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             }
 
             await events.AddParticipantAsync(eventId, userId, DateTimeOffset.UtcNow, inner);
+
+            // Requirement: joining supersedes interest. Clear any interest row in
+            // the same transaction so the two sets never overlap and the
+            // Interested count never double-counts a joiner. No-op when absent.
+            await events.RemoveInterestAsync(eventId, userId, inner);
         }, ct);
 
         return await GetAsync(eventId, ct);
@@ -209,6 +260,44 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         return await events.ListJoinedEventIdsAsync(userId.Value, ct);
     }
 
+    /// <summary>Toggle the current viewer's interest in one event: adding when
+    /// uninterested, removing when interested (the composite key already forbids a
+    /// second row). Returns the post-toggle state so the client settles its button
+    /// and toast from the server rather than guessing. Interest reserves no spot and
+    /// is independent of capacity, so unlike Join there is nothing to lock.</summary>
+    public async Task<bool> ToggleInterestAsync(Guid eventId, CancellationToken ct = default)
+    {
+        var userId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to mark an event interested.");
+
+        // Existence check first so an unknown id is a 404 rather than a row written
+        // against a non-existent event (the FK would reject it as a 500 instead).
+        _ = await events.FindAsync(eventId, ct)
+            ?? throw new NotFoundException("Event", eventId, eventId);
+
+        if (await events.IsInterestedAsync(eventId, userId, ct))
+        {
+            await events.RemoveInterestAsync(eventId, userId, ct);
+            return false;
+        }
+
+        await events.AddInterestAsync(eventId, userId, DateTimeOffset.UtcNow, ct);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListMyInterestedAsync(CancellationToken ct = default)
+    {
+        // Mirrors ListMyJoinedAsync: no identity is an empty list, not an error, so
+        // My events degrades gracefully rather than blocking on a 401.
+        var userId = currentUser.UserId;
+        if (userId is null)
+        {
+            return [];
+        }
+
+        return await events.ListInterestedEventIdsAsync(userId.Value, ct);
+    }
+
     public async Task<IReadOnlyList<EventListItemDto>> ListMyHostedAsync(CancellationToken ct = default)
     {
         var userId = currentUser.UserId;
@@ -226,6 +315,53 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
 
     public Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default)
         => ChangeStatusAsync(eventId, EventStatus.Cancelled, EventStatus.Scheduled, ct);
+
+    /// <summary>The queue, in the shape the review page renders. The rows come from
+    /// the same view browse reads, so a card here is the same card the creator sees -
+    /// which is the point of reviewing in the product rather than in a database.</summary>
+    public async Task<IReadOnlyList<EventListItemDto>> ListPendingReviewAsync(CancellationToken ct = default)
+    {
+        RequireAdmin(Guid.Empty);
+        var rows = await events.ListPendingReviewAsync(ct);
+        return rows.Select(row => ToListItem(row.Event, row, null)).ToList();
+    }
+
+    public Task<EventDetailDto> ApproveAsync(Guid eventId, CancellationToken ct = default)
+        => DecideAsync(eventId, EventStatus.Published, ct);
+
+    public Task<EventDetailDto> RejectAsync(Guid eventId, CancellationToken ct = default)
+        => DecideAsync(eventId, EventStatus.Rejected, ct);
+
+    /// <summary>Record an administrator's decision. Guarded on the event actually
+    /// awaiting one, so approving something that is already live (or that the other
+    /// admin on this machine rejected a second ago) is the same 404 as approving
+    /// something that does not exist - the client's list is a snapshot, and the honest
+    /// answer to a stale row is "refresh", not a silent second write.</summary>
+    private async Task<EventDetailDto> DecideAsync(Guid eventId, EventStatus decision, CancellationToken ct)
+    {
+        RequireAdmin(eventId);
+
+        var row = await events.FindAsync(eventId, ct)
+            ?? throw new NotFoundException("Event", eventId, eventId);
+
+        // PendingReview is the normal case; Rejected is accepted so a creator's
+        // resubmission can be approved without the admin first un-rejecting it by
+        // hand. Anything else is not awaiting a decision.
+        var awaiting = row.Event.Status is EventStatus.PendingReview or EventStatus.Rejected;
+        if (!awaiting)
+        {
+            throw new NotFoundException("Event", eventId, eventId);
+        }
+
+        if (!await events.TrySetReviewStatusAsync(eventId, row.Event.Status, decision, DateTimeOffset.UtcNow, ct))
+        {
+            throw new DomainRuleException("This event was just reviewed by someone else. Refresh and try again.");
+        }
+
+        // Re-read through the detail path so the response is what every other reader
+        // will now see - including the creator, whose copy just changed status.
+        return await GetAsync(eventId, ct);
+    }
 
     private async Task<EventDetailDto> ChangeStatusAsync(
         Guid eventId,
@@ -264,21 +400,52 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         Title = e.Title,
         Tags = row.Tags,
         SportIcon = row.SportIcon,
+        HostName = row.HostName,
+        HostPhotoUrl = row.HostPhotoUrl,
         SkillLevel = e.SkillLevel,
         StartAt = e.StartAt,
         EndAt = e.EndAt,
         Timezone = e.Timezone,
         VenueName = e.VenueName,
         Address = e.Address,
+        ThumbnailUrl = e.ThumbnailUrl,
         Latitude = e.Lat,
         Longitude = e.Lng,
         Cost = e.Cost,
         MaxParticipants = e.MaxParticipants,
-        ParticipantCount = row.ParticipantCount,
+        JoinedCount = row.ParticipantCount,
+        InterestedCount = row.InterestedCount,
         Status = e.Status.ToString(),
         IsCancelled = e.Status == EventStatus.Cancelled,
+        IsPublished = e.Status.IsPublished(),
+        Visibility = e.Visibility.ToString(),
         DistanceKm = distanceKm,
     };
+
+    /// <summary>Whether the current viewer may act on an unpublished event: its
+    /// creator (who can keep editing and resubmit it) or an administrator (who has
+    /// to decide on it). One definition so the detail read and the review decisions
+    /// cannot drift apart on who counts as allowed.</summary>
+    private bool CanManage(FeedRow row) =>
+        currentUser.IsAdmin
+        || (currentUser.UserId is { } viewer && viewer == row.Event.HostId);
+
+    /// <summary>The caller the review queue and the decisions demand: a signed-in
+    /// administrator. A non-admin gets the NotFound shape rather than a refusal that
+    /// names the role, for the same reason the detail read does it.
+    /// <paramref name="eventId"/> is the id to name in that 404; the queue has none,
+    /// and <see cref="Guid.Empty"/> is what the Problem Details writer renders as
+    /// "no specific id".</summary>
+    private void RequireAdmin(Guid eventId)
+    {
+        _ = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to review an event.");
+
+        if (!currentUser.IsAdmin)
+        {
+            throw new NotFoundException("Event", eventId, eventId);
+        }
+    }
 
     private static double? ComputeDistanceKm(Event e, EventQueryModel query)
     {

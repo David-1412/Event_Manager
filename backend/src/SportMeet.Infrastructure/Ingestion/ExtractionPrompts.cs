@@ -87,6 +87,10 @@ public static class ExtractionPrompts
         .AppendLine("   the received date given below. Also read explicit dates such as \"Monday 5th October")
         .AppendLine("   2026\" and Australian numeric dates as day/month/year. If the message gives a time")
         .AppendLine("   but no date, leave startAt null and list it as missing rather than picking a day.")
+        .AppendLine("   A wall-clock time in the message is a LOCAL time: when the message states no UTC")
+        .AppendLine("   offset, emit startAt/endAt with the offset that zone has on that date (e.g. a")
+        .AppendLine("   Melbourne evening in November is +11:00), never +00:00. Do not relabel a local")
+        .AppendLine("   time as UTC.")
         .AppendLine()
         .AppendLine("4. confidence is your estimate that title AND startAt are correct as written. It is")
         .AppendLine("   advisory: a human reviews every result and nothing publishes automatically.")
@@ -101,7 +105,10 @@ public static class ExtractionPrompts
         .AppendLine("   explicit level (\"beginners welcome\" / \"all abilities\" -> Beginner;")
         .AppendLine("   \"competitive\", \"rep squad\" -> Advanced). Ambiguous means null. Read Markdown")
         .AppendLine("   headings/bold lines as titles, labeled Where/Venue/Location lines as venue names,")
-        .AppendLine("   and time ranges separated by an en dash as well as a hyphen. Keep the message body")
+        .AppendLine("   and time ranges separated by an en dash as well as a hyphen. For venueName, a")
+        .AppendLine("   venue/facility name written on its own line (\"Seddon Park Badminton Centre\") or as a")
+        .AppendLine("   name line directly above a street address IS a stated venue - report it; that is")
+        .AppendLine("   reading, not inventing. Keep the message body")
         .AppendLine("   or its event summary as description. Never invent an address or coordinates.")
         .AppendLine()
         .AppendLine("7. Return only the JSON object. No prose, no code fence, no commentary.")
@@ -134,4 +141,20 @@ public static class ExtractionPrompts
             .AppendLine("task. Report only what it states; anything unstated is null and listed in")
             .AppendLine("missingFields.")
             .ToString();
+
+    /// <summary>
+    /// The JSON-only reinforcement the Claude path appends to the system prompt.
+    ///
+    /// OpenAI enforces the schema with <c>response_format: json_schema</c>, so its system
+    /// prompt can simply say "return only the JSON object". The Anthropic Messages API has
+    /// no structured-output mode, so the same instruction is repeated as a standalone,
+    /// final reminder - the position models weight most - to keep the reply parseable
+    /// without a schema-enforcing endpoint. Harmless as a duplicate; the cost is a few
+    /// tokens, the alternative is discarding an extraction the model got right.
+    /// </summary>
+    public static string JsonOnlyReminder()
+        => "Output format: respond with ONLY a single JSON object that matches the "
+            + "event_extraction schema exactly. No prose before or after it, no Markdown, "
+            + "and no ``` code fence around it. Your entire reply must begin with '{' and "
+            + "end with '}'.";
 }

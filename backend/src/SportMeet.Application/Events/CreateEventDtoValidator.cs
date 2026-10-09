@@ -62,6 +62,13 @@ public sealed class CreateEventDtoValidator : AbstractValidator<CreateEventDto>
             .IsInEnum().WithMessage("Pick a skill level")
             .When(x => x.SkillLevel.HasValue);
 
+        // Optional and enum-bounded. The JSON binder yields null for an unknown
+        // name, so null must stay legal (it means "public"); a numeric out-of-range
+        // value from a non-browser caller is what this rule actually catches.
+        RuleFor(x => x.Visibility)
+            .IsInEnum().WithMessage("Pick public or private")
+            .When(x => x.Visibility.HasValue);
+
 
         RuleFor(x => x.StartAt)
             .NotNull().WithMessage("Pick a date and time");
@@ -84,6 +91,13 @@ public sealed class CreateEventDtoValidator : AbstractValidator<CreateEventDto>
         RuleFor(x => x.Address)
             .NotNull().WithMessage("Venue address is required")
             .NotEmpty();
+
+        // Optional. A thumbnail arrives as the URL the upload endpoint returned, so
+        // the only rule here is the column's ceiling - the bytes were already size-
+        // and type-checked at upload, and a non-browser caller cannot make the
+        // stored URL longer than the DB allows.
+        RuleFor(x => x.ThumbnailUrl)
+            .MaximumLength(400).WithMessage("That image link is too long");
 
         RuleFor(x => x.Latitude)
             .NotNull().WithMessage("Venue location is required")

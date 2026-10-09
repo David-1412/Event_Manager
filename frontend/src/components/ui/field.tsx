@@ -24,6 +24,9 @@ export interface FieldProps {
   required?: boolean;
   optional?: boolean;
   className?: string;
+  /** A "check this" marker from an import: shown under the control, clears itself when
+   *  the field is edited, or when the user says it looks right. */
+  flag?: { text: string; onDismiss: () => void };
   children: (ids: { id: string; describedBy?: string; invalid: boolean }) => ReactNode;
 }
 
@@ -34,6 +37,7 @@ export function Field({
   required,
   optional,
   className,
+  flag,
   children,
 }: FieldProps) {
   const autoId = useId();
@@ -59,6 +63,15 @@ export function Field({
           {hint}
         </p>
       ) : null}
+      {flag && (
+        <p role="status" className="flex flex-wrap items-center gap-x-2 text-meta text-warn">
+          <span aria-hidden>⚠</span>
+          <span>{flag.text}</span>
+          <button type="button" onClick={flag.onDismiss} className="underline underline-offset-2">
+            Looks right
+          </button>
+        </p>
+      )}
     </div>
   );
 }

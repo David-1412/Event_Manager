@@ -21,6 +21,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<Sport> Sports => Set<Sport>();
     public DbSet<EventParticipant> EventParticipants => Set<EventParticipant>();
+    public DbSet<EventInterest> EventInterests => Set<EventInterest>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<EventTag> EventTags => Set<EventTag>();
 
@@ -28,6 +29,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // reach these, which is what keeps unreviewed model output out of the feed.
     public DbSet<IngestedEmail> IngestedEmails => Set<IngestedEmail>();
     public DbSet<EventDraft> EventDrafts => Set<EventDraft>();
+
+    // Paste-to-event import: what was proposed, what was published, how long it took.
+    public DbSet<EventImport> EventImports => Set<EventImport>();
+    public DbSet<EventPublishMetric> EventPublishMetrics => Set<EventPublishMetric>();
+
+    // Append-only trail of privilege changes. Deliberately not reachable from any
+    // event or draft query: an audit line is not data the product filters over.
+    public DbSet<UserRoleAudit> UserRoleAudit => Set<UserRoleAudit>();
 
 
     /// <summary>Read-only projection over v_event_feed. Never in SaveChanges -

@@ -54,6 +54,12 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// Per-user ceiling on paste-to-event imports; see ImportRateLimit.
+builder.Services.AddRateLimiter(limiter => ImportRateLimit.Configure(
+    limiter,
+    builder.Configuration.GetSection(SportMeet.Application.Imports.ImportOptions.SectionName)
+        .Get<SportMeet.Application.Imports.ImportOptions>() ?? new()));
+
 // Firebase bearer authentication, installed only when Firebase:ProjectId is set (see
 // AddFirebaseJwtBearer). Unconfigured it is a no-op and every endpoint stays anonymous
 // behind the configured demo identity, exactly as before.
@@ -67,6 +73,30 @@ builder.Services.AddEmailIngestionWorker(builder.Configuration);
 
 var app = builder.Build();
 
+// Host-uploaded event thumbnails are written to App_Data/uploads (a compose
+// volume) and referenced by the URL /uploads/<key>. Serving them here keeps the
+// stored URL exactly what the browser requests; the GUID-named key cannot
+// traverse, and the directory holds only files this API itself wrote. Placed
+// before the controllers so a static hit never reaches routing.
+var uploadRoot = Path.Combine(app.Environment.ContentRootPath, "App_Data", "uploads");
+try
+{
+    Directory.CreateDirectory(uploadRoot);
+}
+catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+{
+    // A read-only or pre-mounted volume: serve what is there, and let the upload
+    // endpoint surface the write failure per-request rather than crash startup.
+    Log.Warning(ex, "Uploads directory {Path} is not writable; thumbnail uploads will fail", uploadRoot);
+}
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadRoot),
+    RequestPath = "/uploads",
+    ServeUnknownFileTypes = false,
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "public,max-age=86400",
+});
+
 app.UseSerilogRequestLogging();
 app.UseCors();
 
@@ -79,6 +109,8 @@ app.UseMiddleware<ExceptionMiddleware>();
 // Firebase:ProjectId configures it.
 app.UseAuthentication();
 app.UseAuthorization();
+// After authentication: the import limiter partitions by the verified user.
+app.UseRateLimiter();
 
 
 if (app.Environment.IsDevelopment())

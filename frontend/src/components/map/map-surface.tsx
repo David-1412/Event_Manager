@@ -49,6 +49,8 @@ export interface MapSurfaceProps {
    * flies back when the *value* of `center` changes — not on every re-render.
    * Without this, the library's controlled `center` prop snaps a dragged map
    * back to the prop on the next render (SWR revalidation, selection, …).
+   * When false, no controlled `center` is handed to the map at all: it opens on
+   * `defaultCenter` and is then entirely user-driven (browse map).
    */
   flyToCenterOnChange?: boolean;
   /**
@@ -67,6 +69,24 @@ export const DEFAULT_CENTER: LatLng = {
   lat: MELBOURNE_CBD.latitude,
   lng: MELBOURNE_CBD.longitude,
 };
+
+/**
+ * Monash University Clayton Campus (36 Scenic Blvd, Melbourne VIC) — the opening
+ * centre of the Browse map when it has no events to anchor on. Kept separate from
+ * `DEFAULT_CENTER` (Melbourne CBD) so the venue picker's generic fallback is
+ * unchanged; only the browse map opens here.
+ */
+export const BROWSE_CENTER: LatLng = {
+  lat: -37.916,
+  lng: 145.1326,
+};
+
+/**
+ * Browse map's opening zoom. ~15 frames the Monash Clayton campus as the subject
+ * (the detail map uses 15 for a single venue); anything lower zooms out to the
+ * wider Melbourne suburbs, anything higher crops to a few campus buildings.
+ */
+export const BROWSE_ZOOM = 15;
 
 /**
  * Advanced (HTML-content) markers only render on Maps >= 3.57 when the map

@@ -23,10 +23,13 @@
 # build on their own, because NuGet validates that every package an assets file
 # references is present under the *current* global-packages folder, and that
 # folder has to be where the packages physically are:
-#   - the `offline` named context (docker-compose.yml passes the host NuGet folder
-#     via `--build-context`). A useful extra source, but only a partial mirror of
+#   - the `offline` named context (docker-compose.yml passes a flat NuGet v2
+#     folder built from the host cache via `--build-context`; scripts/restore-cache.ps1
+#     builds that folder). A useful extra source, but only a partial mirror of
 #     this solution's graph: the host resolves against its own installed SDKs and
-#     runtimes, so some packages a net8.0 container needs are absent from it.
+#     runtimes, so some packages a net8.0 container needs can be absent from it.
+#     When that happens the restore below falls back to the registry with the
+#     folder still in the source list, so it only has to supply the gap.
 #   - project.assets.json copied from the restore stage, which is why restore and
 #     publish share one cache-mounted RUN. Split across stages, the copied assets
 #     file is evaluated against a global-packages folder that was not the one it
@@ -47,6 +50,7 @@ WORKDIR /src
 # change confined to other paths (prober, tests) does not invalidate it.
 COPY backend/Directory.Build.props backend/
 COPY backend/build.nuget.config backend/
+COPY backend/build-fallback.nuget.config backend/
 COPY backend/src/SportMeet.Api/ backend/src/SportMeet.Api/
 COPY backend/src/SportMeet.Application/ backend/src/SportMeet.Application/
 COPY backend/src/SportMeet.Domain/ backend/src/SportMeet.Domain/
@@ -58,12 +62,17 @@ RUN --mount=type=secret,id=corp-ca,target=/tmp/corp-ca.pem,required=false \
     if [ -f /tmp/corp-ca.pem ]; then cp /tmp/corp-ca.pem /usr/local/share/ca-certificates/corp-ca.pem && update-ca-certificates >/dev/null; fi && \
     if [ -n "$(ls -A /offline 2>/dev/null)" ]; then \
       echo "restoring: BuildKit package cache + host NuGet folder as extra source" >&2; \
-      dotnet restore --locked-mode --configfile backend/build.nuget.config --source /offline backend/src/SportMeet.Api/SportMeet.Api.csproj; \
+      if ! dotnet restore --locked-mode --configfile backend/build.nuget.config --source /offline backend/src/SportMeet.Api/SportMeet.Api.csproj; then \
+        echo "host NuGet folder did not cover the graph; retrying with the registry added to it" >&2; \
+        cp backend/build-fallback.nuget.config backend/src/SportMeet.Api/nuget.config; \
+        dotnet restore --locked-mode --configfile backend/src/SportMeet.Api/nuget.config backend/src/SportMeet.Api/SportMeet.Api.csproj; \
+        rm -f backend/src/SportMeet.Api/nuget.config; \
+      fi; \
     else \
       echo "restoring: BuildKit package cache, then the registry" >&2; \
       for n in 1 2 3 4; do \
         if dotnet restore --locked-mode backend/src/SportMeet.Api/SportMeet.Api.csproj; then break; fi; \
-        if [ "$n" = 4 ]; then echo "registry unreachable and no host cache supplied: set NUGET_PACKAGES_PATH (scripts/build.ps1 does) or pass --build-context offline=<USERPROFILE>/.nuget/packages" >&2; exit 1; fi; \
+        if [ "$n" = 4 ]; then echo "registry unreachable and no host cache supplied: run scripts/restore-cache.ps1 once to populate the offline NuGet source, or set NUGET_PACKAGES_PATH (scripts/build.ps1 does) / pass --build-context offline=<flat nupkg folder>" >&2; exit 1; fi; \
         echo "restore attempt $n failed; retrying in $((n * 5))s" >&2; sleep $((n * 5)); \
       done; \
     fi && \
@@ -89,5 +98,11 @@ COPY --from=build /probe/out /probe/
 # compose file keeps the container in Development.
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
+# Host-uploaded event thumbnails live under App_Data/uploads (a compose volume).
+# Create it here, BEFORE USER, so it is owned by the non-root app user; Docker
+# seeds a fresh named volume from this directory's ownership, letting the API
+# write into it at runtime. (After USER the base image is already non-root, so a
+# mkdir there would land root-owned and unwritable.)
+RUN mkdir -p /app/App_Data/uploads && chown -R "$APP_UID" /app/App_Data
 USER $APP_UID
 ENTRYPOINT ["dotnet", "SportMeet.Api.dll"]

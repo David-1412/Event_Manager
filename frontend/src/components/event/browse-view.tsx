@@ -14,6 +14,7 @@ import { useEvents, useJoinedEvents, usePopularTags } from "@/features/events/us
 import { useGeolocation } from "@/features/events/use-geolocation";
 import { patchQuery, writeQuery } from "@/lib/query-nav";
 import { parseQuery, useSearchParamsValue } from "@/lib/query";
+import { cn } from "@/lib/cn";
 import type { EventQuery } from "@/types/events";
 
 /**
@@ -40,6 +41,10 @@ export function BrowseView() {
   const geo = useGeolocation();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [mapSheetOpen, setMapSheetOpen] = useState(false);
+  // Desktop map visibility, toggled from the filter bar. Open by default so the
+  // split list+map layout (spec §6) is what a first visit shows; closing it lets
+  // the list take the full width. The mobile sheet has its own open state.
+  const [showMap, setShowMap] = useState(true);
 
   function patch(partial: Partial<EventQuery>) {
     const next = patchQuery(query, partial);
@@ -110,9 +115,21 @@ export function BrowseView() {
 
   return (
     <div className="flex flex-1 flex-col lg:h-[calc(100dvh-3.5rem)] lg:flex-row lg:overflow-hidden">
-      <div className="flex flex-col lg:w-3/5 lg:min-w-0 lg:overflow-y-auto lg:border-r lg:border-border">
+      <div
+        className={cn(
+          "flex flex-col lg:min-w-0 lg:overflow-y-auto",
+          showMap ? "lg:w-3/5 lg:border-r lg:border-border" : "lg:w-full",
+        )}
+      >
         <h1 className="sr-only">{heading}</h1>
-        <FilterBar query={query} onPatch={patch} onReset={reset} popularTags={popularTags} />
+        <FilterBar
+          query={query}
+          onPatch={patch}
+          onReset={reset}
+          popularTags={popularTags}
+          mapOpen={showMap}
+          onToggleMap={() => setShowMap((open) => !open)}
+        />
         {geo.status === "denied" && (
           <p className="px-4 py-2 text-meta text-fg-muted" role="status">
             Turn on location to sort by distance.
@@ -121,14 +138,17 @@ export function BrowseView() {
         <div className="flex flex-col gap-4 pb-8 pt-4">{listBody}</div>
       </div>
 
-      {/* Desktop map takes the remaining 40% and scrolls independently (spec §6). */}
-      <div className="hidden lg:block lg:w-2/5 lg:min-w-0 lg:flex-1">
-        <EventMap
-          events={items ?? []}
-          selectedEventId={selectedEventId}
-          onSelect={setSelectedEventId}
-        />
-      </div>
+      {/* Desktop map takes the remaining 40% and scrolls independently (spec §6).
+          Hidden entirely when toggled closed, so the list reclaims the full width. */}
+      {showMap && (
+        <div className="hidden lg:block lg:w-2/5 lg:min-w-0 lg:flex-1">
+          <EventMap
+            events={items ?? []}
+            selectedEventId={selectedEventId}
+            onSelect={setSelectedEventId}
+          />
+        </div>
+      )}
 
       {/* Mobile collapsed map sheet expanding to 60vh (spec §6). */}
       <div className="sticky bottom-0 z-20 lg:hidden">

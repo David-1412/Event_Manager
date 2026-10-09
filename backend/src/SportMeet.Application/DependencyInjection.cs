@@ -23,6 +23,13 @@ public static class DependencyInjection
         // the reader that satisfies it is an Infrastructure singleton registered there —
         // which is the direction the dependency rule requires.
         services.AddScoped<Ingestion.IEmailProcessor, Ingestion.EmailProcessor>();
+
+        // Paste-to-event import: extract, geocode, flag, record.
+        services.AddScoped<Imports.IImportService, Imports.ImportService>();
+
+        // Administrator user management. The last-admin guard is the reason this is
+        // a service rather than the controller calling its repository directly.
+        services.AddScoped<Admin.IUserAdminService, Admin.UserAdminService>();
         return services;
     }
 }
