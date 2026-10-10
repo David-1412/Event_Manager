@@ -5,7 +5,7 @@ using SportMeet.Application.Admin;
 namespace SportMeet.Api.Controllers;
 
 /// <summary>
-/// Administrator user management: list everyone, promote, demote. Everything here
+/// Administrator user management: list everyone and assign roles. Everything here
 /// is behind <see cref="RequireAdminAttribute"/> — a signed-in Member gets 404,
 /// the same answer as a nonexistent resource, so the admin surface is not
 /// discoverable from the outside.
@@ -26,6 +26,8 @@ namespace SportMeet.Api.Controllers;
 [RequireAdmin]
 public class AdminUsersController(IUserAdminService users) : ControllerBase
 {
+    public sealed record SetRoleRequest(SportMeet.Domain.Enums.UserRole Role);
+
     /// <summary>Every account, newest first, with the role and signup date the table
     /// renders. Also carries the true admin count so the client can decide whether a
     /// demote is offerable without paging through the list.</summary>
@@ -54,4 +56,14 @@ public class AdminUsersController(IUserAdminService users) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<RoleChangeResultDto>> Demote(Guid id, CancellationToken ct)
         => Ok(await users.DemoteAsync(id, ct));
+
+    /// <summary>Assign any supported role. The existing promote/demote routes
+    /// remain available for older clients.</summary>
+    [HttpPut("{id:guid}/role")]
+    [ProducesResponseType(typeof(RoleChangeResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<RoleChangeResultDto>> SetRole(
+        Guid id, [FromBody] SetRoleRequest request, CancellationToken ct)
+        => Ok(await users.SetRoleAsync(id, request.Role, ct));
 }

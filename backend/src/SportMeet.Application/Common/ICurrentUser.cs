@@ -25,12 +25,17 @@ public interface ICurrentUser
     bool IsDemo { get; }
 
     /// <summary>True when the acting user holds <c>UserRole.Admin</c> - the role
-    /// that publishes public events without review and works the pending-review
-    /// queue. Resolved from the user's database row, so it is a fact about the
+    /// that manages users and works the pending-review queue. Resolved from the user's
+    /// database row, so it is a fact about the
     /// person rather than about the token that carried them in, and a demotion
     /// takes effect on the next request instead of when the token expires.
     /// False for an anonymous caller.</summary>
     bool IsAdmin { get; }
+
+    /// <summary>True when the caller may publish public events without review.
+    /// Admin includes this capability; it does not grant access to admin-only
+    /// user management or event review endpoints.</summary>
+    bool CanPublishPublicEvents { get; }
 }
 
 /// <summary>A verified caller: the Firebase UID pulled from a validated ID token,
@@ -94,4 +99,3 @@ public interface IMailboxOwnerResolver
     Task<Guid?> ResolveUserByAddressAsync(
         string? address, string? displayName, CancellationToken ct = default);
 }
-

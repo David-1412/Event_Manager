@@ -1,5 +1,5 @@
 import { request } from "./api";
-import type { AdminUserList, PendingEvent, RoleChangeResult } from "@/types/admin";
+import type { AdminUserList, PendingEvent, RoleChangeResult, UserRole } from "@/types/admin";
 
 /**
  * Client for the administrator surface.
@@ -37,6 +37,14 @@ export function promoteUser(id: string): Promise<RoleChangeResult> {
  */
 export function demoteUser(id: string): Promise<RoleChangeResult> {
   return request<RoleChangeResult>(`/api/admin/users/${id}/demote`, { method: "POST" });
+}
+
+/** Set a user's role to Member, Moderator or Admin. */
+export function setUserRole(id: string, role: UserRole): Promise<RoleChangeResult> {
+  return request<RoleChangeResult>(`/api/admin/users/${id}/role`, {
+    method: "PUT",
+    body: { role },
+  });
 }
 
 /** Public events submitted by regular users and awaiting a decision. */

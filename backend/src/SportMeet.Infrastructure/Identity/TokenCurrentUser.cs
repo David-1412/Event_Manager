@@ -66,6 +66,15 @@ public sealed class TokenCurrentUser : ICurrentUser
         }
     }
 
+    public bool CanPublishPublicEvents
+    {
+        get
+        {
+            if (_resolved is null) ResolveAsync().GetAwaiter().GetResult();
+            return _role.CanPublishPublicEvents();
+        }
+    }
+
     private async Task ResolveAsync()
     {
         var context = _httpContextAccessor.HttpContext;

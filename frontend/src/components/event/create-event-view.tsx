@@ -60,7 +60,7 @@ import type {
  */
 export function CreateEventView() {
   const router = useRouter();
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, canPublishPublicEvents } = useAuth();
   const uid = user?.uid ?? null;
 
   const [venue, setVenue] = useState<VenueSelection | null>(null);
@@ -352,17 +352,14 @@ export function CreateEventView() {
       return;
     }
     const payload = toCreateEventPayload({ ...parsed.data, ...venue });
-    // The approval gate. A public event from anyone who is not an administrator
-    // lands in the review queue rather than on Browse, and that is a surprise worth
-    // stopping for - so hold the submit and say what will happen. Admins and private
-    // events publish immediately and skip the dialog entirely, because for them
-    // Create Event means exactly what the button says.
+    // A public Member submission needs explicit confirmation because it enters
+    // review. Moderators and Admins publish immediately; private events also skip it.
     //
     // The server decides the real status; this only decides whether to ask first.
-    // `isAdmin` comes from GET /api/auth/me, so a stale claim cannot skip the dialog
+    // The permission comes from GET /api/auth/me, so a stale claim cannot skip the dialog
     // and get a PendingReview event created behind the user's back - the toast below
     // reads the status the server actually returned.
-    if (payload.visibility !== "Private" && !isAdmin) {
+    if (payload.visibility !== "Private" && !canPublishPublicEvents) {
       setPendingPublicSubmit(payload);
       return;
     }
@@ -662,4 +659,3 @@ function parseWallClock(date: string | undefined, time: string | undefined): Dat
   const parsed = new Date(`${date}T${time}`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
-

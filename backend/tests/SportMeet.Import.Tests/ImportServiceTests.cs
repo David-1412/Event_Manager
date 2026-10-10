@@ -346,6 +346,7 @@ public class ImportServiceTests
         public bool IsDemo => false;
         // Imports run as ordinary members; nothing in this file tests a privilege.
         public bool IsAdmin => false;
+        public bool CanPublishPublicEvents => false;
     }
 
     private sealed class FakeExtractor : IEventExtractor
@@ -404,6 +405,7 @@ public class ImportServiceTests
         public Task<EventDetailDto> GetAsync(Guid id, CancellationToken ct = default)
             => Published is { } p && p.Id == id ? Task.FromResult(p) : throw new NotFoundException("Event", id, id);
 
+        public Task<EventDetailDto> UpdateHostedAsync(Guid eventId, UpdateAdminEventRequest request, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<PagedResult<EventListItemDto>> ListAsync(EventQueryModel query, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<EventDetailDto> CreateAsync(CreateEventDto dto, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<EventDetailDto> JoinAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();

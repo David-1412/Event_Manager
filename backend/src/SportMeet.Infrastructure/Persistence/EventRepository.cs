@@ -12,12 +12,95 @@ namespace SportMeet.Infrastructure.Persistence;
 /// Reads come from v_event_feed so a browse page is one round-trip with the
 /// participant count already derived; writes go through the Event entity.
 /// </summary>
-public sealed class EventRepository(AppDbContext db) : IEventRepository
+public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminEventRepository
 {
     /// <summary>Melbourne is the whole market here, so a generous box never
     /// truncates a legitimate radius query while staying selective enough for the
     /// (lat, lng) index to matter.</summary>
     private const double DegreesPerKm = 1d / 111.32d;
+
+    public async Task<(IReadOnlyList<AdminEventDto> Items, int TotalCount)> QueryAdminAsync(
+        string? search,
+        AdminEventTimeFrame? timeFrame,
+        EventStatus? status,
+        int page,
+        int pageSize,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+    {
+        IQueryable<Event> query = db.Events.AsNoTracking()
+            .Include(e => e.Host)
+            .Include(e => e.EventTags)
+                .ThenInclude(x => x.Tag);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(e =>
+                EF.Functions.ILike(e.Title, $"%{term}%")
+                || EF.Functions.ILike(e.Host.Name, $"%{term}%")
+                || EF.Functions.ILike(e.VenueName, $"%{term}%"));
+        }
+
+        if (status is { } requestedStatus)
+            query = query.Where(e => e.Status == requestedStatus);
+
+        query = timeFrame switch
+        {
+            AdminEventTimeFrame.Past => query.Where(e => e.EndAt < now),
+            AdminEventTimeFrame.Current => query.Where(e => e.StartAt <= now && e.EndAt >= now),
+            AdminEventTimeFrame.Future => query.Where(e => e.StartAt > now),
+            _ => query,
+        };
+
+        var totalCount = await query.CountAsync(ct);
+        var rows = await query
+            .OrderByDescending(e => e.StartAt)
+            .ThenBy(e => e.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        var items = rows.Select(e => new AdminEventDto(
+            e.Id,
+            e.Title,
+            e.HostId,
+            e.Host.Name,
+            e.Description,
+            e.VenueName,
+            e.Address,
+            e.ThumbnailUrl,
+            e.Lat,
+            e.Lng,
+            e.Timezone,
+            e.StartAt,
+            e.EndAt,
+            e.MaxParticipants,
+            e.SkillLevel,
+            e.Cost,
+            e.Status,
+            e.Visibility,
+            e.EventTags.Select(x => x.Tag.Name).OrderBy(x => x).ToList())).ToList();
+
+        return (items, totalCount);
+    }
+
+    public Task<Event?> FindForAdminAsync(Guid id, CancellationToken ct = default)
+        => db.Events
+            .Include(e => e.Host)
+            .Include(e => e.EventTags)
+                .ThenInclude(x => x.Tag)
+            .FirstOrDefaultAsync(e => e.Id == id, ct);
+
+    public Task SaveChangesAsync(CancellationToken ct = default)
+        => db.SaveChangesAsync(ct);
+
+    public async Task SoftDeleteAsync(Event eventEntity, DateTimeOffset deletedAt, CancellationToken ct = default)
+    {
+        eventEntity.DeletedAt = deletedAt;
+        eventEntity.UpdatedAt = deletedAt;
+        await db.SaveChangesAsync(ct);
+    }
 
     public async Task<(List<FeedRow> Rows, int TotalCount)> QueryAsync(EventQueryModel query, CancellationToken ct = default)
 
@@ -184,12 +267,15 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
     public async Task<List<Guid>> ListJoinedEventIdsAsync(Guid userId, CancellationToken ct = default)
         => await db.EventParticipants
             .AsNoTracking()
-            .Where(p => p.UserId == userId)
+            .Where(p => p.UserId == userId && p.Event.DeletedAt == null)
             .Select(p => p.EventId)
             .ToListAsync(ct);
 
     public async Task<int> CountParticipantsAsync(Guid eventId, CancellationToken ct = default)
         => await db.EventParticipants.CountAsync(p => p.EventId == eventId, ct);
+
+    public async Task<int> CountInterestedAsync(Guid eventId, CancellationToken ct = default)
+        => await db.EventInterests.CountAsync(i => i.EventId == eventId, ct);
 
     public async Task RunInTransactionAsync(Func<CancellationToken, Task> action, CancellationToken ct = default)
     {
@@ -267,7 +353,7 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository
     public async Task<List<Guid>> ListInterestedEventIdsAsync(Guid userId, CancellationToken ct = default)
         => await db.EventInterests
             .AsNoTracking()
-            .Where(i => i.UserId == userId)
+            .Where(i => i.UserId == userId && i.Event.DeletedAt == null)
             .Select(i => i.EventId)
             .ToListAsync(ct);
 

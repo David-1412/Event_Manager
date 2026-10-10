@@ -44,5 +44,6 @@ public class User
     /// <summary>Drafts owned by this user. Navigation only — the privacy filter runs
     /// on <c>EventDraft.UserId</c> in SQL, never by walking this collection.</summary>
     public ICollection<EventDraft> Drafts { get; set; } = new List<EventDraft>();
-}
 
+    public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+}

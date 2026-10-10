@@ -11,6 +11,7 @@ public static class DependencyInjection
     {
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
         services.AddScoped<Events.IEventService, Events.EventService>();
+        services.AddScoped<Events.IAdminEventService, Events.AdminEventService>();
 
         // Ingestion services. Options *binding* happens in AddInfrastructure, which
         // is where IConfiguration is available - this layer only declares the
@@ -30,6 +31,7 @@ public static class DependencyInjection
         // Administrator user management. The last-admin guard is the reason this is
         // a service rather than the controller calling its repository directly.
         services.AddScoped<Admin.IUserAdminService, Admin.UserAdminService>();
+        services.AddScoped<Notifications.INotificationService, Notifications.NotificationService>();
         return services;
     }
 }

@@ -10,7 +10,10 @@ namespace SportMeet.Application.Events;
 /// IEventRepository, so the demo-user arrangement is configuration the Api
 /// supplies rather than a rule baked in here.
 /// </summary>
-public sealed class EventService(IEventRepository events, ICurrentUser currentUser) : IEventService
+public sealed class EventService(
+    IEventRepository events,
+    ICurrentUser currentUser,
+    SportMeet.Application.Notifications.INotificationRepository notifications) : IEventService
 {
     public async Task<PagedResult<EventListItemDto>> ListAsync(EventQueryModel query, CancellationToken ct = default)
     {
@@ -130,13 +133,10 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             MaxParticipants = dto.MaxParticipants!.Value,
             SkillLevel = dto.SkillLevel,
             Cost = dto.Cost,
-            // The approval workflow's one decision point. A public event written by
-            // anyone who is not an administrator waits for review, so it is stored as
-            // PendingReview and the feed filter keeps it out of browse until an admin
-            // approves it; a private event is the creator's own to share and publishes
-            // straight away, and an admin's public event publishes because publishing
-            // is exactly what the role is for.
-            Status = dto.Visibility != EventVisibility.Private && !currentUser.IsAdmin
+            // Public events from Members wait for review. Moderators can publish
+            // immediately, but that capability is deliberately separate from the
+            // Admin-only review and user-management checks.
+            Status = dto.Visibility != EventVisibility.Private && !currentUser.CanPublishPublicEvents
                 ? EventStatus.PendingReview
                 : EventStatus.Scheduled,
             // A caller that sends no visibility gets a public event, so an older
@@ -156,6 +156,59 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         // the detail page will render. Assembling it from the request instead is
         // how a field that silently fails to persist stays hidden.
         return await GetAsync(entity.Id, ct);
+    }
+
+    public async Task<EventDetailDto> UpdateHostedAsync(
+        Guid eventId,
+        UpdateAdminEventRequest request,
+        CancellationToken ct = default)
+    {
+        var userId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to manage an event.");
+        EventUpdateRules.Validate(request);
+
+        var current = await events.FindAsync(eventId, ct)
+            ?? throw new NotFoundException("Event", eventId, eventId);
+        if (current.Event.HostId != userId)
+            throw new NotFoundException("Event", eventId, eventId);
+
+        var now = DateTimeOffset.UtcNow;
+        await events.RunInTransactionAsync(async inner =>
+        {
+            var entity = await events.FindWithLockAsync(eventId, inner)
+                ?? throw new NotFoundException("Event", eventId, eventId);
+            if (entity.HostId != userId)
+                throw new NotFoundException("Event", eventId, eventId);
+
+            var oldStatus = entity.Status;
+            var oldVisibility = entity.Visibility;
+            EventUpdateRules.Apply(entity, request, now);
+
+            if (!currentUser.CanPublishPublicEvents)
+            {
+                entity.Visibility = oldVisibility;
+                entity.Status = oldVisibility == EventVisibility.Public
+                    ? EventStatus.PendingReview
+                    : oldStatus;
+                if (entity.Status == EventStatus.PendingReview)
+                    entity.RejectionReason = null;
+            }
+            else if (entity.Visibility == EventVisibility.Public
+                && entity.Status is EventStatus.PendingReview or EventStatus.Rejected)
+            {
+                entity.Status = EventStatus.Published;
+                entity.RejectionReason = null;
+            }
+
+            entity.CancelledAt = entity.Status == EventStatus.Cancelled
+                ? oldStatus == EventStatus.Cancelled ? entity.CancelledAt : now
+                : null;
+
+            await events.SaveChangesAsync(inner);
+            await events.ReplaceEventTagsAsync(eventId, TagNormalizer.NormalizeMany(request.Tags), now, inner);
+        }, ct);
+
+        return await GetAsync(eventId, ct);
     }
 
     public async Task<IReadOnlyList<PopularTag>> ListPopularTagsAsync(int limit = 12, CancellationToken ct = default)
@@ -227,6 +280,15 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             // the same transaction so the two sets never overlap and the
             // Interested count never double-counts a joiner. No-op when absent.
             await events.RemoveInterestAsync(eventId, userId, inner);
+
+            await NotifyCreatorAsync(
+                locked,
+                userId,
+                "EventJoined",
+                "New event attendee",
+                $"Someone joined your event '{locked.Title}'.",
+                inner);
+            await NotifyMilestoneAsync(locked, userId, "JoinMilestone", await events.CountParticipantsAsync(eventId, inner), inner);
         }, ct);
 
         return await GetAsync(eventId, ct);
@@ -262,7 +324,8 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
 
     /// <summary>Toggle the current viewer's interest in one event: adding when
     /// uninterested, removing when interested (the composite key already forbids a
-    /// second row). Returns the post-toggle state so the client settles its button
+    /// second row). The event row is locked while changing interest and recording its
+    /// milestone so concurrent changes cannot skip a threshold. Returns the post-toggle state so the client settles its button
     /// and toast from the server rather than guessing. Interest reserves no spot and
     /// is independent of capacity, so unlike Join there is nothing to lock.</summary>
     public async Task<bool> ToggleInterestAsync(Guid eventId, CancellationToken ct = default)
@@ -275,14 +338,31 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         _ = await events.FindAsync(eventId, ct)
             ?? throw new NotFoundException("Event", eventId, eventId);
 
-        if (await events.IsInterestedAsync(eventId, userId, ct))
+        var now = DateTimeOffset.UtcNow;
+        var interested = false;
+        await events.RunInTransactionAsync(async inner =>
         {
-            await events.RemoveInterestAsync(eventId, userId, ct);
-            return false;
-        }
+            var locked = await events.FindWithLockAsync(eventId, inner)
+                ?? throw new NotFoundException("Event", eventId, eventId);
 
-        await events.AddInterestAsync(eventId, userId, DateTimeOffset.UtcNow, ct);
-        return true;
+            if (await events.IsInterestedAsync(eventId, userId, inner))
+            {
+                await events.RemoveInterestAsync(eventId, userId, inner);
+                return;
+            }
+
+            await events.AddInterestAsync(eventId, userId, now, inner);
+            interested = true;
+            await NotifyCreatorAsync(
+                locked,
+                userId,
+                "EventInterested",
+                "New event interest",
+                $"Someone is interested in your event '{locked.Title}'.",
+                inner);
+            await NotifyMilestoneAsync(locked, userId, "InterestMilestone", await events.CountInterestedAsync(eventId, inner), inner);
+        }, ct);
+        return interested;
     }
 
     public async Task<IReadOnlyList<Guid>> ListMyInterestedAsync(CancellationToken ct = default)
@@ -353,14 +433,80 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             throw new NotFoundException("Event", eventId, eventId);
         }
 
-        if (!await events.TrySetReviewStatusAsync(eventId, row.Event.Status, decision, DateTimeOffset.UtcNow, ct))
+        var now = DateTimeOffset.UtcNow;
+        await events.RunInTransactionAsync(async inner =>
         {
-            throw new DomainRuleException("This event was just reviewed by someone else. Refresh and try again.");
-        }
+            if (!await events.TrySetReviewStatusAsync(eventId, row.Event.Status, decision, now, inner))
+            {
+                throw new DomainRuleException("This event was just reviewed by someone else. Refresh and try again.");
+            }
+
+            if (decision == EventStatus.Published && row.Event.Visibility == EventVisibility.Public)
+            {
+                await notifications.AddAsync(new SportMeet.Domain.Entities.Notification
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = row.Event.HostId,
+                    Title = "Event approved",
+                    Message = $"Your event '{row.Event.Title}' has been approved!",
+                    Type = "EventApproved",
+                    Link = $"/events/{row.Event.Id}",
+                    Read = false,
+                    CreatedAt = now,
+                }, inner);
+            }
+        }, ct);
 
         // Re-read through the detail path so the response is what every other reader
         // will now see - including the creator, whose copy just changed status.
         return await GetAsync(eventId, ct);
+    }
+
+    private async Task NotifyCreatorAsync(
+        Event eventEntity,
+        Guid actorId,
+        string type,
+        string title,
+        string message,
+        CancellationToken ct)
+    {
+        if (eventEntity.HostId == actorId) return;
+
+        await notifications.AddAsync(new SportMeet.Domain.Entities.Notification
+        {
+            Id = Guid.NewGuid(),
+            UserId = eventEntity.HostId,
+            Title = title,
+            Message = message,
+            Type = type,
+            Link = $"/events/{eventEntity.Id}",
+            Read = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+        }, ct);
+    }
+
+    private async Task NotifyMilestoneAsync(
+        Event eventEntity,
+        Guid actorId,
+        string type,
+        int count,
+        CancellationToken ct)
+    {
+        int[] milestones = [5, 10, 25, 50];
+        if (eventEntity.HostId == actorId || !milestones.Contains(count)) return;
+
+        var label = type == "JoinMilestone" ? "joins" : "interests";
+        await notifications.AddAsync(new SportMeet.Domain.Entities.Notification
+        {
+            Id = Guid.NewGuid(),
+            UserId = eventEntity.HostId,
+            Title = "Event milestone",
+            Message = $"Your event '{eventEntity.Title}' has reached {count} {label}!",
+            Type = type,
+            Link = $"/events/{eventEntity.Id}",
+            Read = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+        }, ct);
     }
 
     private async Task<EventDetailDto> ChangeStatusAsync(

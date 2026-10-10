@@ -1,14 +1,13 @@
 namespace SportMeet.Domain.Enums;
 
 /// <summary>
-/// What a caller may do beyond being a member. Kept to two values on purpose:
-/// the review workflow needs exactly one privileged role, and a permission
-/// system nobody has asked for is a maintenance cost rather than a feature.
+/// What a caller may do beyond being a member.
 ///
 ///  - <see cref="Member"/> is everyone: create events, join events, and see
 ///    only their own unpublished (pending / rejected) events.
-///  - <see cref="Admin"/> additionally publishes public events without review
-///    and works the pending-review queue.
+///  - <see cref="Moderator"/> may publish public events without review.
+///  - <see cref="Admin"/> additionally manages users and works the
+///    pending-review queue.
 ///
 /// Persisted as its CLR name on <c>users.role</c>, matching every other status
 /// column in this schema.
@@ -16,6 +15,7 @@ namespace SportMeet.Domain.Enums;
 public enum UserRole
 {
     Member,
+    Moderator,
     Admin,
 }
 
@@ -24,4 +24,7 @@ public enum UserRole
 public static class UserRoleExtensions
 {
     public static bool IsAdmin(this UserRole role) => role == UserRole.Admin;
+
+    public static bool CanPublishPublicEvents(this UserRole role) =>
+        role is UserRole.Moderator or UserRole.Admin;
 }

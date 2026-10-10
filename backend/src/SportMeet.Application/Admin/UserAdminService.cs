@@ -35,10 +35,21 @@ public sealed class UserAdminService(
     }
 
     public Task<RoleChangeResultDto> PromoteAsync(Guid userId, CancellationToken ct = default)
-        => ChangeRoleAsync(userId, UserRole.Admin, ct);
+        => SetRoleAsync(userId, UserRole.Admin, ct);
 
     public Task<RoleChangeResultDto> DemoteAsync(Guid userId, CancellationToken ct = default)
-        => ChangeRoleAsync(userId, UserRole.Member, ct);
+        => SetRoleAsync(userId, UserRole.Member, ct);
+
+    public Task<RoleChangeResultDto> SetRoleAsync(
+        Guid userId, UserRole role, CancellationToken ct = default)
+    {
+        if (!Enum.IsDefined(role))
+        {
+            throw new DomainRuleException("Choose a valid user role.");
+        }
+
+        return ChangeRoleAsync(userId, role, ct);
+    }
 
     /// <summary>
     /// The single path both writes take, so the guard and the audit line cannot be
@@ -68,7 +79,7 @@ public sealed class UserAdminService(
         // hand. Refusing is cheaper than that, and cheaper than the alternative
         // reading of "the last admin may demote themselves" which still leaves the
         // role permanently empty once they sign out.
-        var isDemotion = target == UserRole.Member;
+        var isDemotion = (int)target < (int)target0.Role;
         if (isDemotion)
         {
             var admins = await users.CountAdminsAsync(ct);
@@ -84,7 +95,7 @@ public sealed class UserAdminService(
             }
         }
 
-        var action = target == UserRole.Admin ? RoleChangeAction.Promoted : RoleChangeAction.Demoted;
+        var action = (int)target > (int)target0.Role ? RoleChangeAction.Promoted : RoleChangeAction.Demoted;
 
         // Checked above, written conditionally here: two admins acting on the same
         // row at once must not both succeed, and the loser's expected role no longer

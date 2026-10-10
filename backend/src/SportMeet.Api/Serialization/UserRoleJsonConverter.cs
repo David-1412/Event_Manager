@@ -5,7 +5,7 @@ using SportMeet.Domain.Enums;
 namespace SportMeet.Api.Serialization;
 
 /// <summary>
-/// Writes <see cref="UserRole"/> by its PascalCase name — "Member" / "Admin" — which
+/// Writes <see cref="UserRole"/> by its PascalCase name — "Member" / "Moderator" / "Admin" — which
 /// is the form the client's <c>UserRole</c> union and the role badges expect.
 ///
 /// Registered explicitly rather than through <c>JsonStringEnumConverter</c> for the

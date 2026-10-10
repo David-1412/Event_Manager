@@ -23,7 +23,7 @@ public sealed record CurrentUserDto(
 /// <summary>
 /// The one endpoint that tells a signed-in caller who the API thinks they are.
 ///
-/// The client needs this for exactly one reason: <c>role</c>. Firebase knows the
+/// The client needs this for role-aware navigation and publishing. Firebase knows the
 /// person, not their privilege in this app, and the role deliberately lives only on
 /// the <c>users</c> row so that a demotion takes effect on the next request rather
 /// than when the current token expires. That means it cannot be derived client-side

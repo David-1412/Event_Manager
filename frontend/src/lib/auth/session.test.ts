@@ -82,6 +82,23 @@ describe("establishSession", () => {
     }
   });
 
+  it("still reads a moderator role from auth/me when login exchange is unavailable", async () => {
+    fetchMock
+      .mockResolvedValueOnce(response(404, { status: 404, title: "Not Found" }))
+      .mockResolvedValueOnce(response(200, {
+        id: "db-user-2",
+        role: "Moderator",
+        email: "sam@example.com",
+        displayName: "Sam Nguyen",
+      }));
+
+    const session = await establishSession(carrier());
+
+    expect(session.apiTrusted).toBe(false);
+    expect(session.token).toBe("firebase-id-token");
+    expect(session.user.role).toBe("Moderator");
+  });
+
   it("falls back when the API is unreachable rather than logging the user out", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     const session = await establishSession(carrier());

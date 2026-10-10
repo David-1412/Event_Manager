@@ -65,6 +65,8 @@ export interface AuthContextValue {
    * Purely a rendering hint — every admin endpoint authorises on its own.
    */
   isAdmin: boolean;
+  /** Moderator and Admin may publish public events without review. */
+  canPublishPublicEvents: boolean;
   /** Re-read the caller's role from the API. Called after a role change so the nav
    * and the badges agree with the database without a full sign-out. */
   refreshRole: () => Promise<void>;
@@ -290,6 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       available: isFirebaseConfigured,
       apiTrusted,
       isAdmin: user?.role === "Admin",
+      canPublishPublicEvents: user?.role === "Admin" || user?.role === "Moderator",
       refreshRole,
       login,
       register,

@@ -76,7 +76,9 @@ export async function fetchRole(token: string, signal?: AbortSignal): Promise<Us
     if (!response.ok) return null;
     const dto = (await response.json()) as MeDto;
     // Guard the wire value: a role outside the union must not reach the badges.
-    return dto.role === "Admin" ? "Admin" : dto.role === "Member" ? "Member" : null;
+    return dto.role === "Admin" || dto.role === "Moderator" || dto.role === "Member"
+      ? dto.role
+      : null;
   } catch {
     return null;
   }
@@ -115,6 +117,10 @@ export async function establishSession(
 ): Promise<Session> {
   const idToken = await firebaseUser.getIdToken();
   const fallback: Session = { user: toAuthUser(firebaseUser), token: idToken, apiTrusted: false };
+  const withRole = async (): Promise<Session> => {
+    const role = await fetchRole(idToken, signal);
+    return role ? { ...fallback, user: { ...fallback.user, role } } : fallback;
+  };
 
   try {
     const response = await postLogin(
@@ -122,7 +128,7 @@ export async function establishSession(
       signal,
     );
     if (!response.ok) {
-      if (isMissingEndpoint(response.status)) return fallback;
+      if (isMissingEndpoint(response.status)) return withRole();
       throw await errorFrom(response);
     }
     const payload = (await response.json()) as LoginResponse;
@@ -138,7 +144,7 @@ export async function establishSession(
       apiTrusted: true,
     };
   } catch (error) {
-    if (error instanceof ApiError && isMissingEndpoint(error.status)) return fallback;
+    if (error instanceof ApiError && isMissingEndpoint(error.status)) return withRole();
     // Aborts belong to whoever owns the signal, not to us.
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     // A rejection that reaches this block came from our own `errorFrom`, i.e. the
@@ -147,7 +153,7 @@ export async function establishSession(
     // malformed JSON, a body missing `token`) means we could not ask, and the
     // user stays signed in to Firebase without an API token.
     if (error instanceof ApiError) throw error;
-    return fallback;
+    return withRole();
   }
 }
 

@@ -9,7 +9,7 @@ import type { EventListItem } from "./events";
  * `UserRoleJsonConverter`, i.e. the PascalCase CLR name — not the numeric ordinal.
  * A client that typed this as `number` would compile and render every badge wrong.
  */
-export type UserRole = "Member" | "Admin";
+export type UserRole = "Member" | "Moderator" | "Admin";
 
 /** One row of the admin user table. */
 export interface AdminUser {

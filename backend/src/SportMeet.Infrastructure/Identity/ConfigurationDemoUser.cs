@@ -37,6 +37,7 @@ public sealed class ConfigurationDemoUser(IOptions<DemoUserOptions> options) : I
     /// Returning true here was a standing privilege grant keyed on a config
     /// value; nothing consumed it, and nothing should.</summary>
     public bool IsAdmin => false;
+    public bool CanPublishPublicEvents => false;
 }
 
 /// <summary>

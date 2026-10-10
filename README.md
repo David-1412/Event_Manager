@@ -123,3 +123,34 @@ cd frontend; npm run dev                            # web on :3000
 The API migrates and seeds PostgreSQL on startup — watch for
 `Demo seed complete: 8 sports, 9 events in scope.` in `docker compose logs api` — so
 the database must be reachable before it starts.
+
+## Roles and notifications
+
+New accounts are **Members**. Their public events stay out of Browse until an
+Admin approves them; private events remain immediately shareable. **Moderators**
+can publish public events immediately, but cannot access user management or the
+review queue. **Admins** can additionally assign roles, approve and reject
+submissions, and manage users. The API enforces these permissions independently
+of the frontend navigation.
+
+Hosts can edit their events from My events → Hosting. Editing a public event as
+a Member sends it back to PendingReview until an Admin approves the changes;
+Members cannot switch a public event to private to bypass review. Moderators and
+Admins can edit their own events, including past events, without resubmitting
+them; they can publish a public event that was awaiting review.
+
+Admins can manage events at `/admin/events`: search/filter across past, ongoing,
+and upcoming events, edit event details and status, and remove events. Removal
+is a soft delete: the record stays in `sportsmeet.events`, while the active
+event feed and ordinary event queries hide it. `GET /api/admin/events` supports
+`q`, `timeFrame` (`past`, `current`, `future`), `status`, `page`, and `pageSize`;
+`PUT` updates an event and `DELETE` soft-deletes it.
+
+After an Admin approves a submitted event, the host receives an in-app
+notification. Event hosts are also notified when someone joins or expresses
+interest, and when either activity reaches 5, 10, 25, or 50. Signed-in users can
+open the header bell to see recent notifications, follow event links, mark one
+notification read, or mark all as read. The API exposes `GET /api/notifications`,
+`PATCH /api/notifications/read`, and
+`PATCH /api/notifications/{id}/read`. The role constraint and inbox schema are
+applied by the normal startup migration.

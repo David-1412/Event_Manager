@@ -112,6 +112,17 @@ public class EventsController(IEventService events) : ControllerBase
         return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
     }
 
+    /// <summary>Update an event owned by the current user. Member edits to public
+    /// events are submitted for Admin approval again.</summary>
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<EventDetailDto>> Update(
+        Guid id, [FromBody] UpdateAdminEventRequest request, CancellationToken ct)
+        => Ok(await events.UpdateHostedAsync(id, request, ct));
+
     /// <summary>
     /// Join. Bodyless POST - the caller is ICurrentUser, matching what
     /// use-events.ts's postParticipants sends. 200 with the fresh detail: the

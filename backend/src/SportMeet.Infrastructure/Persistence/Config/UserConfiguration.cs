@@ -24,7 +24,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         // CLR side for the enum above: see the Role remark for that trap.
         b.Property(x => x.CreatedAt).IsRequired().HasDefaultValueSql("now()");
 
-        // Enum-as-text, like every other status column here, so psql shows 'Admin'
+        // Enum-as-text, like every other status column here, so psql shows role names
         // rather than 1. No HasDefaultValue in the model even though the column has
         // a server DEFAULT: EF validates a model default against the property's
         // CLR type before the value converter runs, which throws for an enum
@@ -38,11 +38,10 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         b.ToTable(t => t.HasCheckConstraint(
             "users_role_check",
-            "role IN ('Member', 'Admin')"));
+            "role IN ('Member', 'Moderator', 'Admin')"));
 
         // AuthUid/Email stay nullable for Milestone 1: no Firebase auth, so the
         // only row is the seeded demo host. The auth milestone backfills them and
         // tightens nullability - that migration is the one place this changes.
     }
 }
-

@@ -79,11 +79,10 @@ public class VwEventFeed
     public string HostName { get; set; } = string.Empty;
     public string? HostPhotoUrl { get; set; }
 
-    /// <summary>The host's role as the view's text column ('Member' | 'Admin').
+    /// <summary>The host's role as the view's text column ('Member' | 'Moderator' | 'Admin').
     /// Read so an unpublished event (pending review, or rejected) can be opened by
     /// an administrator as well as by its creator; declared as text rather than the
     /// <c>UserRole</c> enum for the reason documented on <see cref="Visibility"/>.
     /// Never a query predicate, so no value conversion is configured for it.</summary>
     public string HostRole { get; set; } = string.Empty;
 }
-

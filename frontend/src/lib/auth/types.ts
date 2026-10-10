@@ -26,8 +26,8 @@ export interface AuthUser {
    * row. Undefined until `GET /api/auth/me` has answered — which includes "the API
    * has no auth endpoint" and "the caller is signed in to Firebase only".
    *
-   * Every consumer must treat undefined as *not an admin*: this is what decides
-   * whether the admin surface renders, and guessing the other way would show an
+   * Every consumer must treat undefined as *not an admin or moderator*: this is what decides
+   * whether privileged navigation or direct publishing is offered, and guessing the other way would show an
    * Admin nav item to a Member. The server authorises independently regardless —
    * this only governs what is offered.
    */

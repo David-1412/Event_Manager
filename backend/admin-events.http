@@ -1,0 +1,62 @@
+@baseUrl = http://localhost:5000
+@token = {{accessToken}}
+
+### List all active events, including past events
+GET {{baseUrl}}/api/admin/events?page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### Search past events with a selected status
+GET {{baseUrl}}/api/admin/events?q=tennis&timeFrame=past&status=Completed&page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### Update an event (replace editable fields)
+PUT {{baseUrl}}/api/admin/events/{{eventId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Community tennis",
+  "description": "Updated event description.",
+  "venueName": "Seddon Park",
+  "address": "42 Railway Ave",
+  "thumbnailUrl": null,
+  "latitude": -37.81,
+  "longitude": 144.89,
+  "timezone": "Australia/Melbourne",
+  "startAt": "2030-05-01T10:00:00+10:00",
+  "endAt": "2030-05-01T12:00:00+10:00",
+  "maxParticipants": 12,
+  "skillLevel": null,
+  "cost": null,
+  "status": "Completed",
+  "visibility": "Public",
+  "tags": ["tennis", "social"]
+}
+
+### Soft-delete an event
+DELETE {{baseUrl}}/api/admin/events/{{eventId}}
+Authorization: Bearer {{token}}
+
+### Host updates their own event; a Member's public edit goes back to review
+PUT {{baseUrl}}/api/events/{{eventId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Community tennis",
+  "description": "Updated event description.",
+  "venueName": "Seddon Park",
+  "address": "42 Railway Ave",
+  "thumbnailUrl": null,
+  "latitude": -37.81,
+  "longitude": 144.89,
+  "timezone": "Australia/Melbourne",
+  "startAt": "2030-05-01T10:00:00+10:00",
+  "endAt": "2030-05-01T12:00:00+10:00",
+  "maxParticipants": 12,
+  "skillLevel": null,
+  "cost": null,
+  "status": "Published",
+  "visibility": "Public",
+  "tags": ["tennis", "social"]
+}

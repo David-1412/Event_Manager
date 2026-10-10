@@ -11,6 +11,8 @@ import { cn } from "@/lib/cn";
 import type { EventListItem } from "@/types/events";
 import { isPendingReviewStatus } from "@/types/events";
 import { HostingActions } from "@/components/event/hosting-actions";
+import { HostedEventEditor } from "@/components/event/hosted-event-editor";
+import { useAuth } from "@/lib/auth/auth-provider";
 
 type Tab = "upcoming" | "past" | "hosting";
 
@@ -34,6 +36,7 @@ const TABS: { key: Tab; label: string }[] = [
  */
 export function MyEventsView() {
   const [tab, setTab] = useState<Tab>("upcoming");
+  const { canPublishPublicEvents } = useAuth();
   const my = useMyEvents();
   const hosted = useHostedEvents();
   const now = useNow(60_000);
@@ -95,7 +98,7 @@ export function MyEventsView() {
         {isLoading && <EventCardListSkeleton count={3} />}
         {error && <ErrorState detail={String(error)} />}
         {!isLoading && !error && tab === "hosting" && (
-          <HostingPanel items={hosted.items} now={now} />
+          <HostingPanel items={hosted.items} now={now} canPublishPublicEvents={canPublishPublicEvents} />
         )}
         {!isLoading && !error && tab !== "hosting" && (
           <TabPanel tab={tab} rows={buckets[tab]} my={my} />
@@ -130,7 +133,11 @@ function TabPanel({
   );
 }
 
-function HostingPanel({ items, now }: { items: EventListItem[]; now: number }) {
+function HostingPanel({ items, now, canPublishPublicEvents }: {
+  items: EventListItem[];
+  now: number;
+  canPublishPublicEvents: boolean;
+}) {
   if (items.length === 0) return <EmptyState title="You haven't hosted any events yet." />;
 
   // Pending first: an event waiting on a decision is the one the host came here to
@@ -172,12 +179,19 @@ function HostingPanel({ items, now }: { items: EventListItem[]; now: number }) {
             isHost
             variant={variant}
             action={(
-              <HostingActions
-                eventId={item.id}
-                isCancelled={item.isCancelled}
-                isEnded={ended}
-                awaitingReview={isPending}
-              />
+              <div className="flex flex-wrap gap-2">
+                <HostedEventEditor
+                  eventId={item.id}
+                  visibility={item.visibility}
+                  canPublishPublicEvents={canPublishPublicEvents}
+                />
+                <HostingActions
+                  eventId={item.id}
+                  isCancelled={item.isCancelled}
+                  isEnded={ended}
+                  awaitingReview={isPending}
+                />
+              </div>
             )}
           />
         );
@@ -197,4 +211,3 @@ function emptyCopyFor(tab: Tab): string {
       return "You haven't hosted any events yet.";
   }
 }
-

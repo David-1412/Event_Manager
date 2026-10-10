@@ -71,6 +71,7 @@ public interface IEventRepository
     Task<List<string>> SuggestTagsAsync(string prefix, int limit, CancellationToken ct = default);
 
     Task AddAsync(Event eventEntity, CancellationToken ct = default);
+    Task SaveChangesAsync(CancellationToken ct = default);
 
     /// <summary>Ordered for a stable avatar stack across reloads.</summary>
     Task<List<User>> ListParticipantsAsync(Guid eventId, CancellationToken ct = default);
@@ -85,6 +86,8 @@ public interface IEventRepository
     /// <summary>The derived count behind v_event_feed - what a join compares
     /// against MaxParticipants while the event row is locked.</summary>
     Task<int> CountParticipantsAsync(Guid eventId, CancellationToken ct = default);
+
+    Task<int> CountInterestedAsync(Guid eventId, CancellationToken ct = default);
 
     /// <summary>Runs <paramref name="action"/> inside a database transaction,
     /// committing on success and rolling back on any exception. Join wraps the
@@ -136,4 +139,3 @@ public interface IEventRepository
     /// the event row itself was cancelled by this call (the host left).</summary>
     Task<bool> RemoveParticipantAsync(Guid eventId, Guid userId, DateTimeOffset cancelledAt, CancellationToken ct = default);
 }
-

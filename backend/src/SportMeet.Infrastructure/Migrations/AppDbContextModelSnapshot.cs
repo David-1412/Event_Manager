@@ -47,6 +47,10 @@ namespace SportMeet.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)")
@@ -138,6 +142,10 @@ namespace SportMeet.Infrastructure.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_events");
+
+                    b.HasQueryFilter(
+                        (System.Linq.Expressions.Expression<Func<SportMeet.Domain.Entities.Event, bool>>)
+                        (e => e.DeletedAt == null));
 
                     b.HasIndex("CreatedAt")
                         .HasDatabaseName("events_pending_review_idx")
@@ -730,8 +738,62 @@ namespace SportMeet.Infrastructure.Migrations
 
                     b.ToTable("users", "sportsmeet", t =>
                         {
-                            t.HasCheckConstraint("users_role_check", "role IN ('Member', 'Admin')");
+                            t.HasCheckConstraint("users_role_check", "role IN ('Member', 'Moderator', 'Admin')");
                         });
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Link")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("link");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("message");
+
+                    b.Property<bool>("Read")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("read");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("type");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notifications");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_notifications_user_id_created_at");
+
+                    b.HasIndex("UserId", "Read")
+                        .HasDatabaseName("ix_notifications_user_id_read");
+
+                    b.ToTable("notifications", "sportsmeet");
                 });
 
             modelBuilder.Entity("SportMeet.Domain.Entities.UserRoleAudit", b =>
@@ -783,6 +845,22 @@ namespace SportMeet.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("user_role_audit_no_op_check", "from_role <> to_role");
                         });
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.Notification", b =>
+                {
+                    b.HasOne("SportMeet.Domain.Entities.User", "User")
+                        .WithMany("Notifications")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SportMeet.Domain.Entities.User", b =>
+                {
+                    b.Navigation("Notifications");
                 });
 
             modelBuilder.Entity("SportMeet.Infrastructure.Persistence.VwEventFeed", b =>

@@ -12,6 +12,7 @@ import type { UserRole } from "@/types/admin";
  */
 const tones: Record<UserRole, BadgeTone> = {
   Admin: "brand",
+  Moderator: "info",
   Member: "neutral",
 };
 

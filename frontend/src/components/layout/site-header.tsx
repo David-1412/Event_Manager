@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { cn } from "@/lib/cn";
 
@@ -22,7 +23,10 @@ const links = [
  * role is still loading, so the link appears a beat after the session restores
  * rather than flashing at a Member.
  */
-const adminLink = { href: "/admin/users", label: "Admin" } as const;
+const adminLinks = [
+  { href: "/admin/users", label: "Admin users" },
+  { href: "/admin/events", label: "Manage events" },
+] as const;
 
 /**
  * The header is a client component now that it renders the session. The mark
@@ -36,8 +40,8 @@ const adminLink = { href: "/admin/users", label: "Admin" } as const;
  */
 export function SiteHeader() {
   const pathname = usePathname();
-  const { isAdmin } = useAuth();
-  const visibleLinks = isAdmin ? [...links, adminLink] : links;
+  const { isAdmin, user } = useAuth();
+  const visibleLinks = isAdmin ? [...links, ...adminLinks] : links;
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface shadow-raise">
       <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-4 px-4">
@@ -71,6 +75,7 @@ export function SiteHeader() {
 
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
+          <NotificationBell enabled={Boolean(user)} />
           <AccountControl />
         </div>
       </div>

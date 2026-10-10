@@ -21,6 +21,7 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
     public void Configure(EntityTypeBuilder<Event> b)
     {
         b.ToTable("events", SportConfiguration.Schema);
+        b.HasQueryFilter(x => x.DeletedAt == null);
 
         b.Property(x => x.Id).ValueGeneratedNever();
 

@@ -3,7 +3,7 @@ using SportMeet.Domain.Enums;
 namespace SportMeet.Application.Admin;
 
 /// <summary>
-/// Administrator user management: list people, promote, demote.
+/// Administrator user management: list people and change roles.
 ///
 /// The one rule with real consequences is the last-admin floor. Everything else
 /// here is a read or a one-column write, but this rule is why the service exists
@@ -22,4 +22,8 @@ public interface IUserAdminService
     /// <summary>Reduce an Admin to Member. Admin-only; audited; refuses to take the
     /// last one down.</summary>
     Task<RoleChangeResultDto> DemoteAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>Set an account to any supported role. Admin-only; audited, and
+    /// refuses to remove the last Admin.</summary>
+    Task<RoleChangeResultDto> SetRoleAsync(Guid userId, UserRole role, CancellationToken ct = default);
 }

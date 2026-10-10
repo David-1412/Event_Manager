@@ -32,6 +32,8 @@ public static class DependencyInjection
                 .UseSnakeCaseNamingConvention());
 
         services.AddScoped<IEventRepository, EventRepository>();
+        services.AddScoped<IAdminEventRepository, EventRepository>();
+        services.AddScoped<SportMeet.Application.Notifications.INotificationRepository, NotificationRepository>();
 
         // Administrator user management. Paired with the service registered in
         // AddApplication; the two FKs on user_role_audit are RESTRICT, so this
@@ -272,4 +274,3 @@ public static class DependencyInjection
         return services;
     }
 }
-

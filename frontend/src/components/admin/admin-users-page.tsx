@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import { RoleBadge } from "@/components/admin/role-badge";
 import { PendingEventsPanel } from "@/components/admin/pending-events-panel";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { ApiError, usingFixtures } from "@/lib/api";
-import { demoteUser, listAdminUsers, promoteUser } from "@/lib/admin";
+import { listAdminUsers, setUserRole } from "@/lib/admin";
 import type { AdminUser, UserRole } from "@/types/admin";
 
 /**
@@ -69,19 +68,20 @@ export function AdminUsersPage() {
     if (!pending) return;
     setBusy(true);
     try {
-      const result =
-        pending.to === "Admin"
-          ? await promoteUser(pending.user.id)
-          : await demoteUser(pending.user.id);
+      const result = await setUserRole(pending.user.id, pending.to);
 
       setUsers((rows) => rows.map((r) => (r.id === result.user.id ? result.user : r)));
       setAdminCount(result.adminCount);
-      toast(pending.to === "Admin" ? "Promoted to Admin" : "Demoted to Member");
+      toast(`${pending.user.name}'s role is now ${pending.to}`);
 
       // The caller just changed a role that may be their own. Re-read it so the nav
       // link and this page's own visibility follow the database immediately —
       // otherwise demoting yourself leaves an Admin console on screen that can no
       // longer do anything, with nothing on it explaining why.
+      if (pending.user.id === user?.id && pending.to !== "Admin") {
+        setUsers([]);
+        setForbidden(true);
+      }
       await refreshRole();
     } catch (err) {
       // 422 from the last-admin floor arrives with the server's own sentence, which
@@ -160,20 +160,18 @@ export function AdminUsersPage() {
       <ConfirmDialog
         open={pending !== null}
         titleId="admin-role-change-title"
-        title={pending?.to === "Admin" ? "Promote to Admin" : "Demote to Member"}
+        title={pending ? `Change role to ${pending.to}` : "Change role"}
         body={
           pending ? (
             <span>
               {"Make "}
               <strong>{pending.user.email ?? pending.user.name}</strong>
-              {pending.to === "Admin"
-                ? " an Admin? They will be able to manage every account and approve any event."
-                : " a Member? They will lose access to this console immediately."}
+              {roleDescription(pending.to)}
               {pending.user.id === selfId ? " This is your own account." : ""}
             </span>
           ) : null
         }
-        confirmLabel={pending?.to === "Admin" ? "Promote" : "Demote"}
+        confirmLabel={pending ? `Set ${pending.to}` : "Confirm"}
         busy={busy}
         onConfirm={() => void confirmChange()}
         onClose={() => setPending(null)}
@@ -184,12 +182,11 @@ export function AdminUsersPage() {
 
 /**
  * The accounts table. Split out so the page's state machine and the table's
- * presentational rules — notably *when a demote is offerable* — stay readable
+ * presentational rules — notably the last-admin floor — stay readable
  * apart.
  *
- * The last Admin's Demote button is disabled rather than hidden: a control that
- * silently isn't there reads as a bug, while a disabled one with a `title` explains
- * the rule. The server enforces the same floor, so this only saves the click.
+ * The role selector is available to Admins, but every change is confirmed and the
+ * API independently enforces the last-admin floor.
  */
 function UserTable({
   users,
@@ -206,8 +203,8 @@ function UserTable({
     <section aria-labelledby="admin-users-table-title" className="flex flex-col gap-3">
       <h2 id="admin-users-table-title" className="text-h2 text-fg">Accounts</h2>
       <p className="text-meta text-fg-muted">
-        Promoting grants access to this console and to the event review queue. The last
-        remaining Admin cannot be demoted — there would be no way back in.
+        Moderators can publish public events immediately. Admins can also manage accounts
+        and review events. The last remaining Admin cannot be demoted.
       </p>
 
       {users.length === 0 ? (
@@ -247,20 +244,22 @@ function UserTable({
                       {formatJoinDate(row.createdAt)}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      {row.role === "Admin" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={isLastAdmin}
-                          title={isLastAdmin ? "This is the only Admin account" : undefined}
-                          onClick={() => onRequestChange(row, "Member")}
-                        >
-                          Demote
-                        </Button>
-                      ) : (
-                        <Button size="sm" onClick={() => onRequestChange(row, "Admin")}>
-                          Promote
-                        </Button>
+                      <label className="sr-only" htmlFor={`role-${row.id}`}>Role for {row.name}</label>
+                      <select
+                        id={`role-${row.id}`}
+                        value={row.role}
+                        className="h-9 max-w-36 rounded-md border border-border bg-surface px-2 text-meta text-fg"
+                        onChange={(event) => {
+                          const role = parseRole(event.currentTarget.value);
+                          if (role && role !== row.role) onRequestChange(row, role);
+                        }}
+                      >
+                        <option value="Member" disabled={isLastAdmin}>Member</option>
+                        <option value="Moderator" disabled={isLastAdmin}>Moderator</option>
+                        <option value="Admin">Admin</option>
+                      </select>
+                      {isLastAdmin && (
+                        <span className="sr-only">This is the only Admin account; it cannot be demoted.</span>
                       )}
                     </td>
                   </tr>
@@ -286,3 +285,12 @@ function formatJoinDate(iso: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(time));
 }
 
+function parseRole(value: string): UserRole | null {
+  return value === "Member" || value === "Moderator" || value === "Admin" ? value : null;
+}
+
+function roleDescription(role: UserRole): string {
+  if (role === "Admin") return " an Admin? They will be able to manage accounts and approve submitted events.";
+  if (role === "Moderator") return " a Moderator? They can publish public events immediately, but cannot manage users or review submitted events.";
+  return " a Member? Their public events will require Admin approval.";
+}

@@ -18,6 +18,11 @@ public interface IEventService
     /// <summary>Throws <see cref="DomainRuleException"/> for an unknown sport slug.</summary>
     Task<EventDetailDto> CreateAsync(CreateEventDto dto, CancellationToken ct = default);
 
+    /// <summary>Updates an event owned by the current user. Public events edited
+    /// by Members return to admin review; Moderators and Admins may publish their
+    /// own edits immediately.</summary>
+    Task<EventDetailDto> UpdateHostedAsync(Guid eventId, UpdateAdminEventRequest request, CancellationToken ct = default);
+
     /// <summary>Throws <see cref="NotFoundException"/> when the event is unknown,
     /// <see cref="EventFullException"/> when capacity is reached (409 EventFull),
     /// or <see cref="DomainRuleException"/> for the host, a cancelled event, or
