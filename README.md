@@ -123,3 +123,15 @@ cd frontend; npm run dev                            # web on :3000
 The API migrates and seeds PostgreSQL on startup — watch for
 `Demo seed complete: 8 sports, 9 events in scope.` in `docker compose logs api` — so
 the database must be reachable before it starts.
+
+## Trying a branch from Claude Code
+
+Changes made in a Claude Code cloud session land on a `claude/...` branch, not `main`.
+To try one locally:
+
+```powershell
+git fetch origin
+git checkout claude/zen-franklin-mczc9s   # switch to the branch
+docker compose up -d --build              # rebuild and run it
+git checkout main                         # switch back when done
+```
