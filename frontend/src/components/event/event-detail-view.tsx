@@ -84,9 +84,9 @@ function DetailBody({ event }: { event: EventDetail }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   useEffect(() => {
-    document.title = `${event.title} (${event.joinedCount}/${event.maxParticipants}) - Event Manager`;
+    document.title = `${event.title} (${event.joinedCount}/${event.maxParticipants}) · MonaHub`;
     return () => {
-      document.title = "Event Manager";
+      document.title = "MonaHub";
     };
   }, [event.title, event.joinedCount, event.maxParticipants]);
 

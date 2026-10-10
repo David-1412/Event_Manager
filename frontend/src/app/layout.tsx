@@ -23,8 +23,8 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Event Manager", template: "%s · Event Manager" },
-  description: "Find and join local sports games near you.",
+  title: { default: "MonaHub", template: "%s · MonaHub" },
+  description: "MonaHub helps you find and join local sports games near you.",
 };
 
 export const viewport: Viewport = {

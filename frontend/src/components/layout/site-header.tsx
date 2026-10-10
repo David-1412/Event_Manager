@@ -48,13 +48,12 @@ export function SiteHeader() {
         <Link
           href="/"
           className="flex items-center gap-2 text-h3 text-fg no-underline"
-          aria-label="Event Manager home"
+          aria-label="MonaHub home"
         >
-          {/* the mark, not an icon: `EVNT` survives a missing emoji font */}
           <span aria-hidden className="text-brand-600">
             ◆
           </span>
-          EVNT
+          MonaHub
         </Link>
 
         <nav aria-label="Primary" className="flex items-center gap-1 overflow-x-auto">

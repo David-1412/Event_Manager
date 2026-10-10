@@ -1,4 +1,4 @@
-# SportMeet (Event Manager)
+# MonaHub
 
 Next.js 16 frontend + .NET 8 / EF Core API + PostgreSQL 16, runnable entirely in Docker.
 
