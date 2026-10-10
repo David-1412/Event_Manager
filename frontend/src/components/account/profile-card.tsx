@@ -11,7 +11,8 @@ import { Field, Input } from "@/components/ui/field";
 import { SkeletonBlock } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { displayNameSchema, type DisplayNameValues } from "@/features/auth/auth-schema";
-import type { AuthResult } from "@/lib/auth/auth-provider";
+import { RoleBadge } from "@/components/admin/role-badge";
+import { useAuth, type AuthResult } from "@/lib/auth/auth-provider";
 import type { UserProfile } from "@/types/account";
 import { CardError } from "./card-error";
 
@@ -63,6 +64,9 @@ function ProfileBody({
   profile: UserProfile;
   onSaveName: ProfileCardProps["onSaveName"];
 }) {
+  // From the API's own record (GET /api/auth/me), not the Firebase profile, so it
+  // shows the role the next request will actually be authorised as.
+  const role = useAuth().user?.role;
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
 
@@ -98,6 +102,7 @@ function ProfileBody({
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <p className="truncate text-meta text-fg-muted">{profile.email}</p>
             {profile.emailVerified && <Badge tone="brand">Verified</Badge>}
+            <RoleBadge role={role} />
           </div>
         </div>
       </div>

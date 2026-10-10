@@ -38,7 +38,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         b.ToTable(t => t.HasCheckConstraint(
             "users_role_check",
-            "role IN ('Member', 'Admin')"));
+            "role IN ('Member', 'Creator', 'Admin')"));
 
         // AuthUid/Email stay nullable for Milestone 1: no Firebase auth, so the
         // only row is the seeded demo host. The auth milestone backfills them and

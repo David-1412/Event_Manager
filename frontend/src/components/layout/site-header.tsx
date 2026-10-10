@@ -14,13 +14,15 @@ const links = [
 ] as const;
 
 /**
- * The admin destination, rendered only when the API has confirmed the role.
+ * The admin destination, rendered only when the API has confirmed the caller may
+ * manage users — i.e. an Admin. A Creator publishes without review but has no
+ * administrative authority, so they do not see it either.
  *
- * Hidden rather than shown-and-refused: requirement is that a Member cannot *see*
- * the admin page, and the backend's 404-for-non-admins is built on the same idea —
- * the surface should be indistinguishable from absent. `isAdmin` is false while the
- * role is still loading, so the link appears a beat after the session restores
- * rather than flashing at a Member.
+ * Hidden rather than shown-and-refused: requirement is that a Member or Creator
+ * cannot *see* the admin page, and the backend's 404-for-the-unauthorised is built
+ * on the same idea — the surface should be indistinguishable from absent. The
+ * permission is false while the role is still loading, so the link appears a beat
+ * after the session restores rather than flashing at everyone else.
  */
 const adminLink = { href: "/admin/users", label: "Admin" } as const;
 
@@ -36,8 +38,8 @@ const adminLink = { href: "/admin/users", label: "Admin" } as const;
  */
 export function SiteHeader() {
   const pathname = usePathname();
-  const { isAdmin } = useAuth();
-  const visibleLinks = isAdmin ? [...links, adminLink] : links;
+  const { permissions } = useAuth();
+  const visibleLinks = permissions.canManageUsers ? [...links, adminLink] : links;
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface shadow-raise">
       <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-4 px-4">

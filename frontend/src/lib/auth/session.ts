@@ -1,5 +1,6 @@
 import { ApiError } from "@/lib/api";
 import type { UserRole } from "@/types/admin";
+import { parseUserRole } from "./permissions";
 import type { AuthUser } from "./types";
 
 /**
@@ -76,7 +77,7 @@ export async function fetchRole(token: string, signal?: AbortSignal): Promise<Us
     if (!response.ok) return null;
     const dto = (await response.json()) as MeDto;
     // Guard the wire value: a role outside the union must not reach the badges.
-    return dto.role === "Admin" ? "Admin" : dto.role === "Member" ? "Member" : null;
+    return parseUserRole(dto.role);
   } catch {
     return null;
   }

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using SportMeet.Application.Common;
+using SportMeet.Domain.Enums;
 using SportMeet.Infrastructure.Seeding;
 
 namespace SportMeet.Infrastructure.Identity;
@@ -16,7 +17,7 @@ namespace SportMeet.Infrastructure.Identity;
 /// <see cref="ICurrentUser"/> to <see cref="TokenCurrentUser"/>, which is the
 /// only implementation the API resolves; this class remains as the shape the
 /// demo fallback documents and as the type the demo options are bound on. Its
-/// <see cref="IsAdmin"/> is deliberately non-privileged so that reviving it as
+/// <see cref="Role"/> is deliberately non-privileged so that reviving it as
 /// the acting identity cannot silently hand every anonymous caller the review
 /// queue - see that member.
 /// </summary>
@@ -29,14 +30,14 @@ public sealed class ConfigurationDemoUser(IOptions<DemoUserOptions> options) : I
     /// mistake this for a verified caller.</summary>
     public bool IsDemo => options.Value.AsUserId is not null;
 
-    /// <summary>Always false. Presence of a configured id proves nothing about
+    /// <summary>Always Member. Presence of a configured id proves nothing about
     /// privileges, and unlike <see cref="TokenCurrentUser"/> this class has no
     /// database to look the role up in - so it asserts none. The demo review
     /// queue is reached through TokenCurrentUser, which reads the demo id's
     /// users.role row and therefore still requires an actual Admin row.
-    /// Returning true here was a standing privilege grant keyed on a config
-    /// value; nothing consumed it, and nothing should.</summary>
-    public bool IsAdmin => false;
+    /// Returning anything higher here would be a standing privilege grant keyed
+    /// on a config value; nothing should consume one.</summary>
+    public UserRole Role => UserRole.Member;
 }
 
 /// <summary>

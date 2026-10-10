@@ -9,11 +9,11 @@ import type { EventListItem } from "./events";
  * `UserRoleJsonConverter`, i.e. the PascalCase CLR name — not the numeric ordinal.
  * A client that typed this as `number` would compile and render every badge wrong.
  */
-export type UserRole = "Member" | "Admin";
+export type UserRole = "Member" | "Creator" | "Admin";
 
 /** One row of the admin user table. */
 export interface AdminUser {
-  /** The API's `users.id`, which is what promote/demote key on. */
+  /** The API's `users.id`, which is what role changes key on. */
   id: string;
   name: string;
   /** Null for accounts whose sign-in token carried no email claim. */
@@ -27,12 +27,12 @@ export interface AdminUser {
 export interface AdminUserList {
   items: AdminUser[];
   /** Admins across the whole table, not just this page — the client needs the true
-   * count to decide whether a demote would hit the last-admin floor. */
+   * count to decide whether a role change would hit the last-admin floor. */
   adminCount: number;
   totalCount: number;
 }
 
-/** `POST /api/admin/users/{id}/promote` and `/demote`. */
+/** `POST /api/admin/users/{id}/role`. */
 export interface RoleChangeResult {
   /** The user as they now are, so the row can be patched in place. */
   user: AdminUser;

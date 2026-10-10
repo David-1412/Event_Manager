@@ -60,7 +60,7 @@ import type {
  */
 export function CreateEventView() {
   const router = useRouter();
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, permissions } = useAuth();
   const uid = user?.uid ?? null;
 
   const [venue, setVenue] = useState<VenueSelection | null>(null);
@@ -352,17 +352,17 @@ export function CreateEventView() {
       return;
     }
     const payload = toCreateEventPayload({ ...parsed.data, ...venue });
-    // The approval gate. A public event from anyone who is not an administrator
-    // lands in the review queue rather than on Browse, and that is a surprise worth
-    // stopping for - so hold the submit and say what will happen. Admins and private
-    // events publish immediately and skip the dialog entirely, because for them
-    // Create Event means exactly what the button says.
+    // The approval gate. A public event from a Member lands in the review queue
+    // rather than on Browse, and that is a surprise worth stopping for - so hold the
+    // submit and say what will happen. Creators, Admins and private events publish
+    // immediately and skip the dialog entirely, because for them Create Event means
+    // exactly what the button says.
     //
     // The server decides the real status; this only decides whether to ask first.
-    // `isAdmin` comes from GET /api/auth/me, so a stale claim cannot skip the dialog
-    // and get a PendingReview event created behind the user's back - the toast below
-    // reads the status the server actually returned.
-    if (payload.visibility !== "Private" && !isAdmin) {
+    // The permission comes from GET /api/auth/me, so a stale claim cannot skip the
+    // dialog and get a PendingReview event created behind the user's back - the
+    // toast below reads the status the server actually returned.
+    if (payload.visibility !== "Private" && !permissions.canPublishPublicEvents) {
       setPendingPublicSubmit(payload);
       return;
     }
@@ -500,8 +500,8 @@ export function CreateEventView() {
       </div>
 
 
-      {/* Public events need an administrator's approval before they reach Browse, so
-          a non-admin's public submit stops here. Not a ConfirmDialog: that one is
+      {/* A Member's public events need an administrator's approval before they reach
+          Browse, so their public submit stops here. Not a ConfirmDialog: that one is
           destructive by construction ("Keep it" against a red button), and this is
           the opposite - an ordinary step, with nothing being thrown away. Cancel
           closes it and leaves the form exactly as it was, so the user can switch to

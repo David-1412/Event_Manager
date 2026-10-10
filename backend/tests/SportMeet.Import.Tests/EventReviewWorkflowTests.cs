@@ -21,16 +21,16 @@ public class EventReviewWorkflowTests
     {
         public FakeEventRepo Repo = new();
         public Guid? CurrentUser = HostId;
-        public bool IsAdmin;
+        public UserRole Role = UserRole.Member;
 
-        public EventService Service => new(Repo, new FakeUser(CurrentUser, IsAdmin));
+        public EventService Service => new(Repo, new FakeUser(CurrentUser, Role));
     }
 
-    private sealed class FakeUser(Guid? userId, bool isAdmin) : ICurrentUser
+    private sealed class FakeUser(Guid? userId, UserRole role) : ICurrentUser
     {
         public Guid? UserId => userId;
         public bool IsDemo => false;
-        public bool IsAdmin { get; } = isAdmin;
+        public UserRole Role { get; } = role;
     }
 
     private static CreateEventDto Draft(EventVisibility visibility) => new()
@@ -144,9 +144,32 @@ public class EventReviewWorkflowTests
     [Fact]
     public async Task Admin_public_event_publishes_immediately()
     {
-        var rig = new Rig { IsAdmin = true };
+        var rig = new Rig { Role = UserRole.Admin };
 
         await rig.Service.CreateAsync(Draft(EventVisibility.Public));
+
+        Assert.Equal(EventStatus.Scheduled, Assert.Single(rig.Repo.Added).Status);
+    }
+
+    [Fact]
+    public async Task Creator_public_event_publishes_immediately()
+    {
+        var rig = new Rig { Role = UserRole.Creator };
+
+        var dto = await rig.Service.CreateAsync(Draft(EventVisibility.Public));
+
+        var saved = Assert.Single(rig.Repo.Added);
+        Assert.Equal(EventStatus.Scheduled, saved.Status);
+        Assert.Equal(EventVisibility.Public, saved.Visibility);
+        Assert.True(dto.IsPublished);
+    }
+
+    [Fact]
+    public async Task Creator_private_event_publishes_immediately()
+    {
+        var rig = new Rig { Role = UserRole.Creator };
+
+        await rig.Service.CreateAsync(Draft(EventVisibility.Private));
 
         Assert.Equal(EventStatus.Scheduled, Assert.Single(rig.Repo.Added).Status);
     }
@@ -172,28 +195,54 @@ public class EventReviewWorkflowTests
         Assert.False(mine.IsPublished);
         Assert.True(mine.IsHost);
 
-        var asAdmin = new Rig { CurrentUser = OtherId, IsAdmin = true, Repo = { Found = row } };
+        var asAdmin = new Rig { CurrentUser = OtherId, Role = UserRole.Admin, Repo = { Found = row } };
         var seen = await asAdmin.Service.GetAsync(row.Event.Id);
         Assert.Equal(mine.Id, seen.Id);
     }
 
 
+    [Fact]
+    public async Task Pending_event_is_404_for_a_Creator_who_did_not_write_it()
+    {
+        var rig = new Rig { CurrentUser = OtherId, Role = UserRole.Creator };
+        rig.Repo.Found = Row(EventStatus.PendingReview, HostId);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.GetAsync(rig.Repo.Found.Event.Id));
+    }
+
     // ---- review -----------------------------------------------------------------
 
-    [Fact]
-    public async Task Member_cannot_read_the_queue_or_decide()
+    [Theory]
+    [InlineData(UserRole.Member)]
+    [InlineData(UserRole.Creator)]
+    public async Task Non_reviewers_cannot_read_the_queue_or_decide(UserRole role)
     {
-        var rig = new Rig();
+        var rig = new Rig { Role = role };
+        rig.Repo.Found = Row(EventStatus.PendingReview, OtherId);
 
         await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.ListPendingReviewAsync());
-        await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.ApproveAsync(Guid.NewGuid()));
-        await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.RejectAsync(Guid.NewGuid()));
+        await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.ApproveAsync(rig.Repo.Found.Event.Id));
+        await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.RejectAsync(rig.Repo.Found.Event.Id));
+        Assert.Null(rig.Repo.LastReview);
+        Assert.Equal(EventStatus.PendingReview, rig.Repo.Found.Event.Status);
+    }
+
+    [Fact]
+    public async Task Creator_cannot_approve_their_own_pending_event()
+    {
+        // A Member's event submitted before they were promoted stays in the queue:
+        // the promotion lets new events skip review, it does not let them decide.
+        var rig = new Rig { Role = UserRole.Creator };
+        rig.Repo.Found = Row(EventStatus.PendingReview, HostId);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.ApproveAsync(rig.Repo.Found.Event.Id));
+        Assert.Null(rig.Repo.LastReview);
     }
 
     [Fact]
     public async Task Approve_moves_PendingReview_to_Published()
     {
-        var rig = new Rig { IsAdmin = true };
+        var rig = new Rig { Role = UserRole.Admin };
         var row = Row(EventStatus.PendingReview, HostId);
         rig.Repo.Found = row;
 
@@ -207,7 +256,7 @@ public class EventReviewWorkflowTests
     [Fact]
     public async Task Reject_keeps_the_event_with_its_creator_but_unpublished()
     {
-        var rig = new Rig { IsAdmin = true };
+        var rig = new Rig { Role = UserRole.Admin };
         var row = Row(EventStatus.PendingReview, HostId);
         rig.Repo.Found = row;
 
@@ -222,7 +271,7 @@ public class EventReviewWorkflowTests
     [Fact]
     public async Task Deciding_something_that_is_not_awaiting_one_is_404()
     {
-        var rig = new Rig { IsAdmin = true };
+        var rig = new Rig { Role = UserRole.Admin };
         rig.Repo.Found = Row(EventStatus.Scheduled, HostId);
 
         await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.ApproveAsync(rig.Repo.Found.Event.Id));
@@ -232,7 +281,7 @@ public class EventReviewWorkflowTests
     [Fact]
     public async Task Resubmitted_Rejected_event_can_be_approved()
     {
-        var rig = new Rig { IsAdmin = true };
+        var rig = new Rig { Role = UserRole.Admin };
         var row = Row(EventStatus.Rejected, HostId);
         rig.Repo.Found = row;
 
@@ -245,12 +294,35 @@ public class EventReviewWorkflowTests
     [Fact]
     public async Task Queue_lists_what_the_repository_returns()
     {
-        var rig = new Rig { IsAdmin = true };
+        var rig = new Rig { Role = UserRole.Admin };
         rig.Repo.PendingQueue = [Row(EventStatus.PendingReview, HostId), Row(EventStatus.PendingReview, OtherId)];
 
         var queue = await rig.Service.ListPendingReviewAsync();
 
         Assert.Equal(2, queue.Count);
         Assert.All(queue, item => Assert.False(item.IsPublished));
+    }
+
+    // ---- permission table -------------------------------------------------------
+
+    [Theory]
+    [InlineData(UserRole.Member, false, false, false)]
+    [InlineData(UserRole.Creator, true, false, false)]
+    [InlineData(UserRole.Admin, true, true, true)]
+    public void Role_grants_exactly_its_permissions(UserRole role, bool publish, bool review, bool manage)
+    {
+        Assert.Equal(publish, role.CanPublishPublicEvents());
+        Assert.Equal(review, role.CanReviewEvents());
+        Assert.Equal(manage, role.CanManageUsers());
+    }
+
+    [Fact]
+    public void Anonymous_caller_holds_no_permission_whatever_its_role()
+    {
+        var anonymous = new FakeUser(null, UserRole.Admin);
+
+        Assert.False(anonymous.CanPublishPublicEvents());
+        Assert.False(anonymous.CanReviewEvents());
+        Assert.False(anonymous.CanManageUsers());
     }
 }

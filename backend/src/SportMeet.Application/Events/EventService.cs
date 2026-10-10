@@ -37,8 +37,8 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             ?? throw new NotFoundException("Event", id);
 
         // An event that has not been published exists only for the two people who
-        // have a reason to read it: the creator, and the administrator who has to
-        // decide on it. Everyone else gets the same 404 an unknown id gets - the
+        // have a reason to read it: the creator, and the reviewer who has to decide
+        // on it. Everyone else gets the same 404 an unknown id gets - the
         // review queue is not something a stranger should be able to probe for by
         // id, and a 403 would confirm that the submission is real.
         //
@@ -131,12 +131,12 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
             SkillLevel = dto.SkillLevel,
             Cost = dto.Cost,
             // The approval workflow's one decision point. A public event written by
-            // anyone who is not an administrator waits for review, so it is stored as
-            // PendingReview and the feed filter keeps it out of browse until an admin
-            // approves it; a private event is the creator's own to share and publishes
-            // straight away, and an admin's public event publishes because publishing
-            // is exactly what the role is for.
-            Status = dto.Visibility != EventVisibility.Private && !currentUser.IsAdmin
+            // someone without PublishPublicEvents (a Member) waits for review, so it is
+            // stored as PendingReview and the feed filter keeps it out of browse until
+            // a reviewer approves it; a private event is the creator's own to share and
+            // publishes straight away, and a Creator's or Admin's public event
+            // publishes because publishing is exactly what that permission is for.
+            Status = dto.Visibility != EventVisibility.Private && !currentUser.CanPublishPublicEvents()
                 ? EventStatus.PendingReview
                 : EventStatus.Scheduled,
             // A caller that sends no visibility gets a public event, so an older
@@ -321,7 +321,7 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
     /// which is the point of reviewing in the product rather than in a database.</summary>
     public async Task<IReadOnlyList<EventListItemDto>> ListPendingReviewAsync(CancellationToken ct = default)
     {
-        RequireAdmin(Guid.Empty);
+        RequireReviewer(Guid.Empty);
         var rows = await events.ListPendingReviewAsync(ct);
         return rows.Select(row => ToListItem(row.Event, row, null)).ToList();
     }
@@ -332,14 +332,14 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
     public Task<EventDetailDto> RejectAsync(Guid eventId, CancellationToken ct = default)
         => DecideAsync(eventId, EventStatus.Rejected, ct);
 
-    /// <summary>Record an administrator's decision. Guarded on the event actually
+    /// <summary>Record a reviewer's decision. Guarded on the event actually
     /// awaiting one, so approving something that is already live (or that the other
     /// admin on this machine rejected a second ago) is the same 404 as approving
     /// something that does not exist - the client's list is a snapshot, and the honest
     /// answer to a stale row is "refresh", not a silent second write.</summary>
     private async Task<EventDetailDto> DecideAsync(Guid eventId, EventStatus decision, CancellationToken ct)
     {
-        RequireAdmin(eventId);
+        RequireReviewer(eventId);
 
         var row = await events.FindAsync(eventId, ct)
             ?? throw new NotFoundException("Event", eventId, eventId);
@@ -422,26 +422,27 @@ public sealed class EventService(IEventRepository events, ICurrentUser currentUs
         DistanceKm = distanceKm,
     };
 
-    /// <summary>Whether the current viewer may act on an unpublished event: its
-    /// creator (who can keep editing and resubmit it) or an administrator (who has
-    /// to decide on it). One definition so the detail read and the review decisions
+    /// <summary>Whether the current viewer may read an unpublished event: its
+    /// creator (who can keep editing and resubmit it) or a reviewer (who has to
+    /// decide on it). A Creator reading someone else's pending event is neither. One definition so the detail read and the review decisions
     /// cannot drift apart on who counts as allowed.</summary>
     private bool CanManage(FeedRow row) =>
-        currentUser.IsAdmin
+        currentUser.CanReviewEvents()
         || (currentUser.UserId is { } viewer && viewer == row.Event.HostId);
 
     /// <summary>The caller the review queue and the decisions demand: a signed-in
-    /// administrator. A non-admin gets the NotFound shape rather than a refusal that
+    /// user with <see cref="Permission.ReviewEvents"/>. Anyone else - a Creator
+    /// included - gets the NotFound shape rather than a refusal that
     /// names the role, for the same reason the detail read does it.
     /// <paramref name="eventId"/> is the id to name in that 404; the queue has none,
     /// and <see cref="Guid.Empty"/> is what the Problem Details writer renders as
     /// "no specific id".</summary>
-    private void RequireAdmin(Guid eventId)
+    private void RequireReviewer(Guid eventId)
     {
         _ = currentUser.UserId
             ?? throw new DomainRuleException("You must be signed in to review an event.");
 
-        if (!currentUser.IsAdmin)
+        if (!currentUser.CanReviewEvents())
         {
             throw new NotFoundException("Event", eventId, eventId);
         }

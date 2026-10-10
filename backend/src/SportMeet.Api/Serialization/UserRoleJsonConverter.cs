@@ -5,7 +5,7 @@ using SportMeet.Domain.Enums;
 namespace SportMeet.Api.Serialization;
 
 /// <summary>
-/// Writes <see cref="UserRole"/> by its PascalCase name — "Member" / "Admin" — which
+/// Writes <see cref="UserRole"/> by its PascalCase name — "Member" / "Creator" / "Admin" — which
 /// is the form the client's <c>UserRole</c> union and the role badges expect.
 ///
 /// Registered explicitly rather than through <c>JsonStringEnumConverter</c> for the
@@ -55,9 +55,9 @@ public sealed class UserRoleJsonConverter : JsonConverter<UserRole>
 }
 
 /// <summary>Same wire form, but null flows through so the caller can report a bad
-/// value instead of the converter throwing. No request DTO sends a role today —
-/// promote/demote are verbs, not a role field — so this exists purely so the
-/// nullable form never silently falls back to the numeric ordinal.</summary>
+/// value instead of the converter throwing. This is the form
+/// <c>ChangeRoleRequest.Role</c> binds through, so an unknown role reaches
+/// UserAdminService as null and is refused with a sentence, never defaulted.</summary>
 public sealed class NullableUserRoleJsonConverter : JsonConverter<UserRole?>
 {
     public override UserRole? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

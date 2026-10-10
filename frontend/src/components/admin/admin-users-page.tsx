@@ -2,33 +2,36 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { Select } from "@/components/ui/field";
 import { toast } from "@/components/ui/toast";
 import { RoleBadge } from "@/components/admin/role-badge";
 import { PendingEventsPanel } from "@/components/admin/pending-events-panel";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { ApiError, usingFixtures } from "@/lib/api";
-import { demoteUser, listAdminUsers, promoteUser } from "@/lib/admin";
+import { listAdminUsers, setUserRole } from "@/lib/admin";
+import { USER_ROLES } from "@/lib/auth/permissions";
 import type { AdminUser, UserRole } from "@/types/admin";
 
 /**
- * The admin console: every account with its role and signup date, promote/demote
- * with a confirmation step, and the queue of public events awaiting approval.
+ * The admin console: every account with its role and signup date, a role picker
+ * (Member, Creator, Admin) with a confirmation step, and the queue of public events
+ * awaiting approval.
  *
  * **The server is the authority.** `GET /api/admin/users` answers 404 to anyone who
- * is not an Admin, and that 404 — not a client-side role check — is what this page
- * treats as "you don't work here". A guard that guessed from `useAuth().isAdmin`
- * would misrender during a session restore, and would be a second, weaker copy of a
- * decision the API already makes. The nav link is hidden from Members purely so the
- * surface is invisible rather than merely forbidden.
+ * is not an Admin — a Creator included — and that 404, not a client-side role check,
+ * is what this page treats as "you don't work here". A guard that guessed from
+ * `useAuth().permissions` would misrender during a session restore, and would be a
+ * second, weaker copy of a decision the API already makes. The nav link is hidden
+ * from Members and Creators purely so the surface is invisible rather than merely
+ * forbidden.
  *
  * Every role change goes through `ConfirmDialog` first. The action is low-effort and
  * high-consequence, and the dialog is where the consequence gets stated — including
  * the case that matters most, demoting yourself.
  */
 export function AdminUsersPage() {
-  const { user, loading, isAdmin, refreshRole } = useAuth();
+  const { user, loading, permissions, refreshRole } = useAuth();
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [adminCount, setAdminCount] = useState<number | null>(null);
@@ -69,14 +72,11 @@ export function AdminUsersPage() {
     if (!pending) return;
     setBusy(true);
     try {
-      const result =
-        pending.to === "Admin"
-          ? await promoteUser(pending.user.id)
-          : await demoteUser(pending.user.id);
+      const result = await setUserRole(pending.user.id, pending.to);
 
       setUsers((rows) => rows.map((r) => (r.id === result.user.id ? result.user : r)));
       setAdminCount(result.adminCount);
-      toast(pending.to === "Admin" ? "Promoted to Admin" : "Demoted to Member");
+      toast(`Role changed to ${result.user.role}`);
 
       // The caller just changed a role that may be their own. Re-read it so the nav
       // link and this page's own visibility follow the database immediately —
@@ -124,7 +124,7 @@ export function AdminUsersPage() {
     );
   }
 
-  if (forbidden || (!isAdmin && users.length === 0)) {
+  if (forbidden || (!permissions.canManageUsers && users.length === 0)) {
     return (
       <main className="mx-auto flex w-full max-w-[900px] flex-col gap-4 px-4 py-6">
         <h1 className="text-h1 text-fg">Not found</h1>
@@ -160,20 +160,19 @@ export function AdminUsersPage() {
       <ConfirmDialog
         open={pending !== null}
         titleId="admin-role-change-title"
-        title={pending?.to === "Admin" ? "Promote to Admin" : "Demote to Member"}
+        title={pending ? `Change role to ${pending.to}` : ""}
         body={
           pending ? (
             <span>
-              {"Make "}
+              {`Make `}
               <strong>{pending.user.email ?? pending.user.name}</strong>
-              {pending.to === "Admin"
-                ? " an Admin? They will be able to manage every account and approve any event."
-                : " a Member? They will lose access to this console immediately."}
+              {` ${pending.to === "Admin" ? "an" : "a"} ${pending.to}? `}
+              {consequenceOf(pending.user.role, pending.to)}
               {pending.user.id === selfId ? " This is your own account." : ""}
             </span>
           ) : null
         }
-        confirmLabel={pending?.to === "Admin" ? "Promote" : "Demote"}
+        confirmLabel="Change role"
         busy={busy}
         onConfirm={() => void confirmChange()}
         onClose={() => setPending(null)}
@@ -182,14 +181,30 @@ export function AdminUsersPage() {
   );
 }
 
+/** What a role change means for the person, stated in the confirmation dialog. */
+function consequenceOf(from: UserRole, to: UserRole): string {
+  if (to === "Admin") {
+    return "They will be able to manage every account and approve or reject any event.";
+  }
+  const losesConsole = from === "Admin" ? " They will lose access to this console immediately." : "";
+  if (to === "Creator") {
+    return `Their public events will publish without review. They cannot review other people's events or manage users.${losesConsole}`;
+  }
+  return `Their public events will need approval before appearing on Browse.${losesConsole}`;
+}
+
 /**
  * The accounts table. Split out so the page's state machine and the table's
- * presentational rules — notably *when a demote is offerable* — stay readable
+ * presentational rules — notably *when a role change is offerable* — stay readable
  * apart.
  *
- * The last Admin's Demote button is disabled rather than hidden: a control that
+ * The last Admin's role picker is disabled rather than hidden: a control that
  * silently isn't there reads as a bug, while a disabled one with a `title` explains
  * the rule. The server enforces the same floor, so this only saves the click.
+ *
+ * Picking a role does not change it: the select stays on the current role (it is
+ * controlled by the row) and the confirmation dialog opens. Only the server's answer
+ * moves the row.
  */
 function UserTable({
   users,
@@ -206,8 +221,9 @@ function UserTable({
     <section aria-labelledby="admin-users-table-title" className="flex flex-col gap-3">
       <h2 id="admin-users-table-title" className="text-h2 text-fg">Accounts</h2>
       <p className="text-meta text-fg-muted">
-        Promoting grants access to this console and to the event review queue. The last
-        remaining Admin cannot be demoted — there would be no way back in.
+        Creators publish their own public events without review. Admins also get this
+        console and the event review queue. The last remaining Admin cannot change role —
+        there would be no way back in.
       </p>
 
       {users.length === 0 ? (
@@ -247,21 +263,23 @@ function UserTable({
                       {formatJoinDate(row.createdAt)}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      {row.role === "Admin" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={isLastAdmin}
-                          title={isLastAdmin ? "This is the only Admin account" : undefined}
-                          onClick={() => onRequestChange(row, "Member")}
-                        >
-                          Demote
-                        </Button>
-                      ) : (
-                        <Button size="sm" onClick={() => onRequestChange(row, "Admin")}>
-                          Promote
-                        </Button>
-                      )}
+                      <Select
+                        aria-label={`Role for ${row.email ?? row.name}`}
+                        value={row.role}
+                        disabled={isLastAdmin}
+                        title={isLastAdmin ? "This is the only Admin account" : undefined}
+                        onChange={(e) => {
+                          const to = e.target.value as UserRole;
+                          if (to !== row.role) onRequestChange(row, to);
+                        }}
+                        className="h-9 min-w-[8.5rem]"
+                      >
+                        {USER_ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {role}
+                          </option>
+                        ))}
+                      </Select>
                     </td>
                   </tr>
                 );

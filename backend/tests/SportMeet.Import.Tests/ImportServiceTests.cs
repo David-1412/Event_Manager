@@ -345,7 +345,7 @@ public class ImportServiceTests
         public Guid? UserId => id;
         public bool IsDemo => false;
         // Imports run as ordinary members; nothing in this file tests a privilege.
-        public bool IsAdmin => false;
+        public UserRole Role => UserRole.Member;
     }
 
     private sealed class FakeExtractor : IEventExtractor

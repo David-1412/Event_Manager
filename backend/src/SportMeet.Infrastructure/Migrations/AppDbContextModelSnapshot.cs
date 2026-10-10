@@ -730,7 +730,7 @@ namespace SportMeet.Infrastructure.Migrations
 
                     b.ToTable("users", "sportsmeet", t =>
                         {
-                            t.HasCheckConstraint("users_role_check", "role IN ('Member', 'Admin')");
+                            t.HasCheckConstraint("users_role_check", "role IN ('Member', 'Creator', 'Admin')");
                         });
                 });
 

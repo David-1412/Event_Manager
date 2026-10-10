@@ -23,6 +23,7 @@ import {
 import { getFirebaseAuth, getGoogleProvider } from "./client";
 import { describeAuthError, isAuthCancelled } from "./auth-error";
 import { establishSession, fetchRole, registerWithApi, toAuthUser } from "./session";
+import { permissionsFor, type Permissions } from "./permissions";
 import { clearAccessToken, setAccessToken } from "./token-store";
 import type { AuthUser } from "./types";
 import { isFirebaseConfigured } from "./config";
@@ -57,14 +58,17 @@ export interface AuthContextValue {
   /** True while the API has verified the token and issued its own. */
   apiTrusted: boolean;
   /**
-   * True only when the API has confirmed this caller holds the Admin role.
+   * What the API has confirmed this caller may do — see `permissionsFor`. Ask for
+   * the capability a control needs, never for a role name: a Creator publishes
+   * public events without review but must not see the admin surface, so "is this
+   * person privileged?" no longer has one answer.
    *
-   * False while the role is unknown, which is the correct direction: the admin
-   * surface is meant to be invisible rather than merely forbidden to a Member, and a
-   * caller whose role has not loaded yet is indistinguishable from a Member here.
-   * Purely a rendering hint — every admin endpoint authorises on its own.
+   * All false while the role is unknown, which is the correct direction: the admin
+   * surface is meant to be invisible rather than merely forbidden, and a caller
+   * whose role has not loaded yet is indistinguishable from a Member here. Purely a
+   * rendering hint — every endpoint authorises on its own.
    */
-  isAdmin: boolean;
+  permissions: Permissions;
   /** Re-read the caller's role from the API. Called after a role change so the nav
    * and the badges agree with the database without a full sign-out. */
   refreshRole: () => Promise<void>;
@@ -289,7 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       available: isFirebaseConfigured,
       apiTrusted,
-      isAdmin: user?.role === "Admin",
+      permissions: permissionsFor(user?.role),
       refreshRole,
       login,
       register,

@@ -57,12 +57,12 @@ public sealed class TokenCurrentUser : ICurrentUser
     /// <summary>Same lazy resolution as <see cref="UserId"/>: a request that never
     /// asks about privileges pays no extra read, and one that does reads the role
     /// off the row the id lookup already loaded.</summary>
-    public bool IsAdmin
+    public UserRole Role
     {
         get
         {
             if (_resolved is null) ResolveAsync().GetAwaiter().GetResult();
-            return _role.IsAdmin();
+            return _role;
         }
     }
 
@@ -93,7 +93,7 @@ public sealed class TokenCurrentUser : ICurrentUser
         // The role is read from the demo id's users row rather than hardcoded to
         // Admin, so the review gate can be exercised locally: point Demo:AsUserId
         // at a Member row (e.g. the seeded participant) and public creates land in
-        // PendingReview; point it at an Admin row and they publish directly. A
+        // PendingReview; point it at a Creator or Admin row and they publish directly. A
         // missing row (or an unreachable database) stays Member - the safe
         // default, since a demo identity that cannot be looked up has no proven
         // privilege. The demo warning in StartupTasks still fires on AsUserId
@@ -112,7 +112,7 @@ public sealed class TokenCurrentUser : ICurrentUser
                                        or System.Threading.Tasks.TaskCanceledException)
             {
                 // Lookup failure is not fatal: browse and demo relations still
-                // work with the id alone, so keep serving and stay non-admin.
+                // work with the id alone, so keep serving and stay Member.
             }
         }
     }

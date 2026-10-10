@@ -2,16 +2,18 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import type { UserRole } from "@/types/admin";
 
 /**
- * The role badge, in one place because three surfaces render it (the admin user
- * table, its confirmation dialogs, and the account page) and all three must agree
- * on which colour means privilege.
+ * The role badge, in one place because several surfaces render it (the admin user
+ * table and the account page) and all of them must agree on which colour means
+ * which role.
  *
  * Admin is `brand` rather than `warn` deliberately: being an Admin is not a warning
  * about the account, and a colour reserved elsewhere for destructive state would
- * make an ordinary row read as a problem.
+ * make an ordinary row read as a problem. Creator is `info` — distinct from Member
+ * at a glance, and quieter than Admin because it carries no authority over others.
  */
 const tones: Record<UserRole, BadgeTone> = {
   Admin: "brand",
+  Creator: "info",
   Member: "neutral",
 };
 

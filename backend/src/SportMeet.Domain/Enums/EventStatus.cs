@@ -11,7 +11,8 @@ namespace SportMeet.Domain.Enums;
 ///  - <see cref="Draft"/> is a saved-but-not-submitted event. Nothing writes it
 ///    yet; the value exists so the review vocabulary is complete and a later
 ///    save-for-later feature is a code change rather than a migration.
-///  - <see cref="PendingReview"/> is a public event created by a regular user.
+///  - <see cref="PendingReview"/> is a public event created by a Member (a user
+///    without the PublishPublicEvents permission).
 ///    It is invisible to the browse feed and readable only by its creator and
 ///    an administrator until a decision is made.
 ///  - <see cref="Published"/> is the reviewed-and-approved twin of

@@ -6,7 +6,7 @@ namespace SportMeet.Application.Admin;
 /// on their role, and nothing else. Deliberately excludes photo, auth uid and any
 /// event data — a user-management list has no business reading those, and every
 /// field it does read is one an administrator has a reason to see.</summary>
-/// <param name="Id">The internal <c>users.id</c>, which is what promote/demote key on.</param>
+/// <param name="Id">The internal <c>users.id</c>, which is what role changes key on.</param>
 /// <param name="Name">Display name, shown beside the address so a blank email is still identifiable.</param>
 /// <param name="Email">Null for accounts that arrived without an email claim.</param>
 /// <param name="Role">Current role — the value the badges render.</param>
@@ -28,6 +28,12 @@ public sealed record AdminUserListDto(
     IReadOnlyList<AdminUserDto> Items,
     int AdminCount,
     int TotalCount);
+
+/// <summary>Body of <c>POST /api/admin/users/{id}/role</c>.</summary>
+/// <param name="Role">The role to move the account to. Nullable so a missing or
+/// unrecognised value reaches the service as a clear 422 rather than silently
+/// binding to the enum's default (Member).</param>
+public sealed record ChangeRoleRequest(UserRole? Role);
 
 /// <summary>The result of a role change, returned so the client can update the row
 /// it has in place rather than refetching the whole table.</summary>

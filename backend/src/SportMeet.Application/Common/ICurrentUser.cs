@@ -24,13 +24,30 @@ public interface ICurrentUser
     /// verified token. Lets logging and responses flag demo data honestly.</summary>
     bool IsDemo { get; }
 
-    /// <summary>True when the acting user holds <c>UserRole.Admin</c> - the role
-    /// that publishes public events without review and works the pending-review
-    /// queue. Resolved from the user's database row, so it is a fact about the
-    /// person rather than about the token that carried them in, and a demotion
-    /// takes effect on the next request instead of when the token expires.
-    /// False for an anonymous caller.</summary>
-    bool IsAdmin { get; }
+    /// <summary>The acting user's role, resolved from their database row, so it is
+    /// a fact about the person rather than about the token that carried them in,
+    /// and a role change takes effect on the next request instead of when the token
+    /// expires. <see cref="UserRole.Member"/> for an anonymous caller.
+    ///
+    /// Authorization reads this through <see cref="CurrentUserPermissions"/>, never
+    /// by comparing roles directly.</summary>
+    UserRole Role { get; }
+}
+
+/// <summary>
+/// Permission checks for the acting user. An anonymous caller holds no permission,
+/// whatever <see cref="ICurrentUser.Role"/> reports.
+/// </summary>
+public static class CurrentUserPermissions
+{
+    public static bool Has(this ICurrentUser user, Permission permission)
+        => user.UserId is not null && user.Role.Has(permission);
+
+    public static bool CanPublishPublicEvents(this ICurrentUser user) => user.Has(Permission.PublishPublicEvents);
+
+    public static bool CanReviewEvents(this ICurrentUser user) => user.Has(Permission.ReviewEvents);
+
+    public static bool CanManageUsers(this ICurrentUser user) => user.Has(Permission.ManageUsers);
 }
 
 /// <summary>A verified caller: the Firebase UID pulled from a validated ID token,

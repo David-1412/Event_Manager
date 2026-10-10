@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
+using SportMeet.Api.Common;
 using SportMeet.Application.Common;
 using SportMeet.Application.Events;
 using SportMeet.Domain.Entities;
+using SportMeet.Domain.Enums;
 
 namespace SportMeet.Api.Controllers;
 
@@ -152,11 +154,17 @@ public class EventsController(IEventService events) : ControllerBase
         => Ok(new InterestResultDto(await events.ToggleInterestAsync(id, ct)));
 
     /// <summary>
-    /// The admin review queue: every public event awaiting a decision. Admin-only -
-    /// a member gets 404 rather than 403, because a queue of other people's
-    /// submissions is not a resource its existence should confirm to them.
+    /// The admin review queue: every public event awaiting a decision. Needs
+    /// <see cref="Permission.ReviewEvents"/> - a Member or Creator gets 404 rather
+    /// than 403, because a queue of other people's submissions is not a resource
+    /// its existence should confirm to them.
+    ///
+    /// The review endpoints carry the attribute <em>and</em> keep the service-layer
+    /// check: the attribute stops the request before any work, and the service
+    /// check keeps the rule true for any caller that does not come through HTTP.
     /// </summary>
     [HttpGet("reviews/pending")]
+    [RequirePermission(Permission.ReviewEvents)]
     [ProducesResponseType(typeof(System.Collections.Generic.IReadOnlyList<EventListItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<System.Collections.Generic.IReadOnlyList<EventListItemDto>>> PendingReviews(CancellationToken ct)
@@ -165,6 +173,7 @@ public class EventsController(IEventService events) : ControllerBase
     /// <summary>Approve a submitted event. It enters the public feed immediately,
     /// which is what the creator is waiting for.</summary>
     [HttpPost("{id:guid}/approve")]
+    [RequirePermission(Permission.ReviewEvents)]
     [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<EventDetailDto>> Approve(Guid id, CancellationToken ct)
@@ -173,6 +182,7 @@ public class EventsController(IEventService events) : ControllerBase
     /// <summary>Reject a submitted event. It stays with its creator, who can edit and
     /// resubmit it; it never reaches the public feed.</summary>
     [HttpPost("{id:guid}/reject")]
+    [RequirePermission(Permission.ReviewEvents)]
     [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<EventDetailDto>> Reject(Guid id, CancellationToken ct)
