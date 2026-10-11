@@ -16,7 +16,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAMESPACE: ${{ github.repository_owner }}
 
 jobs:
   frontend:
@@ -84,11 +83,15 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      API_IMAGE: ghcr.io/${{ github.repository_owner }}/sportmeet-api
-      WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/sportmeet-web
     steps:
       - uses: actions/checkout@v4
+
+      - name: Normalize image names
+        id: image-names
+        run: |
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "api_image=ghcr.io/$owner/sportmeet-api" >> "$GITHUB_OUTPUT"
+          echo "web_image=ghcr.io/$owner/sportmeet-web" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -104,20 +107,25 @@ jobs:
       - name: Build and push
         uses: docker/bake-action@v6
         env:
-          API_IMAGE: ${{ env.API_IMAGE }}
-          WEB_IMAGE: ${{ env.WEB_IMAGE }}
+          API_IMAGE: ${{ steps.image-names.outputs.api_image }}
+          WEB_IMAGE: ${{ steps.image-names.outputs.web_image }}
         with:
           files: docker-compose.yml
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
-            api.tags=${{ env.API_IMAGE }}:latest,${{ env.API_IMAGE }}:${{ github.sha }}
-            web.tags=${{ env.WEB_IMAGE }}:latest,${{ env.WEB_IMAGE }}:${{ github.sha }}
+            api.tags=${{ steps.image-names.outputs.api_image }}:latest
+            api.tags=${{ steps.image-names.outputs.api_image }}:${{ github.sha }}
+            web.tags=${{ steps.image-names.outputs.web_image }}:latest
+            web.tags=${{ steps.image-names.outputs.web_image }}:${{ github.sha }}
           push: ${{ github.ref == 'refs/heads/main' }}
 
       # Records what was produced so a failed deploy is traceable to a build.
       - name: Report image tags
         if: github.ref == 'refs/heads/main'
+        env:
+          API_IMAGE: ${{ steps.image-names.outputs.api_image }}
+          WEB_IMAGE: ${{ steps.image-names.outputs.web_image }}
         run: |
           echo "Pushed:"
           echo "  $API_IMAGE:latest and :$GITHUB_SHA"
@@ -133,11 +141,15 @@ jobs:
     permissions:
       contents: read
       packages: read
-    env:
-      API_IMAGE: ghcr.io/${{ github.repository_owner }}/sportmeet-api
-      WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/sportmeet-web
     steps:
       - uses: actions/checkout@v4
+
+      - name: Normalize image names
+        id: image-names
+        run: |
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "api_image=ghcr.io/$owner/sportmeet-api" >> "$GITHUB_OUTPUT"
+          echo "web_image=ghcr.io/$owner/sportmeet-web" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -148,6 +160,9 @@ jobs:
 
       # Pulls rather than builds, so what gets tested is the artifact CI produced.
       - name: Run stack from published images
+        env:
+          API_IMAGE: ${{ steps.image-names.outputs.api_image }}
+          WEB_IMAGE: ${{ steps.image-names.outputs.web_image }}
         run: |
           docker compose pull api web
           docker compose up -d
