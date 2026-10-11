@@ -155,6 +155,16 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
 # Build-only CA bundle for TLS-intercepting corporate proxies. Both Dockerfiles
 # mount it as `corp-ca` with required=false, so the build is unaffected on an

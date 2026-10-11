@@ -165,7 +165,11 @@ jobs:
           WEB_IMAGE: ${{ steps.image-names.outputs.web_image }}
         run: |
           docker compose pull api web
-          docker compose up -d
+          docker compose up -d --wait --wait-timeout 180 || {
+            docker compose ps
+            docker compose logs api web
+            exit 1
+          }
           for i in $(seq 1 36); do
             if curl -fsS http://localhost:5000/healthz; then ok=1; break; fi
             echo "waiting for api ($i/36)"; sleep 5
