@@ -97,6 +97,7 @@ app.UseStaticFiles(new StaticFileOptions
     OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "public,max-age=86400",
 });
 
+
 app.UseSerilogRequestLogging();
 app.UseCors();
 

@@ -69,6 +69,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: "Host=postgres;Port=5432;Database=sportmeet;Username=sportmeet;Password=sportmeet"
+      Cors__Origins__0: "http://31.220.109.12:3000"
       # Firebase ID-token verification. Set Firebase__ProjectId (e.g. via .env)
       # to turn per-user draft ownership on; unset, the API keeps the configured
       # demo identity and the draft endpoints honestly answer 401.
