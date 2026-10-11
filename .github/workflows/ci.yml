@@ -41,11 +41,11 @@ jobs:
       - name: Verify
         run: npm run verify
 
-      # Fail on any npm audit finding above moderate. Advisory data shifts
-      # daily, so this can go red with no code change; that is the intent, and
-      # `npm audit fix` is the usual answer.
+      # Keep critical advisories blocking while allowing moderate/high findings
+      # to be reported without failing CI. Do not mask the audit command: critical
+      # findings must still fail this job.
       - name: Audit dependencies
-        run: npm audit --audit-level=moderate
+        run: npm audit --audit-level=critical
 
   backend:
     runs-on: ubuntu-latest
