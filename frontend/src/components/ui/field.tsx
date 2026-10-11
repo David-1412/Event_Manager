@@ -65,7 +65,9 @@ export function Field({
       ) : null}
       {flag && (
         <p role="status" className="flex flex-wrap items-center gap-x-2 text-meta text-warn">
-          <span aria-hidden>⚠</span>
+          <span aria-hidden className="flex h-4 w-4 items-center justify-center rounded-full border border-current text-xs font-bold">
+            !
+          </span>
           <span>{flag.text}</span>
           <button type="button" onClick={flag.onDismiss} className="underline underline-offset-2">
             Looks right

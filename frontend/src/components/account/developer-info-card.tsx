@@ -27,9 +27,10 @@ export function DeveloperInfoCard({
         <summary className="cursor-pointer list-none text-h3 text-fg">
           <span className="inline-flex items-center gap-2">
             Developer information
-            <span aria-hidden className="text-meta text-fg-muted transition-transform group-open:rotate-180">
-              ▼
-            </span>
+            <span
+              aria-hidden
+              className="h-2 w-2 rotate-45 border-b-2 border-r-2 border-current transition-transform group-open:-rotate-[135deg]"
+            />
           </span>
         </summary>
         <dl className="mt-4 divide-y divide-border">

@@ -308,7 +308,7 @@ export function fixturePopularTags(): PopularTag[] {
 
 /**
  * Draft fixtures (used when VITE_/NEXT_PUBLIC_USE_FIXTURES=1) so the review flow
- * renders and Vitest/Playwright can exercise paste → draft → edit → publish.
+ * renders and Vitest/Playwright can exercise paste to draft to edit to publish.
  * Shaped exactly like the backend's EventDraftDto (flat source fields, ISO
  * instants in the payload) — the fixtures mirror the contract, they do not
  * replace it.
@@ -450,4 +450,3 @@ export function fixtureAddDraft(payload: EventDraft["payload"]): EventDraft {
   draftsStore = [created, ...draftsStore];
   return { ...created };
 }
-

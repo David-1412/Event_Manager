@@ -1,4 +1,4 @@
-﻿import type { EventListItem } from "@/types/events";
+import type { EventListItem } from "@/types/events";
 import { formatCardWhen, formatTagLine, formatTimeRange } from "@/lib/format";
 
 
