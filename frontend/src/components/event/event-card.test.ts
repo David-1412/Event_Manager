@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eventCardVariant } from "@/components/event/event-card";
-import { isPendingReviewStatus, isPublishedStatus } from "@/types/events";
+import { isPublishedStatus } from "@/types/events";
 import type { EventListItem } from "@/types/events";
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
@@ -31,38 +31,35 @@ export function AdminUsersPage() {
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [adminCount, setAdminCount] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!usingFixtures);
   /** Set when the list request 404s: the caller is not an Admin. */
   const [forbidden, setForbidden] = useState(false);
 
   const [pending, setPending] = useState<{ user: AdminUser; to: UserRole } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    if (usingFixtures) {
-      // No API to ask. Render the empty state rather than fixture accounts: a demo
-      // table of fake people you could "promote" would be indistinguishable from a
-      // working admin page.
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const res = await listAdminUsers();
-      setUsers(res.items);
-      setAdminCount(res.adminCount);
-      setForbidden(false);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) setForbidden(true);
-      else toast(messageFor(err, "Could not load users."));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    if (!loading) void load();
-  }, [loading, load]);
+    if (loading || usingFixtures) return;
+    let active = true;
+    void listAdminUsers()
+      .then((res) => {
+        if (!active) return;
+        setUsers(res.items);
+        setAdminCount(res.adminCount);
+        setForbidden(false);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        if (err instanceof ApiError && err.status === 404) setForbidden(true);
+        else toast(messageFor(err, "Could not load users."));
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [loading]);
 
   async function confirmChange() {
     if (!pending) return;

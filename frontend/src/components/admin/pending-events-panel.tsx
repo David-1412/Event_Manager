@@ -24,17 +24,15 @@ import type { PendingEvent } from "@/types/admin";
  */
 export function PendingEventsPanel() {
   const [events, setEvents] = useState<PendingEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!usingFixtures);
   const [failed, setFailed] = useState(false);
   const [acting, setActing] = useState<{ event: PendingEvent; decision: "approve" | "reject" } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (usingFixtures) {
-      setIsLoading(false);
       return;
     }
-    setIsLoading(true);
     try {
       setEvents(await listPendingEvents());
       setFailed(false);
@@ -49,8 +47,25 @@ export function PendingEventsPanel() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (usingFixtures) return;
+    let active = true;
+    void listPendingEvents()
+      .then((rows) => {
+        if (active) setEvents(rows);
+      })
+      .catch(() => {
+        // A Member reaches this panel only by editing the URL, and the endpoint
+        // 404s them. Showing "nothing to review" would be the lie; showing a
+        // failure that is really a permission answer is honest without confirming.
+        if (active) setFailed(true);
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function confirmDecision() {
     if (!acting) return;
