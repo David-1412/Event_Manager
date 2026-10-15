@@ -76,6 +76,35 @@ describe("create event validation (spec 7)", () => {
       expect(result.success).toBe(true);
       if (result.success) expect(result.data.maxParticipants).toBe(10);
     });
+
+    // The feature this whole block exists for: an empty box is a choice, not a gap.
+    it("treats an empty count as no limit rather than zero", () => {
+      // "" is what a cleared <input type="number"> reports. Coercing it would give
+      // 0, i.e. an event that cannot be joined at all.
+      const cleared = createEventSchema.safeParse(valid({ maxParticipants: "" }));
+      expect(cleared.success).toBe(true);
+      if (cleared.success) expect(cleared.data.maxParticipants).toBeNull();
+
+      // A draft or import that omits the field entirely is the same choice.
+      const absent = createEventSchema.safeParse(valid({ maxParticipants: null }));
+      expect(absent.success).toBe(true);
+      if (absent.success) expect(absent.data.maxParticipants).toBeNull();
+    });
+
+    it("sends null for no limit instead of an empty string", () => {
+      const result = createEventSchema.safeParse(valid({ maxParticipants: "" }));
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      // The API stores null as "no limit"; "" would fail to bind to an int?.
+      expect(toCreateEventPayload(result.data).maxParticipants).toBeNull();
+    });
+
+    it("still sends the number when a limit is set", () => {
+      const result = createEventSchema.safeParse(valid({ maxParticipants: "12" }));
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(toCreateEventPayload(result.data).maxParticipants).toBe(12);
+    });
   });
 
   describe("venue", () => {

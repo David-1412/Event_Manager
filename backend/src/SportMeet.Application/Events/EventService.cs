@@ -13,7 +13,13 @@ namespace SportMeet.Application.Events;
 public sealed class EventService(
     IEventRepository events,
     ICurrentUser currentUser,
-    SportMeet.Application.Notifications.INotificationRepository notifications) : IEventService
+    SportMeet.Application.Notifications.INotificationRepository notifications,
+    // Optional so the join/reminder/review tests that construct an EventService for an
+    // unrelated reason do not have to build a follower fan-out. Null means "announce to
+    // nobody", which is the correct default for a test and is never what the container
+    // supplies - AddApplication always registers the notifier, so a production
+    // EventService always has one.
+    SportMeet.Application.Profiles.ICreatorFollowNotifier? followers = null) : IEventService
 {
     public async Task<PagedResult<EventListItemDto>> ListAsync(EventQueryModel query, CancellationToken ct = default)
     {
@@ -32,6 +38,43 @@ public sealed class EventService(
             .ToList();
 
         return new PagedResult<EventListItemDto>(items, query.Page, query.PageSize, totalCount);
+    }
+
+    /// <summary>
+    /// The Following tab. One query, identical to browse except for the
+    /// follow-graph narrowing the repository folds into its WHERE clause as an
+    /// EXISTS over user_follows — no per-creator fetch, and every browse filter
+    /// (search, tag, date, radius, sort, page) arrives untouched through
+    /// <paramref name="query"/>.
+    /// </summary>
+    public Task<PagedResult<EventListItemDto>> ListFollowingAsync(
+        EventQueryModel query, CancellationToken ct = default)
+    {
+        // Signed-in is the precondition, not a preference: the feed's definition
+        // is "people *you* follow", and answering an anonymous caller with an
+        // empty list would read as "nobody you follow has events" rather than
+        // "we don't know who you are". The client shows a sign-in prompt instead.
+        var viewerId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to see events from people you follow.");
+
+        // EventQueryModel is a class, not a record, so the narrowed copy is
+        // spelled out rather than produced by `with`. Every field is carried
+        // across deliberately: a browse filter silently dropped here would go
+        // missing from the Following tab only in production, where the filter bar
+        // sends all of them.
+        return ListAsync(new EventQueryModel
+        {
+            Search = query.Search,
+            TagName = query.TagName,
+            DateFilter = query.DateFilter,
+            RadiusKm = query.RadiusKm,
+            OriginLat = query.OriginLat,
+            OriginLng = query.OriginLng,
+            Sort = query.Sort,
+            Page = query.Page,
+            PageSize = query.PageSize,
+            FollowedByUserId = viewerId,
+        }, ct);
     }
 
     public async Task<EventDetailDto> GetAsync(Guid id, CancellationToken ct = default)
@@ -78,6 +121,7 @@ public sealed class EventService(
             IsCancelled = row.Event.Status == EventStatus.Cancelled,
             IsPublished = row.Event.Status.IsPublished(),
             Visibility = row.Event.Visibility.ToString(),
+            RequiresJoinApproval = row.Event.RequiresJoinApproval,
             DistanceKm = null,
             Description = row.Event.Description,
             Host = new ParticipantDto(row.Event.HostId, row.HostName, row.HostPhotoUrl),
@@ -92,6 +136,15 @@ public sealed class EventService(
                 .Select(u => new ParticipantDto(u.Id, u.Name, u.PhotoUrl))
                 .ToList(),
             CancelledAt = row.Event.CancelledAt,
+            // Only worth a lookup when the event actually gates joining and the
+            // viewer is not the host: on an open event the answer is always null and
+            // a host never has a request of their own, so the common path stays at
+            // the queries it already made.
+            MyJoinRequestStatus = row.Event.RequiresJoinApproval
+                                  && currentUser.UserId is { } asker
+                                  && asker != row.Event.HostId
+                ? await events.FindMyJoinRequestStatusAsync(id, asker, ct)
+                : null,
         };
     }
 
@@ -130,7 +183,14 @@ public sealed class EventService(
             Timezone = string.IsNullOrWhiteSpace(dto.Timezone) ? "Australia/Melbourne" : dto.Timezone,
             StartAt = dto.StartAt.Value,
             EndAt = dto.EndAt.Value,
-            MaxParticipants = dto.MaxParticipants!.Value,
+            // Null passes through as null, which is the whole point: an empty Spots
+            // field means "no limit" and has to reach the column as NULL. The old
+            // `!.Value` is what made an empty field impossible, and it is now
+            // reachable - a client may send maxParticipants: null, or omit it
+            // entirely - so unwrapping here would throw on a legitimate request.
+            // The 2-50 bound is still enforced when a number *is* sent, by the
+            // validator and by the database CHECK.
+            MaxParticipants = dto.MaxParticipants,
             SkillLevel = dto.SkillLevel,
             Cost = dto.Cost,
             // Public events from Members wait for review. Moderators can publish
@@ -143,6 +203,11 @@ public sealed class EventService(
             // client (or an older draft payload) cannot silently create something
             // that never appears in browse.
             Visibility = dto.Visibility ?? EventVisibility.Public,
+
+            // Same absent-means-open rule as visibility above: an older client, an
+            // older draft payload, or an ingestion path that never heard of this
+            // field all create an event that joins immediately.
+            RequiresJoinApproval = dto.RequiresJoinApproval ?? false,
         };
 
         await events.AddAsync(entity, ct);
@@ -151,6 +216,14 @@ public sealed class EventService(
         // event row must exist first, and letting EF walk the graph would have it
         // insert tag rows that are already in the table.
         await events.ReplaceEventTagsAsync(entity.Id, tagNames, now, ct);
+
+        // Followers hear about it only if it is actually out. A public event from a
+        // Member landed in PendingReview above and is not visible to anyone but its
+        // creator, so the notifier sees that and writes nothing; it will fire from the
+        // admin's approval instead. A private event never fires at all. The rule is
+        // re-checked inside the notifier rather than decided from the status computed
+        // here, so this call site cannot be the place the rule gets it wrong.
+        await (followers?.PublishAsync(entity, ct) ?? Task.CompletedTask);
 
         // Re-read through the same path as GET so the 201 body is provably what
         // the detail page will render. Assembling it from the request instead is
@@ -173,6 +246,7 @@ public sealed class EventService(
             throw new NotFoundException("Event", eventId, eventId);
 
         var now = DateTimeOffset.UtcNow;
+        Event? newlyVisible = null;
         await events.RunInTransactionAsync(async inner =>
         {
             var entity = await events.FindWithLockAsync(eventId, inner)
@@ -204,9 +278,35 @@ public sealed class EventService(
                 ? oldStatus == EventStatus.Cancelled ? entity.CancelledAt : now
                 : null;
 
+            // Captured inside the transaction so the decision is made against the
+            // locked row, and announced only after the commit below. The test is a
+            // transition and not a state: an already-live event that is merely having
+            // its description corrected was visible before this request and is visible
+            // after it, so nothing new became discoverable and followers have nothing
+            // new to hear. Without the "was not already visible" half, every edit to a
+            // live event would re-announce it.
+            var wasVisible = oldVisibility == EventVisibility.Public && oldStatus.IsPublished();
+            var isVisible = entity.Visibility == EventVisibility.Public && entity.Status.IsPublished();
+            if (!wasVisible && isVisible)
+            {
+                newlyVisible = entity;
+            }
+
             await events.SaveChangesAsync(inner);
             await events.ReplaceEventTagsAsync(eventId, TagNormalizer.NormalizeMany(request.Tags), now, inner);
         }, ct);
+
+        // Outside the transaction, deliberately. This path notifies on a transition
+        // that is a side effect of an edit, not the edit's purpose: a creator fixing a
+        // typo should not have their save fail because a notification could not be
+        // written. CreateAsync and DecideAsync keep the fan-out inside instead, because
+        // there the publish is the request and telling the audience is part of doing it.
+        // The window this opens is a committed event whose announcement is a second
+        // away late; the window the alternative opens is a lost edit.
+        if (newlyVisible is not null)
+        {
+            await (followers?.PublishAsync(newlyVisible, ct) ?? Task.CompletedTask);
+        }
 
         return await GetAsync(eventId, ct);
     }
@@ -268,8 +368,30 @@ public sealed class EventService(
                 return;
             }
 
+            if (locked.RequiresJoinApproval)
+            {
+                // Gated event: a request, not a spot. Everything above still applies
+                // - published, not the host, not started - and it is checked against
+                // the locked row, so a host who turns approval on cannot be raced by a
+                // join that read the old value.
+                //
+                // Deliberately before the capacity check. A pending request reserves
+                // nothing, so a full gated event still accepts requests; the host
+                // decides who takes a spot, and capacity is enforced at approval
+                // instead. Filling the queue would otherwise let unactioned requests
+                // lock the host out of their own event.
+                await RequestJoinAsync(locked, userId, inner);
+                return;
+            }
+
             var current = await events.CountParticipantsAsync(eventId, inner);
-            if (current >= locked.MaxParticipants)
+            // A null capacity is "no limit": there is nothing to be full against, so
+            // the comparison is skipped rather than run against a stand-in number.
+            // The count itself stays unconditional - it is one cheap aggregate and the
+            // notification below reads it - but `current >= null` must never be
+            // collapsed into something like `current >= 0`, which would reject every
+            // join to an unlimited event.
+            if (locked.MaxParticipants is { } max && current >= max)
             {
                 throw new EventFullException(eventId);
             }
@@ -309,6 +431,138 @@ public sealed class EventService(
         return await GetAsync(eventId, ct);
     }
 
+    public async Task<JoinRequestListDto> ListJoinRequestsAsync(
+        Guid eventId, bool includeDecided, CancellationToken ct = default)
+    {
+        var hostId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to review join requests.");
+
+        // The list query is itself host-scoped, so an event the caller does not own
+        // returns no rows rather than leaking that it exists. That is the right shape
+        // for a list, but it cannot tell "your event is empty" from "not your event",
+        // so the existence check is separate and deliberately host-blind: a non-host
+        // gets 404, matching how the review queue refuses to confirm a private id.
+        _ = await events.FindAsync(eventId, ct)
+            ?? throw new NotFoundException("Event", eventId, eventId);
+
+        var rows = await events.ListJoinRequestsAsync(eventId, hostId, includeDecided, ct);
+        return new JoinRequestListDto(
+            rows.Select(r => new JoinRequestDto(
+                    new ParticipantDto(r.UserId, r.DisplayName, r.PhotoUrl),
+                    r.Status, r.RequestedAt, r.DecidedAt))
+                .ToList(),
+            rows.Count(r => r.Status == JoinRequestStatus.Pending));
+    }
+
+    public async Task<JoinRequestListDto> ApproveJoinRequestAsync(
+        Guid eventId, Guid userId, CancellationToken ct = default)
+    {
+        var hostId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to review join requests.");
+
+        // A host approving their own request cannot happen through the UI - Join
+        // refuses a host long before a request row exists - but the endpoint takes an
+        // arbitrary user id, so the rule is stated rather than assumed.
+        if (userId == hostId)
+        {
+            throw new DomainRuleException("You cannot approve your own join request.");
+        }
+
+        // Lock, count and decide in one transaction, exactly as Join does: two hosts'
+        // approvals (or an approval racing a direct join on an event whose gate was
+        // just turned off) cannot both take the last spot.
+        await events.RunInTransactionAsync(async inner =>
+        {
+            var locked = await events.FindWithLockAsync(eventId, inner)
+                ?? throw new NotFoundException("Event", eventId, eventId);
+
+            if (locked.HostId != hostId)
+            {
+                // 404, not 403 - the convention every other host-only path in this
+                // service follows (ChangeStatusAsync, UpdateHostedAsync). A caller who
+                // is not the host is not shown that the event exists for someone else.
+                throw new NotFoundException("Event", eventId, eventId);
+            }
+
+            var current = await events.CountParticipantsAsync(eventId, inner);
+            // Same rule as the direct join: an unlimited event cannot fill, so an
+            // approval is never refused for capacity. The host still gets the
+            // existing EventFull copy when a real limit has been reached, and the
+            // request stays Pending so it can be approved if a spot opens.
+            if (locked.MaxParticipants is { } max && current >= max)
+            {
+                throw new EventFullException(eventId);
+            }
+
+            if (!await events.TryApproveJoinRequestAsync(eventId, userId, hostId, DateTimeOffset.UtcNow, inner))
+            {
+                throw new NotFoundException("Join request", userId, eventId);
+            }
+
+            // userId is the requester - the repository only ever decides the row
+            // matching it, so there is no separate identity to carry back out.
+            await NotifyJoinDecisionAsync(
+                locked, userId, "JoinRequestApproved", "Join request approved",
+                $"You're in — the host approved your request to join '{locked.Title}'.", inner);
+        }, ct);
+
+        return await ListJoinRequestsAsync(eventId, includeDecided: true, ct);
+    }
+
+    public async Task<JoinRequestListDto> RejectJoinRequestAsync(
+        Guid eventId, Guid userId, CancellationToken ct = default)
+    {
+        var hostId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to review join requests.");
+
+        if (userId == hostId)
+        {
+            throw new DomainRuleException("You cannot reject your own join request.");
+        }
+
+        await events.RunInTransactionAsync(async inner =>
+        {
+            var locked = await events.FindWithLockAsync(eventId, inner)
+                ?? throw new NotFoundException("Event", eventId, eventId);
+
+            if (locked.HostId != hostId)
+            {
+                throw new NotFoundException("Event", eventId, eventId);
+            }
+
+            if (!await events.TryRejectJoinRequestAsync(eventId, userId, hostId, DateTimeOffset.UtcNow, inner))
+            {
+                throw new NotFoundException("Join request", userId, eventId);
+            }
+
+            await NotifyJoinDecisionAsync(
+                locked, userId, "JoinRequestRejected", "Join request declined",
+                $"The host could not approve your request to join '{locked.Title}'.", inner);
+        }, ct);
+
+        return await ListJoinRequestsAsync(eventId, includeDecided: true, ct);
+    }
+
+    /// <summary>Tell a member what happened to their request. The mirror of
+    /// <see cref="NotifyCreatorAsync"/>: that one writes to the host, this one to the
+    /// requester, and both reuse the same notifications table and the same link shape
+    /// so the bell routes to the event either way.</summary>
+    private async Task NotifyJoinDecisionAsync(
+        Event eventEntity, Guid userId, string type, string title, string message, CancellationToken ct)
+    {
+        await notifications.AddAsync(new SportMeet.Domain.Entities.Notification
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Title = title,
+            Message = message,
+            Type = type,
+            Link = $"/events/{eventEntity.Id}",
+            Read = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+        }, ct);
+    }
+
     public async Task<IReadOnlyList<Guid>> ListMyJoinedAsync(CancellationToken ct = default)
     {
         // No identity configured (no auth yet) is not an error here — an empty list
@@ -320,6 +574,20 @@ public sealed class EventService(
         }
 
         return await events.ListJoinedEventIdsAsync(userId.Value, ct);
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListMyPendingJoinRequestsAsync(CancellationToken ct = default)
+    {
+        // Mirrors ListMyJoinedAsync: no identity is an empty list, not an error, so
+        // a browse page with no signed-in viewer renders no "Request submitted"
+        // state rather than failing the feed.
+        var userId = currentUser.UserId;
+        if (userId is null)
+        {
+            return [];
+        }
+
+        return await events.ListPendingJoinRequestEventIdsAsync(userId.Value, ct);
     }
 
     /// <summary>Toggle the current viewer's interest in one event: adding when
@@ -454,12 +722,66 @@ public sealed class EventService(
                     Read = false,
                     CreatedAt = now,
                 }, inner);
+
+                // The approval is the moment a Member's public event becomes visible,
+                // so it is the moment its followers hear about it - the create call
+                // could not announce it, because at that point it was PendingReview.
+                // Inside the transaction for the reason on CreateAsync: an approval that
+                // leaves an audience un-notified cannot be reconstructed later, and the
+                // creator's own notification above already commits or rolls back with
+                // the decision, so announcing to everyone else on the same terms is the
+                // consistent choice rather than a new risk.
+                //
+                // The status is applied to the in-memory copy because
+                // TrySetReviewStatusAsync is an ExecuteUpdateAsync - it writes the row
+                // without touching the tracked entity, so row.Event still reads
+                // PendingReview here. Passing that unchanged would fail the notifier's
+                // eligibility check and announce nothing, silently, forever.
+                //
+                // Rejected events reach DecideAsync too but land on the other branch, so
+                // a refusal announces nothing.
+                row.Event.Status = decision;
+                await (followers?.PublishAsync(row.Event, inner) ?? Task.CompletedTask);
             }
         }, ct);
 
         // Re-read through the detail path so the response is what every other reader
         // will now see - including the creator, whose copy just changed status.
         return await GetAsync(eventId, ct);
+    }
+
+    /// <summary>The gated branch of Join: record the request and tell the host.
+    ///
+    /// Runs inside the caller's transaction, so the request and the host's
+    /// notification commit together - a host who is told about a request can always
+    /// find it.
+    ///
+    /// Interest is left alone rather than cleared as the open path does. Joining
+    /// supersedes interest because it takes the spot; a request has taken nothing
+    /// yet, and a rejected member who is still interested has an honest reason to
+    /// ask again.</summary>
+    private async Task RequestJoinAsync(Event locked, Guid userId, CancellationToken ct)
+    {
+        var outcome = await events.AddJoinRequestAsync(locked.Id, userId, DateTimeOffset.UtcNow, ct);
+        if (outcome != JoinRequestOutcome.Created)
+        {
+            // Already pending, already approved, or reopened after a rejection: the
+            // host asked about this person before, so a second "someone wants in"
+            // note would be noise. A reopened request is the exception worth telling
+            // them about, and it reads differently from a first ask.
+            if (outcome == JoinRequestOutcome.Reopened)
+            {
+                await NotifyCreatorAsync(
+                    locked, userId, "JoinRequestReopened", "Join request reopened",
+                    $"Someone has asked to join your event '{locked.Title}' again.", ct);
+            }
+
+            return;
+        }
+
+        await NotifyCreatorAsync(
+            locked, userId, "JoinRequestSubmitted", "New join request",
+            $"Someone wants to join your event '{locked.Title}'. Your approval is needed.", ct);
     }
 
     private async Task NotifyCreatorAsync(
@@ -544,10 +866,13 @@ public sealed class EventService(
     {
         Id = e.Id,
         Title = e.Title,
+        Description = e.Description,
         Tags = row.Tags,
         SportIcon = row.SportIcon,
         HostName = row.HostName,
         HostPhotoUrl = row.HostPhotoUrl,
+        HostId = e.HostId,
+        HostRole = row.HostRole.ToString(),
         SkillLevel = e.SkillLevel,
         StartAt = e.StartAt,
         EndAt = e.EndAt,
@@ -565,6 +890,7 @@ public sealed class EventService(
         IsCancelled = e.Status == EventStatus.Cancelled,
         IsPublished = e.Status.IsPublished(),
         Visibility = e.Visibility.ToString(),
+        RequiresJoinApproval = e.RequiresJoinApproval,
         DistanceKm = distanceKm,
     };
 

@@ -407,10 +407,12 @@ public class ImportServiceTests
 
         public Task<EventDetailDto> UpdateHostedAsync(Guid eventId, UpdateAdminEventRequest request, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<PagedResult<EventListItemDto>> ListAsync(EventQueryModel query, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<PagedResult<EventListItemDto>> ListFollowingAsync(EventQueryModel query, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<EventDetailDto> CreateAsync(CreateEventDto dto, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<EventDetailDto> JoinAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<EventDetailDto> LeaveAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<Guid>> ListMyJoinedAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<Guid>> ListMyPendingJoinRequestsAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public Task<bool> ToggleInterestAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<Guid>> ListMyInterestedAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<EventListItemDto>> ListMyHostedAsync(CancellationToken ct = default) => throw new NotImplementedException();
@@ -421,5 +423,10 @@ public class ImportServiceTests
         public Task<EventDetailDto> RejectAsync(Guid eventId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<PopularTag>> ListPopularTagsAsync(int limit = 12, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<string>> SuggestTagsAsync(string? prefix, int limit = 8, CancellationToken ct = default) => throw new NotImplementedException();
+
+        // Join requests: the import path never reaches the approval queue.
+        public Task<JoinRequestListDto> ListJoinRequestsAsync(Guid eventId, bool includeDecided, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<JoinRequestListDto> ApproveJoinRequestAsync(Guid eventId, Guid userId, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<JoinRequestListDto> RejectJoinRequestAsync(Guid eventId, Guid userId, CancellationToken ct = default) => throw new NotImplementedException();
     }
 }

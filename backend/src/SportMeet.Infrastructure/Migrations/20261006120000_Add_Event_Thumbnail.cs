@@ -16,7 +16,7 @@ namespace SportMeet.Infrastructure.Migrations;
 /// recreate the view. EF cannot snapshot a view, so the view half of the change
 /// produces no model diff and is spelled out here.
 ///
-/// The new view SQL is a private constant rather than EventViewSql.Definition,
+/// The new view SQL is a private constant rather than EventViewSql.Definition (as
 /// for the same load-bearing reason: Definition is replayed by earlier
 /// migrations, so adding a column to it makes those migrations reference
 /// events.thumbnail_url before this one creates it (42703 on a fresh database).
@@ -101,6 +101,6 @@ public partial class Add_Event_Thumbnail : Migration
             table: "events");
 
         // Back to the shape the previous migration left behind.
-        migrationBuilder.Sql(EventViewSql.Definition);
+        migrationBuilder.Sql(EventViewSql.AddEventVisibilityViewLegacy);
     }
 }

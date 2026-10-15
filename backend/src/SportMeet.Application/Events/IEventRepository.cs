@@ -42,6 +42,43 @@ public interface IEventRepository
 
     Task<FeedRow?> FindAsync(Guid id, CancellationToken ct = default);
 
+    // ---- Join requests -------------------------------------------------------
+    //
+    // Every method here is scoped by the caller's identity rather than handed a
+    // row to mutate. That is deliberate: authorization for a join request is
+    // "you host this event", and expressing it as a WHERE clause means a request
+    // for someone else's event matches zero rows instead of being read, compared,
+    // and then acted upon. A forgotten comparison cannot widen these.
+
+    /// <summary>Records a request to join. Returns false when the caller is already
+    /// a participant, and converges on the existing row when a request already
+    /// exists - re-requesting after a rejection reopens it, which is what lets a
+    /// declined member ask again without the host having to undo a decision.</summary>
+    Task<JoinRequestOutcome> AddJoinRequestAsync(
+        Guid eventId, Guid userId, DateTimeOffset requestedAt, CancellationToken ct = default);
+
+    /// <summary>The host's queue for one event, oldest first, only while it is
+    /// theirs to see. Empty for a caller who does not host it.</summary>
+    Task<List<JoinRequestRow>> ListJoinRequestsAsync(
+        Guid eventId, Guid hostId, bool includeDecided, CancellationToken ct = default);
+
+    /// <summary>Approve: mark the request and write the participant row in one
+    /// SaveChanges, so a decision and the membership it grants cannot be observed
+    /// apart. True when this caller's event actually held a pending request from that
+    /// user; false means nothing was written.</summary>
+    Task<bool> TryApproveJoinRequestAsync(
+        Guid eventId, Guid userId, Guid hostId, DateTimeOffset now, CancellationToken ct = default);
+
+    /// <summary>Reject: mark the request, write no participant row. Same
+    /// host-scoped guard and same single SaveChanges.</summary>
+    Task<bool> TryRejectJoinRequestAsync(
+        Guid eventId, Guid userId, Guid hostId, DateTimeOffset now, CancellationToken ct = default);
+
+    /// <summary>The caller's own request state for one event, so the detail page can
+    /// render Pending approval. One lookup for the one event it describes.</summary>
+    Task<JoinRequestStatus?> FindMyJoinRequestStatusAsync(
+        Guid eventId, Guid userId, CancellationToken ct = default);
+
     /// <summary>All events owned by one host, without the public browse status/date filters.</summary>
     Task<List<FeedRow>> ListHostedAsync(Guid hostId, CancellationToken ct = default);
 
@@ -82,6 +119,13 @@ public interface IEventRepository
     /// "My events → Joined" list. Includes past events (a past event you joined
     /// is still one you joined), which browse's upcoming-only feed would drop.</summary>
     Task<List<Guid>> ListJoinedEventIdsAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>Every event id with a still-pending join request from this user, for
+    /// the browse card's "Request submitted" state — the same reason the detail page
+    /// needs <see cref="FindMyJoinRequestStatusAsync"/>. Only Pending rows: a decided
+    /// request is the host's answer, not a standing the card should hold the member
+    /// in.</summary>
+    Task<List<Guid>> ListPendingJoinRequestEventIdsAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>The derived count behind v_event_feed - what a join compares
     /// against MaxParticipants while the event row is locked.</summary>

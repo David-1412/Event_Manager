@@ -108,7 +108,11 @@ public sealed class CreateEventDtoValidator : AbstractValidator<CreateEventDto>
             .InclusiveBetween(-180d, 180d).WithMessage("Venue location is out of range");
 
         RuleFor(x => x.MaxParticipants)
-            .NotNull().WithMessage("How many people can join?")
+            // No NotNull: null is the meaningful "no limit" answer, matching Cost
+            // below where null means free. The bounds therefore apply only when a
+            // number arrives - FluentValidation skips the rest of the chain for a
+            // null by default, which is what makes `When` unnecessary here, and is
+            // the same reason the Cost rules above need no null guard of their own.
             .GreaterThanOrEqualTo(ParticipantsMin).WithMessage($"At least {ParticipantsMin} people")
             .LessThanOrEqualTo(ParticipantsMax).WithMessage($"{ParticipantsMax} is the maximum for now");
 

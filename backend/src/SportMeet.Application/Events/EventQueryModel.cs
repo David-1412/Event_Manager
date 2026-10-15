@@ -42,6 +42,18 @@ public sealed class EventQueryModel
 
     public EventSort Sort { get; init; } = EventSort.Date;
 
+    /// <summary>When set, the feed is narrowed to events hosted by users this
+    /// viewer follows — the Following tab. Null is the ordinary browse feed and
+    /// costs the query nothing: the repository only adds the semi-join when a
+    /// viewer id arrives here.
+    ///
+    /// The id is supplied by the service from <c>ICurrentUser</c>, never parsed
+    /// from the query string, so a caller cannot ask for another user's follow
+    /// graph. Authorization ("signed in") is enforced before this is ever set;
+    /// the field exists so the narrowing rides the <em>same</em> query as every
+    /// other browse filter rather than a second endpoint with its own rules.</summary>
+    public Guid? FollowedByUserId { get; init; }
+
     /// <summary>The client sends it but has no "load more" control yet; honoured
     /// server-side so paging needs no retrofit when the control lands.</summary>
     public int Page { get; init; } = 1;

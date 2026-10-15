@@ -13,6 +13,19 @@ public static class DependencyInjection
         services.AddScoped<Events.IEventService, Events.EventService>();
         services.AddScoped<Events.IAdminEventService, Events.AdminEventService>();
 
+        // Public profiles. Concrete type, no interface: the service holds no policy
+        // beyond "shape what the repository already restricted", and an anonymous
+        // endpoint with a single implementation gains nothing from a second seam. The
+        // privacy boundary is IProfileRepository, which does have one.
+        services.AddScoped<Profiles.ProfileService>();
+
+        // The follow fan-out. Its own service rather than more methods on
+        // ProfileService: ProfileService is the read side of a public profile and is
+        // constructed for every anonymous request, while this writes rows and is only
+        // ever reached from a publish. Keeping them apart is also what lets the write
+        // path be reasoned about without the read path in view.
+        services.AddScoped<Profiles.ICreatorFollowNotifier, Profiles.CreatorFollowNotifier>();
+
         // Ingestion services. Options *binding* happens in AddInfrastructure, which
         // is where IConfiguration is available - this layer only declares the
         // interfaces and their implementations.

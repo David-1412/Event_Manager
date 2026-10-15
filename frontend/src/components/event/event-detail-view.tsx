@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { JoinButton, deriveJoinState, type JoinState } from "@/components/event/join-button";
+import { JoinRequestsPanel } from "@/components/event/join-requests-panel";
+import { ShareButton } from "@/components/event/share-button";
+import { EventInsightsPanel } from "@/components/event/event-insights-panel";
+import { HostLink } from "@/components/profile/host-link";
 import { EventMap } from "@/components/map/event-map";
 import { ErrorState } from "@/components/state/empty-error";
 import { Avatar, AvatarStack } from "@/components/ui/avatar";
@@ -21,6 +25,7 @@ import { useToggleInterest } from "@/features/events/use-interests";
 import { useEventDetail, useJoinEvent } from "@/features/events/use-events";
 import { cn } from "@/lib/cn";
 import { availabilityOf, countTextClass } from "@/lib/cn";
+import { isFull as isEventFull } from "@/lib/format";
 import { mediaUrl } from "@/lib/api";
 import {
   formatCost,
@@ -33,7 +38,7 @@ import type { EventDetail } from "@/types/events";
 import { isPendingReviewStatus } from "@/types/events";
 
 /**
- * `/events/[id]` (spec §8), poster-first: a full-bleed hero image opens the page
+ * `/events/[id]` (spec ┬º8), poster-first: a full-bleed hero image opens the page
  * so the event reads like a real listing rather than a form. Beneath the hero a
  * title strip carries the chips + primary Join, then a 70/30 two-column grid:
  * the story (venue, description, who's going, invite link) on the left and a
@@ -84,7 +89,13 @@ function DetailBody({ event }: { event: EventDetail }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   useEffect(() => {
-    document.title = `${event.title} (${event.joinedCount}/${event.maxParticipants}) · MonaHub`;
+    // No denominator in the tab title when the host set no limit ΓÇö "(7/)" reads as
+    // a missing value, and "(7 joined)" carries the only number that exists.
+    document.title = `${event.title} (${
+      event.maxParticipants === null
+        ? `${event.joinedCount} joined`
+        : `${event.joinedCount}/${event.maxParticipants}`
+    }) ┬╖ MonaHub`;
     return () => {
       document.title = "MonaHub";
     };
@@ -93,13 +104,16 @@ function DetailBody({ event }: { event: EventDetail }) {
   const secondsUntilStart = Math.floor(
     (new Date(event.startAt).getTime() - now) / 1000,
   );
-  const isFull = event.joinedCount >= event.maxParticipants;
+  const isFull = isEventFull(event.joinedCount, event.maxParticipants);
+  const requiresApproval = event.requiresJoinApproval === true;
+  const isRequestPending = event.myJoinRequestStatus === "Pending";
   const derived = deriveJoinState({
     isHost: event.isHost,
     isCancelled: event.isCancelled,
     isJoined: event.isJoined,
     isFull,
     secondsUntilStart,
+    isRequestPending,
   });
   const state: JoinState = join.isJoining || join.isLeaving
     ? "joining"
@@ -116,12 +130,26 @@ function DetailBody({ event }: { event: EventDetail }) {
       return;
     }
     const result = await join.join();
-    if (result.ok) toast("You're in", "success");
+    if (!result.ok) return;
+    // A gated event took a request, not a spot. Saying "You're in" there would be
+    // a lie the member discovers when the button still reads Request submitted, so
+    // the copy follows the server's flag rather than the success of the call.
+    toast(
+      requiresApproval ? "Join request submitted" : "You're in",
+      "success",
+    );
   }
   async function handleLeave() {
     const result = await join.leave();
     if (result.ok) toast("You've left this event", "success");
   }
+
+  // Built once and reused in every place the page offers an action, so the
+  // shared link always points at this event. The page is /events/[id] with no
+  // query state of its own, so the href is already the event URL.
+  const shareButton = (fullWidth: boolean) => (
+    <ShareButton title={event.title} description={event.description} size="lg" fullWidth={fullWidth} />
+  );
 
   const joinButton = (fullWidth: boolean) => (
     <JoinButton
@@ -133,6 +161,7 @@ function DetailBody({ event }: { event: EventDetail }) {
       failure={join.failure}
       size="lg"
       fullWidth={fullWidth}
+      requiresApproval={requiresApproval}
       onJoin={() => void handleJoin()}
       onLeave={event.isJoined ? () => void handleLeave() : undefined}
     />
@@ -151,7 +180,7 @@ function DetailBody({ event }: { event: EventDetail }) {
           role="status"
           className="border-b border-warn/40 bg-warn-tint px-4 py-3 text-center text-meta text-fg"
         >
-          Pending approval — this event is hidden from Browse until an administrator
+          Pending approval ΓÇö this event is hidden from Browse until an administrator
           approves it.
         </div>
       )}
@@ -169,6 +198,7 @@ function DetailBody({ event }: { event: EventDetail }) {
             ) : null
           }
           joinSlot={joinButton(false)}
+          shareSlot={shareButton(false)}
         />
 
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:items-start">
@@ -206,6 +236,45 @@ function DetailBody({ event }: { event: EventDetail }) {
                 window.location is defined. */}
             {event.visibility === "Private" && <InviteLink eventId={event.id} />}
 
+            {/* The host's numbers. Mounted on the same condition as the endpoint's
+                own authorization rule, because `views` is the one figure here nobody
+                but the host is allowed to see. Above the join queue: a host reads
+                reach first, then decides who to let in. */}
+            {event.isHost && <EventInsightsPanel eventId={event.id} />}
+
+            {/* The host's moderation queue, and only where it can have entries:
+                their own event, with approval turned on. Rendering it for an open
+                event would offer a panel that can never hold anything. */}
+            {event.isHost && event.requiresJoinApproval === true && (
+              <section aria-labelledby="join-requests-heading">
+                <span id="join-requests-heading" className="sr-only">
+                  Join requests
+                </span>
+                <JoinRequestsPanel eventId={event.id} />
+              </section>
+            )}
+
+            {/* Whose event this is, before who is coming to it. The name and avatar
+                link to the host's public profile, which is where a reader decides
+                whether this is someone who runs things regularly or has posted once.
+                The detail payload always carries host.id, so unlike a browse card this
+                is never a bare name. */}
+            <section aria-labelledby="hosted-by-heading" className="border-t border-border pt-4">
+              <h2 id="hosted-by-heading" className="text-h3 text-fg">
+                Hosted by
+              </h2>
+              <div className="mt-3">
+                <HostLink
+                  userId={event.host.id}
+                  name={event.host.displayName}
+                  avatarUrl={event.host.avatarUrl}
+                  role={event.hostRole}
+                  size="md"
+                  withBadge
+                />
+              </div>
+            </section>
+
             <section aria-labelledby="who-heading">
               <h2 id="who-heading" className="text-h3 text-fg">
                 Who&apos;s going
@@ -218,16 +287,25 @@ function DetailBody({ event }: { event: EventDetail }) {
               in the pinned footer below. */}
           <aside className="hidden lg:block">
             <div className="sticky top-20">
-              <ActionCard event={event} joinSlot={joinButton(false)} />
+              <ActionCard
+                event={event}
+                joinSlot={joinButton(false)}
+                shareSlot={shareButton(false)}
+              />
             </div>
           </aside>
         </div>
       </div>
 
       {/* Mobile keeps the CTA pinned to the footer bar with the safe-area inset
-          (spec §6); desktop gets it in the title strip and the sticky card. */}
+          (spec ┬º6); desktop gets it in the title strip and the sticky card. */}
       <div className="lg:hidden">
-        <StickyFooter>{joinButton(true)}</StickyFooter>
+        <StickyFooter>
+          <div className="flex w-full gap-2">
+            <div className="shrink-0">{shareButton(false)}</div>
+            <div className="min-w-0 flex-1">{joinButton(true)}</div>
+          </div>
+        </StickyFooter>
       </div>
 
       <ConfirmDialog
@@ -252,7 +330,15 @@ function DetailBody({ event }: { event: EventDetail }) {
  * the hero's poster as a small anchor so the identity stays with the CTA as the
  * user scrolls the left column.
  */
-function ActionCard({ event, joinSlot }: { event: EventDetail; joinSlot: React.ReactNode }) {
+function ActionCard({
+  event,
+  joinSlot,
+  shareSlot,
+}: {
+  event: EventDetail;
+  joinSlot: React.ReactNode;
+  shareSlot: React.ReactNode;
+}) {
   const left = spotsLeft(event.joinedCount, event.maxParticipants);
   const availability = availabilityOf(event.joinedCount, event.maxParticipants);
   return (
@@ -277,12 +363,42 @@ function ActionCard({ event, joinSlot }: { event: EventDetail; joinSlot: React.R
         <div className="rounded-md bg-surface-2 px-3 py-2">
           <span className="text-micro uppercase text-fg-muted">Spots remaining</span>
           <p className={cn("text-count", countTextClass[availability])} data-count>
-            {left === 0 ? "Full" : `${left} of ${event.maxParticipants}`}
+            {/* Three states, not two. An unlimited event has no remaining count to
+                show, and "null of null" or a bare "0" would read as full ΓÇö the one
+                thing that is definitively not true of it. */}
+            {left === null
+              ? "No limit"
+              : left === 0
+                ? "Full"
+                : `${left} of ${event.maxParticipants}`}
           </p>
+        </div>
+
+        {/* The two public metrics, stated as counts. Spots remaining above is the
+            capacity view of the same attendance, but "X of Y" answers "can I get in"
+            and not "how many are coming", and Interested has no capacity meaning at
+            all - it reserves no spot, so it appears nowhere else on this page. Both
+            are public: unlike the host's Insights panel, everyone sees these. */}
+        <div className="flex gap-3">
+          <div className="flex-1 rounded-md bg-surface-2 px-3 py-2">
+            <span className="text-micro uppercase text-fg-muted">Joined</span>
+            <p className="text-count tabular-nums" data-joined-count>
+              {event.joinedCount}
+            </p>
+          </div>
+          <div className="flex-1 rounded-md bg-surface-2 px-3 py-2">
+            <span className="text-micro uppercase text-fg-muted">Interested</span>
+            <p className="text-count tabular-nums" data-interested-count>
+              {event.interestedCount}
+            </p>
+          </div>
         </div>
 
         <InterestButton event={event} />
         {joinSlot}
+        {/* Below the primary actions, not beside them: the card is narrow and a
+            third button in the row would shrink Join below a comfortable tap. */}
+        {shareSlot}
       </div>
     </div>
   );
@@ -395,7 +511,8 @@ function DetailSkeleton() {
       </div>
     </div>
   );
-}
+}
+
 
 /**
  * The full-width hero poster. `object-cover` crops any source ratio to fill the
@@ -475,10 +592,12 @@ function DetailHeader({
   event,
   menu,
   joinSlot,
+  shareSlot,
 }: {
   event: EventDetail;
   menu: React.ReactNode;
   joinSlot: React.ReactNode;
+  shareSlot: React.ReactNode;
 }) {
   const left = spotsLeft(event.joinedCount, event.maxParticipants);
   const availability = availabilityOf(event.joinedCount, event.maxParticipants);
@@ -501,17 +620,21 @@ function DetailHeader({
         <Badge tone={event.cost ? "neutral" : "brand"}>
           {event.cost ? `${formatCost(event.cost)} / person` : "Free"}
         </Badge>
-        <Badge
-          tone={
-            availability === "full"
-              ? "danger"
-              : availability === "one-spot"
-                ? "warn"
-                : "neutral"
-          }
-        >
-          {left === 0 ? "Full" : `${left} ${left === 1 ? "spot" : "spots"} left`}
-        </Badge>
+        {/* Omitted entirely when there is no limit: a badge is scarcity signalling,
+            and "No limit" next to a Free badge says nothing a reader acts on. */}
+        {left !== null && (
+          <Badge
+            tone={
+              availability === "full"
+                ? "danger"
+                : availability === "one-spot"
+                  ? "warn"
+                  : "neutral"
+            }
+          >
+            {left === 0 ? "Full" : `${left} ${left === 1 ? "spot" : "spots"} left`}
+          </Badge>
+        )}
         {event.distanceKm !== null && <Badge>{formatDistance(event.distanceKm)}</Badge>}
         {/* One badge per tag; hidden when the event has none instead of showing
             an empty pill. */}
@@ -525,12 +648,18 @@ function DetailHeader({
         {event.isCancelled && <Badge tone="info">Cancelled</Badge>}
       </div>
 
-      <div className="mt-5 hidden max-w-sm lg:block">{joinSlot}</div>
+      {/* Join and Share side by side rather than stacked. Share is a secondary
+          action; two full-width bars would read as two equal CTAs and push the
+          venue map below the fold. */}
+      <div className="mt-5 hidden items-center gap-2 lg:flex">
+        <div className="min-w-0 flex-1">{joinSlot}</div>
+        {shareSlot}
+      </div>
     </header>
   );
 }
 
-/** `...` menu, destructive action last (spec §8). */
+/** `...` menu, destructive action last (spec ┬º8). */
 function HostMenu({
   eventId,
   onCancelRequest,

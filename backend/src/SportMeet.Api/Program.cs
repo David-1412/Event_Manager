@@ -71,6 +71,12 @@ builder.Services.AddFirebaseJwtBearer(builder.Configuration);
 // reads someone's mailbox, so it must never start because a deploy happened.
 builder.Services.AddEmailIngestionWorker(builder.Configuration);
 
+// Event reminders for approved participants, sent 24 hours and 1 hour before a start.
+// Registered by default rather than opt-in (see AddEventReminders): the requirement is
+// that participants receive these automatically, and the worker only ever writes to
+// this app's own notifications table.
+builder.Services.AddEventReminders(builder.Configuration);
+
 var app = builder.Build();
 
 // Host-uploaded event thumbnails are written to App_Data/uploads (a compose

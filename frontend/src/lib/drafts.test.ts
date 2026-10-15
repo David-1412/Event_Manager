@@ -33,6 +33,9 @@ describe("approveDraft", () => {
       cost: null,
       description: null,
       visibility: "Public",
+      // A draft published without ever seeing the approval control produces an
+      // open event, which is the backward-compatibility case this field has.
+      requiresJoinApproval: false,
     };
 
     await approveDraft("draft-id", event);

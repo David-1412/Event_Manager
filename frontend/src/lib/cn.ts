@@ -5,16 +5,23 @@ export function cn(...inputs: ClassValue[]): string {
   return clsx(inputs);
 }
 
-export type Availability = "open" | "one-spot" | "full";
+export type Availability = "open" | "one-spot" | "full" | "unlimited";
 
 /**
  * Availability is the only semantic colour in the system (spec §2):
  * `>= 2` open = brand, `1` open = warn, `0` open = danger.
+ *
+ * `max === null` means no limit and short-circuits to "unlimited" before any
+ * arithmetic. It must not fall through to `max - current`: with null coerced that
+ * is NaN, which fails both equality checks and would land an unlimited event on
+ * "open" — correct by luck here, and wrong the moment a caller reads the colour as
+ * "there is a denominator behind this number".
  */
 export function availabilityOf(
   current: number,
-  max: number,
+  max: number | null,
 ): Availability {
+  if (max === null) return "unlimited";
   const left = Math.max(0, max - current);
   if (left === 0) return "full";
   if (left === 1) return "one-spot";
@@ -25,6 +32,9 @@ export const countTextClass: Record<Availability, string> = {
   open: "text-fg",
   "one-spot": "text-warn",
   full: "text-danger",
+  // Neutral, not brand: an unlimited event is not urgent in either direction, and
+  // the count beside it has no scarcity information to colour.
+  unlimited: "text-fg",
 };
 
 /** Clamp helper for optimistic counters so the UI can never show 5/4. */

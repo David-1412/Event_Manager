@@ -29,7 +29,10 @@ public class VwEventFeed
     public string Timezone { get; set; } = string.Empty;
     public DateTimeOffset StartAt { get; set; }
     public DateTimeOffset EndAt { get; set; }
-    public int MaxParticipants { get; set; }
+    /// <summary>Null when the event has no capacity limit. The view selects the
+    /// column directly, and a view reports its columns as nullable regardless of the
+    /// base table's NOT NULL, so this has always had to tolerate null.</summary>
+    public int? MaxParticipants { get; set; }
     public SkillLevel? SkillLevel { get; set; }
 
     public decimal? Cost { get; set; }
@@ -53,6 +56,14 @@ public class VwEventFeed
     /// nameof(EventVisibility.Private) and converts to the domain enum in ToEvent.
     /// Status is text here for the same structural reason - see its own remark.</summary>
     public string Visibility { get; set; } = string.Empty;
+
+    /// <summary>The view's boolean column, mapped straight through - unlike
+    /// <see cref="Status"/> and <see cref="Visibility"/> this needs no text workaround,
+    /// because a bool is never value-converted and so cannot be bound as the wrong
+    /// type. Read so the detail page can tell a member that joining needs the host's
+    /// approval without a second query.</summary>
+    public bool RequiresJoinApproval { get; set; }
+
     public DateTimeOffset? CancelledAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

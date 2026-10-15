@@ -75,7 +75,13 @@ public static class DemoSeed
             "Two-hour casual hit-up. Bat and ball provided."),
         new(new Guid("11111111-1111-4111-8111-000000000007"), "Tennis Saturday", "tennis", SkillLevel.Advanced,
             5, 9, 10, "Coode Island", "Kings Way, Melbourne VIC 3008", -37.8055, 144.9525, 20m, 4,
-            "Singles if four show, doubles if six do. Courts 3 and 4."),
+            "Singles if four show, doubles if six do. Courts 3 and 4.")
+        {
+            // Four courts, four slots, and a host who wants to pick the four. The
+            // small capacity is deliberate: the approval queue and the EventFull
+            // refusal at approval time are both reachable from this one row.
+            RequiresJoinApproval = true,
+        },
         new(new Guid("11111111-1111-4111-8111-000000000008"), "Netball Tuesday", "netball", SkillLevel.Beginner,
             8, 19, 20, "Olympic Park", "747 Lewar St, Melbourne VIC 3000", -37.81, 144.9803, 7m, 10,
             "Newcomers welcome - we teach the positions on the night."),
@@ -104,6 +110,14 @@ public sealed record DemoEventSeed(
     int Max,
     string? Description)
 {
+    /// <summary>Whether this demo event gates joining behind the host's approval.
+    /// Init-only so the eight existing positional entries stay positional; set on
+    /// the one seed that exists to demonstrate the approval queue.
+    ///
+    /// The demo needs a gated event the way it needs a pending-review one: without
+    /// a row that has the flag, the workflow is code nobody clicking around can
+    /// reach, and a reviewer cannot tell whether it works.</summary>
+    public bool RequiresJoinApproval { get; init; }
     private const string MelbourneZone = "Australia/Melbourne";
 
     public DateTimeOffset StartFromNow(DateTimeOffset nowUtc) => At(nowUtc, DaysFromNow, StartHour);

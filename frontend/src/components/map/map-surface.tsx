@@ -54,6 +54,13 @@ export interface MapSurfaceProps {
    */
   flyToCenterOnChange?: boolean;
   /**
+   * Browse only. Pan here imperatively when the value changes, then leave the
+   * camera alone. The controlled `center` route above is what the detail map
+   * uses; browse cannot, because that prop snaps a user-dragged map back on the
+   * next re-render and would defeat `Search this area`.
+   */
+  onBrowsePanTo?: LatLng | null;
+  /**
    * Keep the interactive map even when Google reports an auth failure
    * (venue picker: the pin stays draggable so the spot can still be picked).
    * The explanatory strip renders on top instead of replacing the map.
@@ -129,6 +136,7 @@ export function MapSurface({
   onMapClick,
   onCameraChanged,
   flyToCenterOnChange,
+  onBrowsePanTo,
   keepMapOnFailure,
   children,
   overlay,
@@ -155,6 +163,7 @@ export function MapSurface({
           onMapClick={onMapClick}
           onCameraChanged={onCameraChanged}
           flyToCenterOnChange={flyToCenterOnChange}
+          onBrowsePanTo={onBrowsePanTo}
           keepMapOnFailure={keepMapOnFailure}
           overlay={overlay}
         >
@@ -269,6 +278,7 @@ function MapSurfaceBody({
   onMapClick,
   onCameraChanged,
   flyToCenterOnChange,
+  onBrowsePanTo,
   keepMapOnFailure,
   overlay,
   children,
@@ -417,12 +427,45 @@ function MapSurfaceBody({
             onCameraChanged({ lat: next.lat, lng: next.lng });
           }}
         >
-          <AdvancedMarkerCapability>{children}</AdvancedMarkerCapability>
+          <AdvancedMarkerCapability>
+            {onBrowsePanTo !== undefined && <BrowsePanner target={onBrowsePanTo} />}
+            {children}
+          </AdvancedMarkerCapability>
         </GoogleMap>
       )}
       {overlay}
     </div>
   );
+}
+
+/**
+ * Pans the browse map to the selected event, once per selection.
+ *
+ * Imperative rather than the controlled `center` prop on purpose: that prop is
+ * re-applied on every render, so a map the user has dragged snaps back the
+ * moment anything revalidates, and `Search this area` becomes unusable. `panTo`
+ * moves the camera and then leaves it alone, and it animates - which is the
+ * smooth glide the preview panel is relying on to connect card to pin.
+ *
+ * The ref is what makes this fire once per selection instead of on every
+ * re-render: SWR revalidates the list constantly, and re-panning on each of
+ * those would yank the camera away from wherever the user just dragged it.
+ * Zoom is deliberately untouched - selecting an event is not a request to
+ * change how much of the map is visible.
+ */
+function BrowsePanner({ target }: { target: LatLng | null }) {
+  const map = useMap();
+  const lastKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!map || !target) return;
+    const key = `${target.lat},${target.lng}`;
+    if (lastKeyRef.current === key) return;
+    lastKeyRef.current = key;
+    map.panTo(target);
+  }, [map, target]);
+
+  return null;
 }
 
 /**

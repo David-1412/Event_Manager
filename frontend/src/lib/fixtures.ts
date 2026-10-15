@@ -38,6 +38,14 @@ type Seed = {
   description?: string;
   /** Absent means Public; set on the one fixture that must not appear in Browse. */
   visibility?: "Public" | "Private";
+  /** The host's id. Absent means <see cref="HOST"/> — the fixture set's default
+   *  creator. Set to a ROSTER id on the seeds the Following-tab mirror must be
+   *  able to exclude from a followed host's feed. */
+  hostId?: string;
+  /** Absent means joins happen immediately, matching the API's default. Set on the
+   *  fixture that mirrors the seeded gated event so the approval UI is reachable
+   *  with no backend running. */
+  requiresJoinApproval?: boolean;
 };
 
 const seeds: Seed[] = [
@@ -63,6 +71,10 @@ const seeds: Seed[] = [
   {
     id: "evt-thursday-run",
     title: "Thursday Run at the Track",
+    // Hosted by a roster member rather than the fixture set's default creator, so
+    // the Following-tab mirror has both a followed host and an unfollowed one to
+    // filter between (see FOLLOWED_FIXTURE_HOST_IDS in features/events).
+    hostId: "usr-2",
     tags: ["running"],
     icon: "🏃",
     skill: "Beginner",
@@ -164,6 +176,8 @@ const seeds: Seed[] = [
     max: 4,
     count: 1,
     description: "Singles if four show, doubles if six do. Courts 3 and 4.",
+    // Mirrors the seeded gated event: same id, same flag, same small capacity.
+    requiresJoinApproval: true,
   },
   {
     id: "evt-netball-tuesday",
@@ -240,6 +254,17 @@ function toListItem(seed: Seed, distanceKm: number): EventListItem {
   return {
     id: seed.id,
     title: seed.title,
+    // The browse preview panel quotes this, so the offline mirror has to carry it
+    // exactly as the live feed does.
+    description: seed.description ?? null,
+    // The preview panel names the host from the list row, so the offline mirror
+    // has to carry them too - otherwise the panel renders its "Not stated"
+    // branch and every fixture looks like an event with no host.
+    hostName: HOST.displayName,
+    hostPhotoUrl: HOST.avatarUrl,
+    // The Following-tab mirror filters by host id, so the offline list has to
+    // carry one exactly as the live feed does (`hostId` on every row).
+    hostId: seed.hostId ?? HOST.id,
     tags: seed.tags,
     sportIcon: seed.icon,
     skillLevel: seed.skill,
@@ -260,6 +285,7 @@ function toListItem(seed: Seed, distanceKm: number): EventListItem {
     status: seed.cancelled ? "Cancelled" : "Scheduled",
     isCancelled: Boolean(seed.cancelled),
     visibility: seed.visibility ?? "Public",
+    requiresJoinApproval: seed.requiresJoinApproval ?? false,
     distanceKm,
   };
 }
@@ -281,12 +307,33 @@ export function fixtureDetail(id: string): EventDetail | undefined {
     description: seed.description ?? null,
     host: HOST,
     // One fixture per relation so every EventCard variant is reachable offline.
-    isHost: seed.id === "evt-badminton-wednesday",
+    isHost: isHosted(seed.id),
     isJoined: seed.id === "evt-basketball-thursday",
     isInterested: seed.id === "evt-thursday-run",
     participants: ROSTER.slice(0, Math.min(seed.count, ROSTER.length)),
     cancelledAt: seed.cancelled ? at(0, 9) : null,
+    // The gated fixture shows the Pending state a member sees, so the offline
+    // detail page can be laid out against the real state rather than an empty one.
+    // The hosted fixture keeps it null: a host never holds a request of their own.
+    myJoinRequestStatus:
+      seed.requiresJoinApproval && !isHosted(seed.id) ? "Pending" : null,
   };
+}
+
+/** The one fixture the viewer hosts. Shares the answer with `isHost` above so the
+ * two cannot drift. */
+function isHosted(id: string): boolean {
+  return id === "evt-badminton-wednesday";
+}
+
+/** The ids a fixture-mode viewer holds a pending request on — the twin of
+ * `GET /api/events/me/pending-join-requests`, derived from the same
+ * `myJoinRequestStatus` the detail fixture carries so the card and the detail
+ * page can never disagree about who asked. */
+export function fixturePendingJoinRequestIds(): string[] {
+  return seeds
+    .filter((s) => fixtureDetail(s.id)?.myJoinRequestStatus === "Pending")
+    .map((s) => s.id);
 }
 
 export function fixturePaged(): Paged<EventListItem> {

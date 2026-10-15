@@ -27,6 +27,7 @@ export function HostedEventEditor({
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
   const [venue, setVenue] = useState<VenueSelection | null>(null);
+  const [requiresJoinApproval, setRequiresJoinApproval] = useState(false);
 
   async function openEditor() {
     setLoading(true);
@@ -37,6 +38,7 @@ export function HostedEventEditor({
       setDescription(detail.description ?? "");
       setStartAt(toLocalDateTime(detail.startAt));
       setEndAt(toLocalDateTime(detail.endAt));
+      setRequiresJoinApproval(detail.requiresJoinApproval === true);
       setVenue({
         venueName: detail.venueName,
         address: detail.address,
@@ -73,6 +75,9 @@ export function HostedEventEditor({
           cost: event.cost,
           status: event.status,
           visibility: event.visibility,
+          // Sent explicitly in both directions. The API treats an omitted value as
+          // "leave it alone", which would make this control impossible to turn off.
+          requiresJoinApproval,
           tags: event.tags,
         },
       });
@@ -129,6 +134,27 @@ export function HostedEventEditor({
             <input required type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.currentTarget.value)}
               className="h-10 rounded-md border border-border bg-surface px-3 text-body text-fg" />
           </label>
+
+          {/* The moderation switch, editable after the fact: a host who filled an
+              event by accident, or who is running one for people they don't know,
+              can gate joins without recreating the event. Requests already filed
+              stay in place either way. */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-4 accent-brand-600"
+              checked={requiresJoinApproval}
+              onChange={(e) => setRequiresJoinApproval(e.currentTarget.checked)}
+            />
+            <span className="min-w-0">
+              <span className="block text-body-strong text-fg">Approve members first</span>
+              <span className="block text-meta text-fg-muted">
+                People ask to join and you approve or decline each one. Turning this
+                off leaves any requests already filed for you to decide.
+              </span>
+            </span>
+          </label>
+
           <div className="mt-2 flex justify-end gap-2">
             <Button size="sm" variant="secondary" onClick={() => setEvent(null)}>Cancel</Button>
             <Button size="sm" type="submit" loading={saving}>Save changes</Button>

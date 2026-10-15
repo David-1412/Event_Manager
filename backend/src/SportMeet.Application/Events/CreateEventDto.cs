@@ -44,4 +44,9 @@ public sealed class CreateEventDto
     /// Public — a client that predates the field must not accidentally create a
     /// hidden event, and the draft-approval path forwards whatever it was given.</summary>
     public EventVisibility? Visibility { get; init; }
+
+    /// <summary>Opt-in moderation. Null is false: a client that predates this field
+    /// must not find its event silently gating joins, so the absent case is the
+    /// ordinary immediate-join behaviour rather than a judgment call.</summary>
+    public bool? RequiresJoinApproval { get; init; }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -18,7 +18,7 @@ namespace SportMeet.Infrastructure.Migrations
         /// not regenerate anything here, and a live database that ran Init_Views
         /// only ever picks up the new shape through this statement.
         /// </summary>
-        private const string ViewSql = EventViewSql.Definition;
+        private const string ViewSql = EventViewSql.AddEventVisibilityViewLegacy;
 
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

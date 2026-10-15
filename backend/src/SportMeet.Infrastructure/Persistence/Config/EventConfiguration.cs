@@ -76,6 +76,40 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
         // database error.
         b.Property(x => x.RejectionReason).HasMaxLength(500);
 
+        // Opt-in moderation. Default false in both the model and the column so an
+        // event that never mentions it - every pre-existing row, and every create
+        // payload written before the field existed - joins immediately.
+        //
+        // Unlike the converted enums above, a bool default is safe to declare: the
+        // model-clr type matches the stored type, so EF validates it without a
+        // value converter getting in the way. Declaring it here rather than only in
+        // the migration is what lets a raw INSERT that omits the column still land on
+        // false instead of failing NOT NULL.
+        b.Property(x => x.RequiresJoinApproval)
+            .HasColumnName("requires_join_approval")
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        // Reminder sentinels. No default and nullable: null means "not yet sent", and
+        // a column default would have to be a timestamp that means nothing.
+        b.Property(x => x.TomorrowReminderSentAt).HasColumnName("tomorrow_reminder_sent_at");
+        b.Property(x => x.OneHourReminderSentAt).HasColumnName("one_hour_reminder_sent_at");
+
+        // The reminder worker's working query, one per reminder: the events whose
+        // sentinel for that kind is still unset, soonest start first, so the batch
+        // limit takes the ones that need it most and no sort is needed.
+        //
+        // Partial on "IS NULL" rather than a plain (sentinel, start_at) index for the
+        // same reason events_start_at_idx is partial on status: every event that has
+        // ever been reminded is dead weight in the index the worker polls every few
+        // minutes forever, so the index holds only the rows that can still match.
+        b.HasIndex(x => x.StartAt)
+            .HasDatabaseName("events_tomorrow_reminder_idx")
+            .HasFilter("tomorrow_reminder_sent_at IS NULL");
+        b.HasIndex(x => x.StartAt)
+            .HasDatabaseName("events_one_hour_reminder_idx")
+            .HasFilter("one_hour_reminder_sent_at IS NULL");
+
         b.HasOne(x => x.Host).WithMany(u => u.HostedEvents).HasForeignKey(x => x.HostId).OnDelete(DeleteBehavior.Restrict);
 
         // Optional and Restrict: sport_id is an emoji lookup now, not a filter, so
@@ -107,8 +141,13 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
             t.HasCheckConstraint("events_lat_check", "lat BETWEEN -90 AND 90");
             t.HasCheckConstraint("events_lng_check", "lng BETWEEN -180 AND 180");
             t.HasCheckConstraint(
+                // NULL means "no limit" (an empty Spots field), so the bound only
+                // applies when a number was given. Written in the `IS NULL OR`
+                // form rather than relying on BETWEEN yielding NULL: both pass in
+                // Postgres, but this one says so, and it matches events_cost_check
+                // directly above rather than the skill_level constraint below.
                 "events_participants_check",
-                $"max_participants BETWEEN {ParticipantsMin} AND {ParticipantsMax}");
+                $"max_participants IS NULL OR max_participants BETWEEN {ParticipantsMin} AND {ParticipantsMax}");
             t.HasCheckConstraint("events_time_range_check", "end_at > start_at");
             t.HasCheckConstraint("events_cost_check", "cost IS NULL OR cost >= 0");
             t.HasCheckConstraint(

@@ -1,3 +1,5 @@
+import type { UserRole } from "./admin";
+
 /**
  * Naming contract with the backend (UIUX_DESIGN_SPEC.md §12).
  * DTO names mirror `EventListItemDto` etc. so the generated client can drop in.
@@ -67,6 +69,10 @@ export interface ParticipantDto {
 export interface EventListItem {
   id: string;
   title: string;
+  /** The full description. The browse preview panel quotes the opening of it, so
+   *  it ships with the list; optional because responses written before the field
+   *  existed lack it, and every renderer must treat absent as "no preview text". */
+  description?: string | null;
   tags: Tag[];
   /** Server-supplied emoji (lives in the DB seed). null when the event has no
    * sport, since sport is decoration now and not required. */
@@ -77,6 +83,13 @@ export interface EventListItem {
   hostName?: string | null;
   /** Host photo URL; null renders the initials avatar. */
   hostPhotoUrl?: string | null;
+  /** The host's id — what turns the name and avatar into a link to their public
+   * profile. Optional because responses written before the field existed, and every
+   * fixture, lack it; `HostLink` renders plain text rather than a dead link. */
+  hostId?: string | null;
+  /** The host's role, driving the Creator badge. Optional for the same reason as
+   * `hostId`; null/absent renders no badge rather than guessing "Member". */
+  hostRole?: UserRole | null;
   /** null when the host chose no level; every renderer must hide the badge. */
   skillLevel: SkillLevel | null;
   startAt: string;
@@ -91,7 +104,9 @@ export interface EventListItem {
   longitude: number;
   /** null or 0 => renders `Free`. */
   cost: number | null;
-  maxParticipants: number;
+  /** Capacity, or `null` for no limit — the host left Spots empty. Never collapse
+   * null to 0: the renderers show `No limit` and the event cannot fill. */
+  maxParticipants: number | null;
   /** Participants with a real participant row. Formerly `participantCount`;
    * renamed to pair with `interestedCount` and match the API's `joinedCount`. */
   joinedCount: number;
@@ -102,18 +117,62 @@ export interface EventListItem {
   /** "Public" events are in the browse feed; "Private" ones only through their
    * link. The detail page offers a copyable link when this is "Private". */
   visibility: EventVisibility;
+  /** Whether joining needs the host's approval. Optional because responses written
+   *  before the field existed lack it, and absent must mean the ordinary
+   *  immediate-join flow — never "assume gated". */
+  requiresJoinApproval?: boolean;
   distanceKm: number | null;
 }
 
+/** The lifecycle of a request to join an approval-gated event. */
+export type JoinRequestStatus = "Pending" | "Approved" | "Rejected";
+
+/** `GET /api/events/{id}/join-requests` item. */
+export interface JoinRequest {
+  requester: ParticipantDto;
+  status: JoinRequestStatus;
+  requestedAt: string;
+  decidedAt: string | null;
+}
+
+/** `GET /api/events/{id}/join-requests`. */
+export interface JoinRequestList {
+  items: JoinRequest[];
+  pendingCount: number;
+}
+
+/**
+ * `GET /api/events/{id}/analytics` — the host's Event Insights.
+ *
+ * Host-only: the endpoint 404s for anyone who is not `event.host.id`, which is why
+ * no other response carries `views`. `joinedCount` and `interestedCount` are the
+ * same numbers the public card already shows, returned together so the panel is one
+ * request rather than re-deriving counts already on the page.
+ */
+export interface EventAnalytics {
+  views: number;
+  joinedCount: number;
+  interestedCount: number;
+}
+
+
 /** `GET /api/events/{id}`. */
 export interface EventDetail extends EventListItem {
-  description: string | null;
   host: ParticipantDto;
+  /** The host's role, driving the "Hosted by" badge. The detail DTO carries the host
+   * as a `ParticipantDto` (which has no role) plus `HostRole` from the list item it
+   * extends, so the detail page reads the role here rather than off `host`. Optional
+   * because responses predating the field lack it, which renders no badge. */
+  hostRole?: UserRole | null;
   isHost: boolean;
   isJoined: boolean;
   isInterested: boolean;
   participants: ParticipantDto[];
   cancelledAt: string | null;
+  /** The viewer's own standing in the approval queue, null when they never asked.
+   *  "Pending" is the state the detail page renders as Pending approval — distinct
+   *  from isJoined, which only becomes true once the host says yes. */
+  myJoinRequestStatus?: JoinRequestStatus | null;
 }
 
 export type EventSort = "startAt" | "distance";
@@ -129,7 +188,19 @@ export interface EventQuery {
   radiusKm: number | null;
   sort: EventSort;
   page: number;
+  /**
+   * The browse tab. "all" is the ordinary feed; "following" narrows it to events
+   * hosted by creators the signed-in viewer follows and is served by a different
+   * endpoint (`/api/events/me/following`), which is why `buildEventsKey` never
+   * emits it — the tab selects the route, the remaining fields are the filters
+   * that route honours. "Upcoming" and "Nearby" are not tabs: they are the
+   * existing `date`/`sort` filters, which the Following feed applies too.
+   */
+  tab: BrowseTab;
 }
+
+/** The browse feed selector. URL value `?tab=following`; absent means "all". */
+export type BrowseTab = "all" | "following";
 
 /** Envelope the API returns for collections. */
 export interface Paged<T> {
@@ -173,7 +244,8 @@ export interface DraftPayload {
   thumbnailUrl?: string | null;
   latitude?: number;
   longitude?: number;
-  maxParticipants?: number;
+  /** Absent or null means no capacity limit. */
+  maxParticipants?: number | null;
   cost?: number;
   tags?: string[];
   /** Backend SkillLevel enum string, or null when the event has no level. */

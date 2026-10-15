@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from "react";
-import type { EventDateFilter, EventQuery, EventSort } from "@/types/events";
+import type { BrowseTab, EventDateFilter, EventQuery, EventSort } from "@/types/events";
 import { normalizeTag, RADIUS_OPTIONS } from "@/lib/sports";
 
 /**
@@ -15,10 +15,12 @@ export const DEFAULT_QUERY: EventQuery = {
   radiusKm: null,
   sort: "startAt",
   page: 1,
+  tab: "all",
 };
 
 const DATES: readonly EventDateFilter[] = ["today", "week", "any"];
 const SORTS: EventSort[] = ["startAt", "distance"];
+const TABS: readonly BrowseTab[] = ["all", "following"];
 
 /**
  * The URL param holding the activity filter. It is `event`, not `sport`, and it
@@ -50,6 +52,10 @@ export function queryToSearchParams(query: EventQuery): URLSearchParams {
   if (query.radiusKm) p.set("radius", String(query.radiusKm));
   if (query.sort !== DEFAULT_QUERY.sort) p.set("sort", query.sort);
   if (query.page > 1) p.set("page", String(query.page));
+  // The tab is a URL-only concept: it picks which endpoint the page queries, so
+  // `buildEventsKey` strips it from every API URL. Only the non-default tab is
+  // worth a shareable link.
+  if (query.tab !== DEFAULT_QUERY.tab) p.set("tab", query.tab);
   return p;
 }
 
@@ -79,6 +85,9 @@ export function parseQuery(search: string | URLSearchParams): EventQuery {
       : null,
     sort: sort && SORTS.includes(sort as EventSort) ? (sort as EventSort) : DEFAULT_QUERY.sort,
     page: Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1,
+    tab: p.get("tab") && (TABS as readonly string[]).includes(p.get("tab")!)
+      ? (p.get("tab") as BrowseTab)
+      : DEFAULT_QUERY.tab,
   };
 }
 
@@ -121,10 +130,33 @@ export function activeFilterCount(query: EventQuery): number {
  */
 export function buildEventsKey(query: EventQuery, origin?: string, keyForApi = false): string {
   const search = queryToSearchParams(query);
+  // The tab never reaches an API URL. "following" is served by
+  // `followingEventsKey`; leaving `tab=` on the browse endpoint would be an
+  // unbound parameter, and under fixtures the key is only a cache identity that
+  // must match what `useEvents` alone would produce.
+  search.delete("tab");
   if (keyForApi) {
     if (query.date === DEFAULT_QUERY.date) search.delete("date");
   }
   const base = `${origin ?? ""}/api/events`;
+  const formatted = search.toString();
+  return formatted ? `${base}?${formatted}` : base;
+}
+
+/**
+ * SWR cache key / request URL for the Following feed.
+ *
+ * The same query object as `buildEventsKey`, against the viewer-scoped
+ * endpoint. The `me/*` path is deliberately literal rather than carrying the
+ * viewer id: the server resolves the caller from the bearer token, so the key
+ * stays stable across token refreshes (see swr-fetcher.ts) and one viewer can
+ * never address another's feed by editing a URL.
+ */
+export function followingEventsKey(query: EventQuery, origin?: string): string {
+  const search = queryToSearchParams(query);
+  search.delete("tab");
+  if (query.date === DEFAULT_QUERY.date) search.delete("date");
+  const base = `${origin ?? ""}/api/events/me/following`;
   const formatted = search.toString();
   return formatted ? `${base}?${formatted}` : base;
 }

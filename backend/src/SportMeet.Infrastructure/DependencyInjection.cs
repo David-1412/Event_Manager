@@ -33,6 +33,19 @@ public static class DependencyInjection
 
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IAdminEventRepository, EventRepository>();
+
+        // Public profiles. Its own repository rather than more methods on
+        // IEventRepository because the two have opposite trust models: the feed read is
+        // reachable only through endpoints with a caller, and every method here answers
+        // for an anonymous one. Keeping them apart is what makes "did that new
+        // IEventRepository method remember to filter?" a question with a short answer.
+        services.AddScoped<SportMeet.Application.Profiles.IProfileRepository, ProfileRepository>();
+
+        // View tracking, its own seam and its own repository: the analytics path
+        // shares nothing with the feed read, and coupling them would let a browse
+        // change reach a host-only number.
+        services.AddScoped<IEventViewRepository, EventViewRepository>();
+        services.AddScoped<EventAnalyticsService>();
         services.AddScoped<SportMeet.Application.Notifications.INotificationRepository, NotificationRepository>();
 
         // Administrator user management. Paired with the service registered in
@@ -214,6 +227,40 @@ public static class DependencyInjection
             return services;
 
         services.AddHostedService<Ingestion.EmailPollingHostedService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the event reminder worker: the repository it reads, the service that
+    /// decides what to send, and the loop that runs it every few minutes.
+    ///
+    /// <see cref="EventReminderOptions.Enabled"/> defaults to <b>true</b>, which is the
+    /// opposite of <see cref="AddEmailIngestionWorker"/>, and the difference is what
+    /// each feature touches. Ingestion reads someone's mailbox and spends money per
+    /// message, so it must never start because a deploy happened. Reminders write rows
+    /// to a table this app already owns and talks to nobody outside the database, and
+    /// the product requirement is that participants receive them automatically - so an
+    /// unconfigured deployment sends them, and the flag exists to switch them off.
+    ///
+    /// The service is registered scoped rather than singleton: it depends on the
+    /// repositories, which are scoped, and the worker creates a fresh scope per cycle.
+    ///
+    /// Takes <c>IConfiguration</c> rather than reading <c>IOptions</c> because it runs
+    /// during composition, before a provider exists.
+    /// </summary>
+    public static IServiceCollection AddEventReminders(
+        this IServiceCollection services, IConfiguration config)
+    {
+        services.Configure<EventReminderOptions>(
+            config.GetSection(EventReminderOptions.SectionName));
+
+        if (!config.GetValue(
+                $"{EventReminderOptions.SectionName}:Enabled", true))
+            return services;
+
+        services.AddScoped<IEventReminderRepository, Background.EventReminderRepository>();
+        services.AddScoped<EventReminderService>();
+        services.AddHostedService<Background.EventReminderHostedService>();
         return services;
     }
 

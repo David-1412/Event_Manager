@@ -35,7 +35,7 @@ public partial class Increase_Event_Title_Length : Migration
             schema: "sportsmeet",
             table: "events",
             sql: "char_length(title) BETWEEN 3 AND 120");
-        migrationBuilder.Sql(EventViewSql.Definition);
+        migrationBuilder.Sql(EventViewSql.AddEventVisibilityViewLegacy);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
@@ -62,6 +62,6 @@ public partial class Increase_Event_Title_Length : Migration
             schema: "sportsmeet",
             table: "events",
             sql: "char_length(title) BETWEEN 3 AND 80");
-        migrationBuilder.Sql(EventViewSql.Definition);
+        migrationBuilder.Sql(EventViewSql.AddEventVisibilityViewLegacy);
     }
 }

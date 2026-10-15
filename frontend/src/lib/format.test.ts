@@ -5,11 +5,15 @@ import {
   formatDayMonth,
   formatDistance,
   formatFullDate,
+  formatCapacity,
+  formatSpotsRatio,
+  isFull,
   formatRelativeDayTime,
   formatTime,
   formatTimeRange,
   isValidDate,
   spotsLeft,
+  truncateDescription,
   spotsTakenSentence,
 } from "@/lib/format";
 
@@ -175,4 +179,71 @@ describe("count copy", () => {
     expect(spotsLeft(2, 4)).toBe(2);
     expect(spotsLeft(5, 4)).toBe(0);
   });
+
+  // A null capacity is "no limit", and the failure mode of getting it wrong is
+  // silent: null coerces to 0, so `0 - current` clamps to 0 and an unlimited event
+  // reports itself Full. Each of these pins one place that could happen.
+  it("says how many joined when there is no limit", () => {
+    expect(spotsTakenSentence(3, null)).toBe("3 people joined");
+    expect(spotsTakenSentence(1, null)).toBe("1 person joined");
+  });
+
+  it("has no remaining count when there is no limit", () => {
+    expect(spotsLeft(5, null)).toBeNull();
+  });
+
+  it("shows a bare joined count instead of a denominator when there is no limit", () => {
+    expect(formatSpotsRatio(7, null)).toBe("7");
+    expect(formatSpotsRatio(7, 10)).toBe("7/10");
+  });
+
+  it("never reports an unlimited event as full", () => {
+    expect(isFull(999, null)).toBe(false);
+    expect(isFull(4, 4)).toBe(true);
+  });
+
+  it("labels a capacity for the admin list", () => {
+    expect(formatCapacity(null)).toBe("No limit");
+    expect(formatCapacity(12)).toBe("12 spots");
+  });
 });
+
+describe("truncateDescription", () => {
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
+
+  it("leaves a short description untouched, with no ellipsis", () => {
+    expect(truncateDescription("Bring a water bottle.")).toBe("Bring a water bottle.");
+  });
+
+  it("cuts on a word boundary and marks the cut", () => {
+    const out = truncateDescription(words(100), 40);
+    expect(out.endsWith("\u2026")).toBe(true);
+    // Never mid-word: whatever survives must be whole words only.
+    expect(out.replace("\u2026", "")).toMatch(/^word\d+( word\d+)*$/);
+    expect(out.length).toBeLessThanOrEqual(41);
+  });
+
+  it("collapses newlines so the preview stays at its allotted lines", () => {
+    const out = truncateDescription("line one\n\nline two   spaced", 280);
+    expect(out).toBe("line one line two spaced");
+  });
+
+  it("hides the block for empty, whitespace or missing input", () => {
+    expect(truncateDescription("")).toBe("");
+    expect(truncateDescription("   \n\t ")).toBe("");
+    expect(truncateDescription(null)).toBe("");
+    expect(truncateDescription(undefined)).toBe("");
+  });
+
+  it("cuts a single over-long word rather than hiding the description", () => {
+    // No word boundary exists inside the budget here. Showing nothing would drop
+    // the preview entirely, so the word is cut and the ellipsis carries on.
+    expect(truncateDescription("supercalifragilistic", 5)).toBe("super\u2026");
+  });
+
+  it("does not leave dangling punctuation before the ellipsis", () => {
+    const out = truncateDescription("one two three, four five", 15);
+    expect(out).toBe("one two three\u2026");
+  });
+});
+

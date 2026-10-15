@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import { ApiError, usingFixtures } from "@/lib/api";
 import { approveEvent, listPendingEvents, rejectEvent } from "@/lib/admin";
-import { formatDayMonth, formatTime } from "@/lib/format";
+import { formatCapacity, formatDayMonth, formatTime } from "@/lib/format";
 import type { PendingEvent } from "@/types/admin";
 
 /**
@@ -143,7 +143,7 @@ export function PendingEventsPanel() {
                   {event.hostName ? `${event.hostName} · ` : ""}
                   {formatDayMonth(event.startAt)} {formatTime(event.startAt)}
                   {event.venueName ? ` · ${event.venueName}` : ""}
-                  {` · ${event.maxParticipants} spots`}
+                  {` · ${formatCapacity(event.maxParticipants)}`}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">

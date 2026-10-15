@@ -69,6 +69,14 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: "Host=postgres;Port=5432;Database=sportmeet;Username=sportmeet;Password=sportmeet"
+      # The demo identity, overridable so the two sides of a moderated join can be
+      # tested without editing a tracked file: DEMO_AS_USER_ID=<host id> brings the
+      # stack up as that host (their events then render the Join requests panel and
+      # its Approve/Reject controls), DEMO_AS_USER_ID=<member id> as a member. The
+      # default is the seeded participant, which hosts nothing - so with no override
+      # no event on earth reports isHost, and the host-only panel cannot appear.
+      # Unset it entirely to hand identity back to Firebase tokens.
+      Demo__AsUserId: ${DEMO_AS_USER_ID:-00000000-0000-0000-0000-000000000002}
       Cors__Origins__0: ${Cors__Origins__0:-}
       # Firebase ID-token verification. Set Firebase__ProjectId (e.g. via .env)
       # to turn per-user draft ownership on; unset, the API keeps the configured

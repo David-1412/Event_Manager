@@ -46,7 +46,15 @@ public class Event
     public DateTimeOffset StartAt { get; set; }
     public DateTimeOffset EndAt { get; set; }
 
-    public int MaxParticipants { get; set; }
+    /// <summary>Capacity, or <c>null</c> for "no limit". The create form leaves
+    /// Spots empty for an event that simply cannot fill up, which is the same
+    /// shape <c>Cost</c> already uses for free: the absence of a value is the
+    /// meaning, so no sentinel number is stored that every display would have to
+    /// recognise. Where a limit exists it is bounded by
+    /// <see cref="Persistence.Config.EventConfiguration.ParticipantsMin"/> and
+    /// <c>ParticipantsMax</c>; a null skips the capacity check on join and on
+    /// approval rather than being compared against a large number.</summary>
+    public int? MaxParticipants { get; set; }
     /// <summary>Nullable: the create form no longer exposes a skill selector, so
     /// a user-created event has none and the client hides the badge entirely.
     /// The events_skill_level_check constraint needs no change - a CHECK that
@@ -84,6 +92,48 @@ public class Event
     public DateTimeOffset? DeletedAt { get; set; }
 
     public ICollection<EventParticipant> Participants { get; set; } = new List<EventParticipant>();
+
+    /// <summary>When true, joining is a request rather than an action: a member
+    /// who taps Join gets a <see cref="EventJoinRequest"/> in
+    /// <see cref="JoinRequestStatus.Pending"/> and no participant row, so the
+    /// derived <c>current_participants</c> count does not move until the host
+    /// decides.
+    ///
+    /// Defaults to false, and false is the whole backward-compatibility story:
+    /// every event that predates this column and every event created without
+    /// opting in keeps the immediate-join path through
+    /// <see cref="Application.Events.EventService.JoinAsync"/> untouched.
+    ///
+    /// A pending request reserves no capacity, deliberately matching Interested.
+    /// Reserving it would let unactioned requests fill an event and lock the host
+    /// out of approving anyone - so capacity is enforced where the spot is
+    /// actually taken, at approval.</summary>
+    public bool RequiresJoinApproval { get; set; }
+
+    /// <summary>When the "starts tomorrow" reminder batch was sent for this event,
+    /// or null while it is owed.
+    ///
+    /// A timestamp rather than a boolean so the row keeps its own audit trail: the
+    /// column answers "did this event get its reminder, and when" without a second
+    /// table, and it reads as a fact about the event rather than a flag whose
+    /// meaning lives in the worker that sets it.
+    ///
+    /// <see cref="Application.Events.EventReminderService"/> claims it with a
+    /// conditional UPDATE (<c>WHERE ... IS NULL</c>) before writing any notification,
+    /// which makes the write the lock: two API replicas running a cycle at the same
+    /// moment cannot both send, because only one of them moves the column off null.
+    ///
+    /// Never reset once set - not even when the event is cancelled. A cancelled
+    /// event is skipped by the reminder query, so there is nothing to undo, and a
+    /// host who cancels then reopens the event keeps the reminder already sent
+    /// rather than receiving it twice.</summary>
+    public DateTimeOffset? TomorrowReminderSentAt { get; set; }
+
+    /// <summary>The same marker for the "begins in 1 hour" reminder. Independent of
+    /// <see cref="TomorrowReminderSentAt"/>: an event created inside the 24-hour
+    /// window is simply never owed the tomorrow one, and the two reminders never
+    /// gate each other.</summary>
+    public DateTimeOffset? OneHourReminderSentAt { get; set; }
 
     /// <summary>Browse vocabulary. Normalized on the way in (TagNormalizer),
     /// capped at TagNormalizer.MaxTagsPerEvent.</summary>

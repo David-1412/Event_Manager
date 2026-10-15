@@ -3,8 +3,8 @@
 import { useCallback, useState } from "react";
 import { useSWRConfig } from "swr";
 import { ApiError, request } from "@/lib/api";
-import { detailKey, eventsKey, interestedKey, joinedKey } from "./use-events";
-import type { JoinFailure } from "@/types/events";
+import { detailKey, eventsKey, interestedKey, joinedKey, pendingJoinRequestsKey } from "./use-events";
+import type { EventDetail, JoinFailure } from "@/types/events";
 
 /**
  * Join / Leave for one event, driven by a browse or My-events *card* (the detail
@@ -13,6 +13,11 @@ import type { JoinFailure } from "@/types/events";
  * decrement dance this does the call, invalidates the caches the card and the
  * My-events page read, and reports the failure class so the button can show a
  * "Try again" rather than silently reverting.
+ *
+ * On success it returns the fresh detail the POST hands back, which is how the
+ * card learns whether the write took a spot or filed a request: an approval-gated
+ * event answers with `myJoinRequestStatus: "Pending"` and `isJoined: false`, and
+ * the toast has to say "Join request submitted" rather than "You're in".
  */
 export function useCardJoin(eventId: string) {
   const { mutate } = useSWRConfig();
@@ -24,7 +29,7 @@ export function useCardJoin(eventId: string) {
       setFailure(null);
       setPending(method === "POST" ? "join" : "leave");
       try {
-        await request<{ joinedCount: number } | undefined>(
+        const detail = await request<EventDetail | undefined>(
           `/api/events/${eventId}/participants`,
           { method },
         );
@@ -34,12 +39,15 @@ export function useCardJoin(eventId: string) {
         // the interested set moves too.
         void mutate(joinedKey(), undefined, { revalidate: true });
         void mutate(interestedKey(), undefined, { revalidate: true });
+        // A gated join filed a request, so the pending set this card and every
+        // other card reads has moved.
+        void mutate(pendingJoinRequestsKey(), undefined, { revalidate: true });
         void mutate(detailKey(eventId), undefined, { revalidate: true });
         void mutate(eventsKey(), undefined, { revalidate: true });
-        return { ok: true } as const;
+        return { ok: true, detail } as const;
       } catch (error) {
         setFailure(error instanceof ApiError ? error.joinFailure : "network");
-        return { ok: false } as const;
+        return { ok: false, detail: undefined } as const;
       } finally {
         setPending(null);
       }

@@ -444,6 +444,43 @@ against production URLs, and rollback is a one-click App Service deployment swap
    and CI/CD stays shared.
 7. **Accepted MVP shortcuts with named upgrade paths:** OFFSET paging -> keyset; client-side Firebase auth ->
    BFF cookie session; REST-only -> SignalR; no Soft-delete -> `status` column already handles the visible case.
+8. **"Creator" is the display label for `UserRole.Moderator`, not a fourth role.** The product asks for a Creator
+   badge; `Moderator` is already exactly the tier that publishes public events without review, which is what a club
+   or society account is. Adding a `Creator` enum value would have meant a CHECK-constraint migration, a new case in
+   the auth path, and a second role whose capability is identical to an existing one. The mapping lives in one place
+   (`components/admin/role-badge.tsx`'s `LABELS`); anything that persists or compares a role keeps using
+   `Moderator`.
+9. **Public profiles are anonymous endpoints with the DTO as the whole privacy boundary.** No caller means nothing
+   to gate, so `ProfileSummaryDto` and friends carry no email, auth uid, analytics or view count, and
+   `IProfileRepository` filters unpublished statuses and private events in SQL rather than in the service. Joined
+   events are restricted to `Visibility = Public` — note this still discloses that a person attended a *public*
+   event, which is what the feature asks for and is a deliberate change from participation previously being visible
+   only per-event. Host analytics stay behind `GET /api/events/{id}/analytics`, unreachable from any profile route.
+10. **Profile URLs key on the user GUID (`/profile/{id}`), not a username.** No slug column exists, so a slug would
+    have been a migration plus a uniqueness rule that wasn't in scope. `profileHref()` in
+    `components/profile/host-link.tsx` is the single place the route is built, so a slug later is one function.
+ 11. **Following is one directed edge table; the notification fan-out rides the publish transition, not the create.**
+     `user_follows (follower_user_id, followed_user_id, created_at)` with the composite primary key as the duplicate
+     rule and a CHECK as the self-follow rule. Followers are told when an event *becomes* publicly visible, which is
+     three code paths and not one: a Creator's public event publishes at create, a Member's publishes at an admin's
+     approval, and a resubmission publishes on edit. All three call `CreatorFollowNotifier.PublishAsync`, which
+     re-checks visibility rather than trusting its caller, so a fourth call site cannot announce a Draft,
+     PendingReview or Rejected event by forgetting a guard. Two consequences worth naming: `DecideAsync` must assign
+     the decision onto the tracked entity before calling it, because `TrySetReviewStatusAsync` is an
+     `ExecuteUpdateAsync` and leaves the in-memory copy reading `PendingReview`; and `UpdateHostedAsync` notifies only
+     on a *transition* into visibility, or every typo fix on a live event would re-announce it. Private events never
+     fan out — a notification is the loudest way to make something discoverable.
+ 12. **Follow endpoints require auth; `isFollowing` is the only caller-dependent field on an anonymous response.** The
+     two follow endpoints take identity from `ICurrentUser` and are the non-anonymous pair on `ProfilesController`.
+     The summary stays anonymous-readable, so the client partitions its SWR cache by viewer id — otherwise one
+     signed-out reader's `isFollowing: false` is served to the next person who signs in on that browser. The id is a
+     cache label only; the server decides the caller from the bearer token. The followers count is public on purpose
+     (it is the trust signal the page exists to give) while the follower *list* is exposed by no endpoint — it exists
+     only for the fan-out.
+ 13. **Both follow verbs are idempotent and return resulting state, not an echo.** The duplicate rule is a database
+     constraint, so `POST` on an existing follow answers `200 {isFollowing: true}` rather than `409`, and `DELETE` on
+     an absent one answers `{isFollowing: false}`. A retried tap after a dropped response must converge. The count is
+     read back rather than computed as ±1, which drifts permanently the first time another device moves it.
 
 ## 10. Top Risks & Mitigations
 

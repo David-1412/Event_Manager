@@ -21,6 +21,16 @@ public class EventListItemDto
     public required Guid Id { get; init; }
     public required string Title { get; init; }
 
+    /// <summary>The full event description. Already carried by v_event_feed and
+    /// already loaded into the Event this DTO is built from, so it costs the feed
+    /// query nothing extra.
+    ///
+    /// Browse added a preview panel that quotes the opening of the description
+    /// without navigating away, which needs the text in the list payload; before
+    /// that the field existed on the row and was simply never projected. The
+    /// client truncates it - the API always sends the whole thing.</summary>
+    public string? Description { get; init; }
+
     /// <summary>Normalized lowercase tag names, replacing the old `sport` slug.
     /// Empty rather than null when the event has none, so the client never has to
     /// branch on it. Alphabetical - the view aggregates with ORDER BY t.name.</summary>
@@ -42,6 +52,28 @@ public class EventListItemDto
 
     /// <summary>Host photo URL; null renders the initials avatar.</summary>
     public string? HostPhotoUrl { get; init; }
+
+    /// <summary>The host's internal id, which is what makes the name and avatar on a
+    /// card a <em>link</em> rather than plain text — every host in the app now points
+    /// at <c>/profile/{hostId}</c>.
+    ///
+    /// Nullable rather than <c>required</c> on purpose. The feed view inner-joins
+    /// <c>users</c>, so a row served by this API always has one, but declaring it
+    /// required would force every existing construction site (and every fixture) to
+    /// supply it, and the frontend type is deliberately optional so a response written
+    /// before the field existed degrades to an unlinked name instead of a broken card.
+    /// Serializes as <c>hostId</c>.</summary>
+    public Guid? HostId { get; init; }
+
+    /// <summary>The host's role, as the <see cref="UserRole"/> name. Drives the
+    /// Creator badge on cards, the preview panel and the detail page without a second
+    /// round-trip: <c>v_event_feed</c> already selects <c>u.role</c> and
+    /// <see cref="FeedRow"/> already carries it.
+    ///
+    /// Null when unknown, which the client renders as no badge — a badge is a claim
+    /// about the person, so an absent value must not guess. Serializes as
+    /// <c>hostRole</c>.</summary>
+    public string? HostRole { get; init; }
 
     /// <summary>Null when the host never chose one; the client hides the badge
     /// rather than inventing a level.</summary>
@@ -65,7 +97,10 @@ public class EventListItemDto
     /// client's currency formatter, so there is an integration test for this.</summary>
     public decimal? Cost { get; init; }
 
-    public required int MaxParticipants { get; init; }
+    /// <summary>Null means no limit: the host left Spots empty, so the event cannot
+    /// fill. Mirrors <see cref="Cost"/>'s use of null for "free" - the client renders
+    /// "No limit" rather than a number, and must not treat null as zero.</summary>
+    public required int? MaxParticipants { get; init; }
 
     /// <summary>Joined participant count, derived by the feed view's COUNT over
     /// event_participants (never a stored counter). Serializes as `joinedCount`.</summary>
@@ -90,6 +125,11 @@ public class EventListItemDto
     /// <c>GET /api/events</c> and reachable only by its direct link, so the detail
     /// page renders a copyable URL whenever this is Private.</summary>
     public required string Visibility { get; init; }
+
+    /// <summary>Whether joining this event needs the host's approval. Defaults to
+    /// false everywhere it is absent, so an event created before the field existed
+    /// keeps the immediate Join flow. Serializes as `requiresJoinApproval`.</summary>
+    public bool RequiresJoinApproval { get; init; }
 
     /// <summary>null when no origin coordinates were supplied or the sort is not
     /// distance-based; the client then hides the distance row.</summary>

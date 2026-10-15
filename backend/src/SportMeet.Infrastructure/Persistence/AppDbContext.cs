@@ -23,6 +23,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Sport> Sports => Set<Sport>();
     public DbSet<EventParticipant> EventParticipants => Set<EventParticipant>();
     public DbSet<EventInterest> EventInterests => Set<EventInterest>();
+
+    /// <summary>Join requests for events with approval turned on. A decision
+    /// record, never the source of truth for membership - that stays
+    /// <see cref="EventParticipants"/>.</summary>
+    public DbSet<EventJoinRequest> EventJoinRequests => Set<EventJoinRequest>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<EventTag> EventTags => Set<EventTag>();
 
@@ -38,6 +43,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Append-only trail of privilege changes. Deliberately not reachable from any
     // event or draft query: an audit line is not data the product filters over.
     public DbSet<UserRoleAudit> UserRoleAudit => Set<UserRoleAudit>();
+
+    /// <summary>Detail-page openings, one row per view. Append-only and never read
+    /// by the feed: the host's view count is a COUNT over these rows, computed only
+    /// behind the host check the analytics endpoint performs.</summary>
+    public DbSet<EventView> EventViews => Set<EventView>();
+
+    /// <summary>Directed "A follows B" edges. Read by the profile's follower count and
+    /// by the fan-out that tells followers about a newly published event; never read by
+    /// the feed.</summary>
+    public DbSet<UserFollow> UserFollows => Set<UserFollow>();
 
 
     /// <summary>Read-only projection over v_event_feed. Never in SaveChanges -

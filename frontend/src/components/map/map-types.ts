@@ -8,6 +8,12 @@ export interface MapProps {
   onSearchThisArea?: (center: { lat: number; lng: number }) => void;
   /** `detail` = single marker, 200px, no `Search this area` pill (spec §8). */
   variant?: "browse" | "detail";
+  /**
+   * Browse only: pan the map here, then hand control back to the user. Unlike
+   * the controlled `center` prop this never snaps a dragged map back, and it
+   * animates. `null` means "no selection" and leaves the camera alone.
+   */
+  onBrowsePanTo?: { lat: number; lng: number } | null;
   className?: string;
 }
 

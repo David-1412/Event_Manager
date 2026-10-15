@@ -162,10 +162,10 @@ function WhoGroup({ errorFor, flagFor, register }: CreateGroupsProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field
           label="Spots"
-          hint="Includes you, so 4 means three other people."
+          hint="Includes you, so 4 means three other people. Leave empty for no limit."
           error={errorFor("maxParticipants")}
           flag={flagFor("maxParticipants")}
-          required
+          optional
         >
           {({ id, describedBy, invalid }) => (
             <Input
@@ -174,6 +174,7 @@ function WhoGroup({ errorFor, flagFor, register }: CreateGroupsProps) {
               inputMode="numeric"
               min={2}
               max={50}
+              placeholder="No limit"
               aria-describedby={describedBy}
               aria-invalid={invalid || undefined}
               {...register("maxParticipants")}
@@ -216,6 +217,25 @@ function WhoGroup({ errorFor, flagFor, register }: CreateGroupsProps) {
           </Select>
         )}
       </Field>
+
+      {/* Moderation, not discovery. Kept next to visibility because both answer
+          "who gets in", and a host deciding one is thinking about the other. The
+          label states the consequence - a request is not a spot - so nobody ticks
+          it believing they have limited the headcount. */}
+      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-4 accent-brand-600"
+          {...register("requiresJoinApproval")}
+        />
+        <span className="min-w-0">
+          <span className="block text-body-strong text-fg">Approve members first</span>
+          <span className="block text-meta text-fg-muted">
+            People ask to join and you approve or decline each one. Until you approve
+            them they have no spot, so the count only moves when you say yes.
+          </span>
+        </span>
+      </label>
     </fieldset>
   );
 }

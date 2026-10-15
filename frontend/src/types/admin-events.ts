@@ -14,7 +14,8 @@ export interface AdminEvent {
   timezone: string;
   startAt: string;
   endAt: string;
-  maxParticipants: number;
+  /** Null means no capacity limit. */
+  maxParticipants: number | null;
   skillLevel: SkillLevel | null;
   cost: number | null;
   status: EventStatus;

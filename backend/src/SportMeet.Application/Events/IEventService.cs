@@ -11,6 +11,15 @@ public interface IEventService
 {
     Task<PagedResult<EventListItemDto>> ListAsync(EventQueryModel query, CancellationToken ct = default);
 
+    /// <summary>The Following feed: browse narrowed to events hosted by users the
+    /// current viewer follows, with every browse filter still honoured.
+    ///
+    /// Throws <see cref="DomainRuleException"/> when nobody is signed in — the
+    /// feed is defined by the viewer's follow graph, so an anonymous answer would
+    /// be a lie rather than an empty list. The Api layer turns that into a
+    /// refusal the browse page shows as a sign-in prompt.</summary>
+    Task<PagedResult<EventListItemDto>> ListFollowingAsync(EventQueryModel query, CancellationToken ct = default);
+
     /// <summary>Throws <see cref="NotFoundException"/> when the id is unknown,
     /// which the Api layer turns into 404 + code "NotFound".</summary>
     Task<EventDetailDto> GetAsync(Guid id, CancellationToken ct = default);
@@ -34,9 +43,32 @@ public interface IEventService
     /// Leaving while unjoined is a no-op so the client's retry loop converges.</summary>
     Task<EventDetailDto> LeaveAsync(Guid eventId, CancellationToken ct = default);
 
+    /// <summary>The host's Join Requests queue for one event. Host-only: a caller who
+    /// does not own the event gets 404. Pending requests only unless
+    /// <paramref name="includeDecided"/> asks for the full history.</summary>
+    Task<JoinRequestListDto> ListJoinRequestsAsync(
+        Guid eventId, bool includeDecided, CancellationToken ct = default);
+
+    /// <summary>Approve a pending request, which adds that member as a participant in
+    /// the same transaction and notifies them. Host-only; approving your own request
+    /// is refused. Throws <see cref="EventFullException"/> (409) when no spot is
+    /// left, leaving the request pending.</summary>
+    Task<JoinRequestListDto> ApproveJoinRequestAsync(
+        Guid eventId, Guid userId, CancellationToken ct = default);
+
+    /// <summary>Reject a pending request. The member is not added and is notified.
+    /// Host-only; rejecting your own request is refused.</summary>
+    Task<JoinRequestListDto> RejectJoinRequestAsync(
+        Guid eventId, Guid userId, CancellationToken ct = default);
+
     /// <summary>Event ids the current viewer has joined. Empty (not an error) when
     /// no identity is configured, so My events degrades to the Interested list.</summary>
     Task<IReadOnlyList<Guid>> ListMyJoinedAsync(CancellationToken ct = default);
+
+    /// <summary>Event ids with a pending join request from the current viewer, for
+    /// the browse card's "Request submitted" state. Empty (not an error) when no
+    /// identity is configured, mirroring ListMyJoinedAsync.</summary>
+    Task<IReadOnlyList<Guid>> ListMyPendingJoinRequestsAsync(CancellationToken ct = default);
 
     /// <summary>Add or remove the current viewer's interest in one event (toggle).
     /// Throws <see cref="DomainRuleException"/> when no identity is configured and

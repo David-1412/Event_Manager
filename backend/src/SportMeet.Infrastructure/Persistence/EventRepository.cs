@@ -271,6 +271,15 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
             .Select(p => p.EventId)
             .ToListAsync(ct);
 
+    public async Task<List<Guid>> ListPendingJoinRequestEventIdsAsync(Guid userId, CancellationToken ct = default)
+        => await db.EventJoinRequests
+            .AsNoTracking()
+            .Where(r => r.UserId == userId
+                        && r.Status == JoinRequestStatus.Pending
+                        && r.Event.DeletedAt == null)
+            .Select(r => r.EventId)
+            .ToListAsync(ct);
+
     public async Task<int> CountParticipantsAsync(Guid eventId, CancellationToken ct = default)
         => await db.EventParticipants.CountAsync(p => p.EventId == eventId, ct);
 
@@ -415,7 +424,10 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
     }
 
 
-    private static IQueryable<VwEventFeed> ApplyFilters(IQueryable<VwEventFeed> source, EventQueryModel query)
+    /// <summary>The browse filters, shared by the ordinary feed and the Following
+    /// feed. Not static because the Following narrowing is an <c>EXISTS</c> over
+    /// <c>user_follows</c>, which needs the context to compose the subquery.</summary>
+    private IQueryable<VwEventFeed> ApplyFilters(IQueryable<VwEventFeed> source, EventQueryModel query)
     {
         // Cancelled events stay out of browse; the client has no control asking
         // for them, and spec §11 keeps them off the feed. Status is the view's
@@ -450,6 +462,24 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
         // against a real database). Enum.ToString() is no escape either - EF 8
         // cannot translate it. Both sides as text is what translates.
         source = source.Where(v => v.Visibility != nameof(EventVisibility.Private));
+
+        // The Following tab: keep only events whose host the viewer follows.
+        //
+        // Written as an EXISTS over user_follows rather than "load the followed
+        // ids, then HostId.Contains(those)". Both return the same rows, but the
+        // Contains form ships the whole follow list as query parameters on every
+        // request and grows the IN-list with the follow count; EXISTS stays one
+        // fixed-shape statement regardless of how many creators a viewer follows,
+        // and Postgres answers it with a semi-join against the user_follows
+        // primary key. It is also one query over the same v_event_feed source, so
+        // every filter above and below (status, visibility, search, tag, date,
+        // radius) applies to the Following feed exactly as it does to browse —
+        // there is no second feed implementation to keep in sync.
+        if (query.FollowedByUserId is { } followerId)
+        {
+            source = source.Where(v => db.UserFollows.Any(f =>
+                f.FollowerUserId == followerId && f.FollowedUserId == v.HostId));
+        }
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -515,7 +545,12 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
         return source;
     }
 
-    private static FeedRow ToRow(VwEventFeed v) => new(
+    /// <summary>Maps a feed view row to the Application read model. Internal rather
+    /// than private because <see cref="ProfileRepository"/> produces the identical
+    /// rows for a host's event lists: two mappers over the same view is how the
+    /// profile's event tiles and the browse cards start disagreeing about which fields
+    /// exist.</summary>
+    internal static FeedRow ToRow(VwEventFeed v) => new(
         ToEvent(v),
         SplitTags(v.Tags),
         v.SportIcon,
@@ -540,7 +575,136 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
     /// hand rather than attached to the change tracker. One place, so a new view
     /// column cannot be forgotten in two.
     /// </summary>
+    // ---- Join requests -------------------------------------------------------
+    //
+    // The host-scoped writes below all follow TrySetStatusAsync's shape: filter on
+    // (event, user, expected state, host id) and let the row count decide what
+    // happened, so "only the host may decide" is a WHERE clause rather than a
+    // comparison someone might forget to write.
+
+    public async Task<JoinRequestOutcome> AddJoinRequestAsync(
+        Guid eventId, Guid userId, DateTimeOffset requestedAt, CancellationToken ct = default)
+    {
+        var existing = await db.EventJoinRequests
+            .FirstOrDefaultAsync(r => r.EventId == eventId && r.UserId == userId, ct);
+
+        if (existing is null)
+        {
+            db.EventJoinRequests.Add(new EventJoinRequest
+            {
+                EventId = eventId,
+                UserId = userId,
+                Status = JoinRequestStatus.Pending,
+                RequestedAt = requestedAt,
+            });
+            await db.SaveChangesAsync(ct);
+            return JoinRequestOutcome.Created;
+        }
+
+        switch (existing.Status)
+        {
+            case JoinRequestStatus.Pending:
+                // A double-tapped Join, or a retry after a lost response: converge
+                // on "waiting" rather than queueing a second request the host would
+                // have to decline twice.
+                return JoinRequestOutcome.AlreadyPending;
+
+            case JoinRequestStatus.Approved:
+                return JoinRequestOutcome.AlreadyApproved;
+
+            default:
+                // Rejected. Asking again reopens the same row rather than inserting a
+                // second one, which the composite key forbids anyway - and one row
+                // means the host always sees the member's current standing, not a
+                // decision they have since been asked to revisit.
+                existing.Status = JoinRequestStatus.Pending;
+                existing.RequestedAt = requestedAt;
+                existing.DecidedAt = null;
+                await db.SaveChangesAsync(ct);
+                return JoinRequestOutcome.Reopened;
+        }
+    }
+
+    public async Task<List<JoinRequestRow>> ListJoinRequestsAsync(
+        Guid eventId, Guid hostId, bool includeDecided, CancellationToken ct = default)
+        // The host join is the authorization: an event this caller does not own
+        // matches nothing here, so a non-host gets an empty list rather than
+        // somebody else's requester names.
+        => await db.EventJoinRequests
+            .AsNoTracking()
+            .Where(r => r.EventId == eventId
+                        && r.Event.HostId == hostId
+                        && r.Event.DeletedAt == null
+                        && (includeDecided || r.Status == JoinRequestStatus.Pending))
+            // Oldest first: the member who asked first is the one who has been
+            // waiting, and the partial index serves this order directly.
+            .OrderBy(r => r.RequestedAt)
+            .ThenBy(r => r.UserId)
+            .Select(r => new JoinRequestRow(
+                r.UserId, r.User.Name, r.User.PhotoUrl, r.Status, r.RequestedAt, r.DecidedAt))
+            .ToListAsync(ct);
+
+    public async Task<bool> TryApproveJoinRequestAsync(
+        Guid eventId, Guid userId, Guid hostId, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var request = await db.EventJoinRequests
+            .FirstOrDefaultAsync(r => r.EventId == eventId
+                                      && r.UserId == userId
+                                      && r.Status == JoinRequestStatus.Pending
+                                      && r.Event.HostId == hostId, ct);
+        if (request is null)
+        {
+            return false;
+        }
+
+        request.Status = JoinRequestStatus.Approved;
+        request.DecidedAt = now;
+
+        // The membership itself. One SaveChanges for both, so there is no instant at
+        // which the host has approved and the member is not yet in.
+        db.EventParticipants.Add(new EventParticipant
+        {
+            EventId = eventId,
+            UserId = userId,
+            JoinedAt = now,
+        });
+
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> TryRejectJoinRequestAsync(
+        Guid eventId, Guid userId, Guid hostId, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var request = await db.EventJoinRequests
+            .FirstOrDefaultAsync(r => r.EventId == eventId
+                                      && r.UserId == userId
+                                      && r.Status == JoinRequestStatus.Pending
+                                      && r.Event.HostId == hostId, ct);
+        if (request is null)
+        {
+            return false;
+        }
+
+        // Status only - no participant row, which is the whole of what rejection
+        // does. The request survives as the record that the host decided.
+        request.Status = JoinRequestStatus.Rejected;
+        request.DecidedAt = now;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<JoinRequestStatus?> FindMyJoinRequestStatusAsync(
+        Guid eventId, Guid userId, CancellationToken ct = default)
+        => await db.EventJoinRequests
+            .AsNoTracking()
+            .Where(r => r.EventId == eventId && r.UserId == userId)
+            .Select(r => (JoinRequestStatus?)r.Status)
+            .FirstOrDefaultAsync(ct);
+
+
     private static Event ToEvent(VwEventFeed v) => new()
+
     {
         Id = v.Id,
         HostId = v.HostId,
@@ -569,6 +733,7 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
         Visibility = Enum.TryParse<EventVisibility>(v.Visibility, out var visibility)
             ? visibility
             : EventVisibility.Public,
+        RequiresJoinApproval = v.RequiresJoinApproval,
         CancelledAt = v.CancelledAt,
         CreatedAt = v.CreatedAt,
         UpdatedAt = v.UpdatedAt,

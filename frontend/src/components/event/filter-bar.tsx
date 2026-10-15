@@ -9,7 +9,8 @@ import { SearchInput } from "@/components/ui/search-input";
 import { cn } from "@/lib/cn";
 import { activeFilterCount } from "@/lib/query";
 import { RADIUS_OPTIONS } from "@/lib/sports";
-import type { EventDateFilter, EventQuery, EventSort, PopularTag } from "@/types/events";
+import type { BrowseLayoutMode, BrowseMapMode } from "@/components/event/browse-layout";
+import type { BrowseTab, EventDateFilter, EventQuery, EventSort, PopularTag } from "@/types/events";
 
 /**
  * Sticky, gains a shadow once the list scrolls (spec §7). Mobile: scrolling tag
@@ -28,18 +29,24 @@ export function FilterBar({
   onPatch,
   onReset,
   popularTags = [],
-  mapOpen = true,
-  onToggleMap,
+  mapMode = "none",
+  onMapMode,
+  mode = "list",
+  onMode,
 }: {
   query: EventQuery;
   onPatch: (patch: Partial<EventQuery>) => void;
   onReset: () => void;
   popularTags?: readonly PopularTag[];
-  /** Desktop map visibility, so the button can read "Hide map"/"Show map". */
-  mapOpen?: boolean;
-  /** Toggles the desktop map. When omitted the button is not rendered (the map
-   * is fixed open, as on pages that don't offer a split view). */
-  onToggleMap?: () => void;
+  /** Desktop map mode, so the control can name the state it will move to. */
+  mapMode?: BrowseMapMode;
+  /** Cycles the map: none -> split -> none. When omitted the button is not
+   * rendered (pages that keep the map fixed open don't offer the control). */
+  onMapMode?: (mode: BrowseMapMode) => void;
+  /** List vs grid. Paired with `onMode`; both optional so other FilterBar callers
+   * (and their tests) render unchanged without a view-mode control. */
+  mode?: BrowseLayoutMode;
+  onMode?: (mode: BrowseLayoutMode) => void;
 }) {
   const [scrolled, setScrolled] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -63,6 +70,8 @@ export function FilterBar({
         scrolled && "shadow-raise",
       )}
     >
+      <BrowseTabs tab={query.tab} onSelect={(tab) => onPatch({ tab })} />
+
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <SearchInput value={query.q} onChange={(q) => onPatch({ q })} />
 
@@ -111,15 +120,21 @@ export function FilterBar({
                 Reset
               </button>
             )}
-            {onToggleMap && (
+            {onMode && (
+              <ViewModeToggle mode={mode} onMode={onMode} />
+            )}
+            {onMapMode && (
+              // Show Map opens the map beside the list; a second tap closes it.
+              // The label names the state the tap produces, not the state the
+              // control is in, so it never reads as a dead toggle.
               <button
                 type="button"
-                onClick={onToggleMap}
-                aria-pressed={mapOpen}
+                onClick={() => onMapMode(mapMode === "none" ? "split" : "none")}
+                aria-pressed={mapMode !== "none"}
                 className="press inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-border bg-surface px-3 text-meta font-medium text-fg hover:bg-surface-2"
               >
                 <span aria-hidden>{"\u25C6"}</span>
-                {mapOpen ? "Hide map" : "Show map"}
+                {mapMode === "none" ? "Show Map" : "Hide Map"}
               </button>
             )}
           </div>
@@ -138,6 +153,46 @@ export function FilterBar({
     </div>
   );
 }
+
+
+/**
+ * The feed selector: All | Following.
+ *
+ * A tablist rather than chips because it swaps the *source* of the list, not a
+ * filter within it — Following is a different endpoint (the viewer's follow
+ * graph), and the search/tag/date/radius/sort controls below keep applying on
+ * top of whichever tab is active. "Upcoming" and "Nearby" are deliberately not
+ * here: they already exist as the date filter and the distance sort, and
+ * duplicating them as tabs would put two controls in charge of one value.
+ */
+function BrowseTabs({ tab, onSelect }: { tab: BrowseTab; onSelect: (tab: BrowseTab) => void }) {
+  return (
+    <div role="tablist" aria-label="Browse feed" className="mb-3 flex items-center gap-1">
+      {BROWSE_TABS.map((entry) => (
+        <button
+          key={entry.value}
+          type="button"
+          role="tab"
+          aria-selected={tab === entry.value}
+          onClick={() => onSelect(entry.value)}
+          className={cn(
+            "press h-9 rounded-md px-3 text-meta font-medium",
+            tab === entry.value
+              ? "bg-brand-tint text-brand-600"
+              : "text-fg-muted hover:bg-surface-2 hover:text-fg",
+          )}
+        >
+          {entry.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const BROWSE_TABS: { value: BrowseTab; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "following", label: "Following" },
+];
 
 
 function FilterSelect({
@@ -253,6 +308,52 @@ function SortSelect({
       options={SORT_OPTIONS}
       onChange={(v) => onChange(v as EventSort)}
     />
+  );
+}
+
+/**
+ * List | Grid, as a segmented control.
+ *
+ * Segmented rather than two independent buttons because the two states are
+ * mutually exclusive and the control should say so: pressing the inactive half
+ * moves the indicator, and there is no way to end up in neither.
+ */
+function ViewModeToggle({
+  mode,
+  onMode,
+}: {
+  mode: BrowseLayoutMode;
+  onMode: (mode: BrowseLayoutMode) => void;
+}) {
+  const options: { value: BrowseLayoutMode; label: string; glyph: string }[] = [
+    { value: "list", label: "List View", glyph: "\u2630" },
+    { value: "grid", label: "Grid View", glyph: "\u25A6" },
+  ];
+  return (
+    <div
+      role="group"
+      aria-label="View mode"
+      className="inline-flex h-9 shrink-0 items-center rounded-md border border-border bg-surface-2 p-0.5"
+    >
+      {options.map((option) => {
+        const active = mode === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onMode(option.value)}
+            aria-pressed={active}
+            className={cn(
+              "press inline-flex h-full items-center gap-1.5 rounded-sm px-2.5 text-meta font-medium",
+              active ? "bg-surface text-brand-600 shadow-raise" : "text-fg-muted hover:text-fg",
+            )}
+          >
+            <span aria-hidden>{option.glyph}</span>
+            <span className="hidden xl:inline">{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

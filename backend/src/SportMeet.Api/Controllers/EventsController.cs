@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using SportMeet.Api.Common;
 using SportMeet.Application.Common;
 using SportMeet.Application.Events;
 using SportMeet.Domain.Entities;
@@ -15,13 +16,21 @@ public sealed record JoinedIdsDto(System.Collections.Generic.IReadOnlyList<Syste
 /// leaves `eventIds` unchanged.</summary>
 public sealed record InterestedIdsDto(System.Collections.Generic.IReadOnlyList<System.Guid> EventIds);
 
+/// <summary>Body of `GET /api/events/me/pending-join-requests` — the current
+/// viewer's event ids with a pending join request, as the frontend's
+/// `PendingJoinRequestsEnvelope`. camelCase policy leaves `eventIds`
+/// unchanged.</summary>
+public sealed record PendingJoinRequestIdsDto(System.Collections.Generic.IReadOnlyList<System.Guid> EventIds);
+
 /// <summary>Body of `POST|DELETE /api/events/{id}/interest` — the post-toggle
 /// state, so the client settles its button from the server rather than guessing.</summary>
 public sealed record InterestResultDto(bool IsInterested);
 
 [ApiController]
 [Route("api/events")]
-public class EventsController(IEventService events) : ControllerBase
+public class EventsController(
+    IEventService events,
+    EventAnalyticsService analytics) : ControllerBase
 {
     /// <summary>
     /// Browse. Anonymous by design: swr-fetcher.ts sends no Authorization header,
@@ -66,11 +75,27 @@ public class EventsController(IEventService events) : ControllerBase
         return Ok(await events.ListAsync(model, ct));
     }
 
+    /// <summary>
+    /// The detail page. Opening it is what a "view" means, so this is where one is
+    /// recorded - the requirement is about the page being opened, and the endpoint
+    /// that serves the page is the only place that fact is known.
+    ///
+    /// Recorded after the read succeeds and before the response, so a 404 for an
+    /// unknown or unmanageable event records nothing: nobody saw an event. The
+    /// recording swallows and logs its own failure, so an event the visitor came for
+    /// never becomes an error screen because a statistic could not be written.
+    /// </summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(EventDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<EventDetailDto>> Get(Guid id, CancellationToken ct)
-        => Ok(await events.GetAsync(id, ct));
+    {
+        var detail = await events.GetAsync(id, ct);
+
+        await analytics.TryRecordViewAsync(id, ct);
+
+        return Ok(detail);
+    }
 
     /// <summary>
     /// The current viewer's joined event ids, for My events. Anonymous-tolerant:
@@ -92,11 +117,73 @@ public class EventsController(IEventService events) : ControllerBase
     public async Task<ActionResult<InterestedIdsDto>> MyInterested(CancellationToken ct)
         => Ok(new InterestedIdsDto(await events.ListMyInterestedAsync(ct)));
 
+    /// <summary>The current viewer's event ids with a still-pending join request, so
+    /// a browse card can hold a member in "Request submitted" the way the detail page
+    /// does. Anonymous-tolerant like me/joined. Declared with the other literal
+    /// "me/*" routes so "me" is never parsed as a guid.</summary>
+    [HttpGet("me/pending-join-requests")]
+    [ProducesResponseType(typeof(PendingJoinRequestIdsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PendingJoinRequestIdsDto>> MyPendingJoinRequests(CancellationToken ct)
+        => Ok(new PendingJoinRequestIdsDto(await events.ListMyPendingJoinRequestsAsync(ct)));
+
     /// <summary>All events created by the current host, regardless of status or date.</summary>
     [HttpGet("me/hosting")]
     [ProducesResponseType(typeof(IReadOnlyList<EventListItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<EventListItemDto>>> MyHosting(CancellationToken ct)
         => Ok(await events.ListMyHostedAsync(ct));
+
+    /// <summary>
+    /// The Following feed: every filterable browse query narrowed to events whose
+    /// host the current viewer follows. Same param surface as <c>GET /api/events</c>
+    /// so the client's filter bar drives both tabs without translation.
+    ///
+    /// Unlike the browse listing this requires a verified caller — the feed is
+    /// defined by the viewer's follow graph, and the demo fallback would hand every
+    /// anonymous caller the demo user's social graph. The attribute answers 401;
+    /// the service independently refuses when no identity resolves at all. The
+    /// route is declared with the other literal "me/*" paths so "me" is never
+    /// parsed as a guid.
+    /// </summary>
+    [HttpGet("me/following")]
+    [RequireAuthenticatedUser]
+    [ProducesResponseType(typeof(PagedResult<EventListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<PagedResult<EventListItemDto>>> ListFollowing(
+        [FromQuery] string? q,
+        [FromQuery] string? search,
+        [FromQuery] string? tag,
+        [FromQuery] string? tags,
+        [FromQuery] string? date,
+        [FromQuery] int? radius,
+        [FromQuery] string? sort,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        [FromQuery] double? lat,
+        [FromQuery] double? lng,
+        CancellationToken ct)
+    {
+        // Deliberately its own model rather than a call into List: the browse
+        // action stays anonymous, and sharing one builder would mean the
+        // Following path could silently pick up a filter browse grows later
+        // without this one being checked. The parse helpers below keep the two
+        // spellings identical.
+        var model = new EventQueryModel
+        {
+            Search = FirstOf(q, search),
+            TagName = TagNormalizer.Normalize(FirstOf(tag, tags)),
+            DateFilter = ParseDateFilter(date),
+            RadiusKm = radius is > 0 ? radius : null,
+            OriginLat = lat,
+            OriginLng = lng,
+            Sort = string.Equals(sort, "distance", StringComparison.OrdinalIgnoreCase)
+                ? EventSort.Distance
+                : EventSort.Date,
+            Page = page is > 0 ? page.Value : 1,
+            PageSize = ClampPageSize(pageSize),
+        };
+
+        return Ok(await events.ListFollowingAsync(model, ct));
+    }
 
     /// <summary>
     /// Create. Returns 201 with both Location and a body: the plan asks for
@@ -144,6 +231,47 @@ public class EventsController(IEventService events) : ControllerBase
     public async Task<ActionResult<EventDetailDto>> Leave(Guid id, CancellationToken ct)
         => Ok(await events.LeaveAsync(id, ct));
 
+    // ---- Join requests -------------------------------------------------------
+    //
+    // The host's side of a gated event. The member's side needs no new endpoint:
+    // POST /participants is already the verb, and the service decides whether that
+    // means "you're in" or "request sent" from the event's own flag. One verb, two
+    // outcomes, and the client cannot ask for the wrong one.
+
+    /// <summary>The host's Join Requests queue for one event, pending first and
+    /// oldest first. Host-only - anyone else gets 404. Pass includeDecided=true for
+    /// the full history including approved and rejected.</summary>
+    [HttpGet("{id:guid}/join-requests")]
+    [ProducesResponseType(typeof(JoinRequestListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<JoinRequestListDto>> JoinRequests(
+        Guid id, [FromQuery] bool includeDecided, CancellationToken ct)
+        => Ok(await events.ListJoinRequestsAsync(id, includeDecided, ct));
+
+    /// <summary>Approve a pending request: the requester becomes a participant and is
+    /// notified. 409 EventFull when the event has no spot left, in which case the
+    /// request stays pending and can be approved later.</summary>
+    [HttpPost("{id:guid}/join-requests/{userId:guid}/approve")]
+    [ProducesResponseType(typeof(JoinRequestListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<JoinRequestListDto>> ApproveJoinRequest(
+        Guid id, Guid userId, CancellationToken ct)
+        => Ok(await events.ApproveJoinRequestAsync(id, userId, ct));
+
+    /// <summary>Reject a pending request: the requester stays out and is notified.
+    /// They can ask again, which reopens the same request.</summary>
+    [HttpPost("{id:guid}/join-requests/{userId:guid}/reject")]
+    [ProducesResponseType(typeof(JoinRequestListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<JoinRequestListDto>> RejectJoinRequest(
+        Guid id, Guid userId, CancellationToken ct)
+        => Ok(await events.RejectJoinRequestAsync(id, userId, ct));
+
+
     /// <summary>Toggle interest. Bodyless POST, identity from ICurrentUser like
     /// Join. Returns only the new state — interest is a boolean flag with no
     /// optimistic count to settle — and the client revalidates the interested set
@@ -161,6 +289,27 @@ public class EventsController(IEventService events) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<InterestResultDto>> RemoveInterest(Guid id, CancellationToken ct)
         => Ok(new InterestResultDto(await events.ToggleInterestAsync(id, ct)));
+
+    /// <summary>
+    /// The host's Event Insights for one event: views, joined, interested.
+    ///
+    /// Host-only, and the service enforces it from the event's own HostId rather
+    /// than from anything in the request. A caller who is not the host gets 404 -
+    /// the same shape an unknown id gets - so the endpoint never confirms that
+    /// someone else's event exists.
+    ///
+    /// Not gated with <c>[RequireAuthenticatedUser]</c> like the private per-user
+    /// endpoints, deliberately: those fall back to the shared demo identity and
+    /// must not serve it. This one needs no verified session to be safe - the
+    /// answer is always "404, unless you are the host", so the demo identity is
+    /// refused by the ownership check rather than trusted. That keeps the local
+    /// demo host able to open their own panel.
+    /// </summary>
+    [HttpGet("{id:guid}/analytics")]
+    [ProducesResponseType(typeof(EventAnalyticsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<EventAnalyticsDto>> Analytics(Guid id, CancellationToken ct)
+        => Ok(await analytics.GetAsync(id, ct));
 
     /// <summary>
     /// The admin review queue: every public event awaiting a decision. Admin-only -

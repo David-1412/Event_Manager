@@ -1,4 +1,37 @@
 import type { EventListItem, Tag } from "@/types/events";
+import { availabilityOf } from "@/lib/cn";
+
+/**
+ * The browse preview's description excerpt. The panel is meant to be readable at
+ * a glance, so it quotes roughly the first three lines rather than the whole
+ * description, and marks the cut with an ellipsis.
+ *
+ * Truncating on a word boundary matters more than the exact budget: cutting at a
+ * hard 280 characters reliably lands mid-word ("Bring a shin pa..."), which reads
+ * as a bug. A word that alone overflows the budget is kept whole rather than
+ * as a bug. A description that opens with a single word longer than the whole
+ * budget is cut mid-word, since a truncated word still beats showing nothing.
+ *
+ * Blank/whitespace input yields "" so the caller can hide the block entirely
+ * instead of rendering an empty paragraph with an ellipsis on it.
+ */
+export function truncateDescription(
+  description: string | null | undefined,
+  maxChars = 280,
+): string {
+  const text = description?.replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= maxChars) return text;
+
+  const window = text.slice(0, maxChars + 1);
+  const lastSpace = window.lastIndexOf(" ");
+  // No space in the window means the first word alone overflows the budget. Cut
+  // it rather than dropping the description or emitting an unbroken 400-character
+  // line; the ellipsis at least promises the rest of the word is coming.
+  const cut = lastSpace > 0 ? window.slice(0, lastSpace) : text.slice(0, maxChars);
+  return `${cut.replace(/[,;:.\-–—]$/, "")}\u2026`;
+}
+
 
 /**
  * The only place date/time/cost/distance/tag strings are built (spec principle 6).
@@ -208,18 +241,49 @@ export function formatDistance(distanceKm: number | null): string {
   return `${rounded} km away`;
 }
 
-/** Screen-reader sentence for the count live region (spec §7). */
-export function spotsTakenSentence(current: number, max: number): string {
-  return `${current} of ${max} spots taken`;
+/**
+ * Capacity, where null means the host set no limit.
+ *
+ * Every spots display funnels through these three functions so "no limit" reads
+ * identically on a card, a pin, and the detail page — a per-site ternary is how
+ * one feature ends up with five different phrasings.
+ */
+
+/** `3 of 4 spots taken`; an unlimited event says how many came without implying a
+ *  ceiling, because "3 of unlimited spots" is not a thing you can fill. */
+export function spotsTakenSentence(current: number, max: number | null): string {
+  return max === null
+    ? `${current} ${current === 1 ? "person" : "people"} joined`
+    : `${current} of ${max} spots taken`;
 }
 
-export function spotsLeft(current: number, max: number): number {
-  return Math.max(0, max - current);
+/** Remaining seats, or null when there is no limit. Null is returned rather than
+ *  Infinity so callers cannot accidentally render "Infinity spots left" or compare
+ *  against a number that is not a capacity. */
+export function spotsLeft(current: number, max: number | null): number | null {
+  return max === null ? null : Math.max(0, max - current);
 }
 
 /** `2 of 4 spots taken` for the detail page. */
-export function formatSpotsTaken(current: number, max: number): string {
+export function formatSpotsTaken(current: number, max: number | null): string {
   return spotsTakenSentence(current, max);
+}
+
+/** The compact `4/10` on a card or map pin. With no limit there is no denominator
+ *  to show, so the joined count stands alone rather than as `4/—`. */
+export function formatSpotsRatio(current: number, max: number | null): string {
+  return max === null ? `${current}` : `${current}/${max}`;
+}
+
+/** Whether an event can still take someone — the one place "full" is decided, so
+ *  an unlimited event can never be reported full by one caller and not another. */
+export function isFull(current: number, max: number | null): boolean {
+  return availabilityOf(current, max) === "full";
+}
+
+/** Short capacity label for the admin list: `12 spots`, or `No limit`. */
+export function formatCapacity(max: number | null): string {
+  return max === null ? "No limit" : `${max} spots`;
 }
 
 /** `YYYY-MM-DD` for `<input type="date">` values and minima, in Melbourne. */

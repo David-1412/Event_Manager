@@ -132,9 +132,11 @@ public class EventReviewWorkflowTests
         public Task<List<User>> ListParticipantsAsync(Guid eventId, CancellationToken ct = default) => Task.FromResult(new List<User>());
         public Task<bool> IsParticipantAsync(Guid eventId, Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<List<Guid>> ListJoinedEventIdsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(new List<Guid>());
+        public Task<List<Guid>> ListPendingJoinRequestEventIdsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(new List<Guid>());
         public Task<int> CountParticipantsAsync(Guid eventId, CancellationToken ct = default) => Task.FromResult(ParticipantCount);
         public Task<int> CountInterestedAsync(Guid eventId, CancellationToken ct = default) => Task.FromResult(InterestedCount);
         public Task RunInTransactionAsync(Func<CancellationToken, Task> action, CancellationToken ct = default) => action(ct);
+
         public Task<Event?> FindWithLockAsync(Guid eventId, CancellationToken ct = default) => Task.FromResult(Found?.Event.Id == eventId ? Found.Event : null);
         public Task AddParticipantAsync(Guid eventId, Guid userId, DateTimeOffset joinedAt, CancellationToken ct = default)
         {
@@ -157,6 +159,15 @@ public class EventReviewWorkflowTests
         public Task<List<Guid>> ListInterestedEventIdsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(new List<Guid>());
         public Task<bool> TrySetStatusAsync(Guid eventId, Guid hostId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> RemoveParticipantAsync(Guid eventId, Guid userId, DateTimeOffset cancelledAt, CancellationToken ct = default) => Task.FromResult(false);
+
+        // Join requests: this fixture exercises the review workflow, never the
+        // approval queue, so the members exist only to satisfy the interface.
+        public Task<JoinRequestOutcome> AddJoinRequestAsync(Guid eventId, Guid userId, DateTimeOffset requestedAt, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<List<JoinRequestRow>> ListJoinRequestsAsync(Guid eventId, Guid hostId, bool includeDecided, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> TryApproveJoinRequestAsync(Guid eventId, Guid userId, Guid hostId, DateTimeOffset now, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<bool> TryRejectJoinRequestAsync(Guid eventId, Guid userId, Guid hostId, DateTimeOffset now, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<JoinRequestStatus?> FindMyJoinRequestStatusAsync(Guid eventId, Guid userId, CancellationToken ct = default) => Task.FromResult<JoinRequestStatus?>(null);
+
     }
 
 

@@ -1,5 +1,10 @@
 import type { EventListItem } from "@/types/events";
-import { formatCardWhen, formatTagLine, formatTimeRange } from "@/lib/format";
+import {
+  formatCardWhen,
+  formatSpotsRatio,
+  formatTagLine,
+  formatTimeRange,
+} from "@/lib/format";
 
 
 /**
@@ -45,7 +50,7 @@ export function MapInfoCard({ event }: { event: EventListItem }) {
       <span className="text-h3">{event.title}</span>
       <span className="text-meta text-fg-muted">
         <span data-count className="font-bold">
-          {event.joinedCount}/{event.maxParticipants}
+          {formatSpotsRatio(event.joinedCount, event.maxParticipants)}
         </span>
         {" · "}
         {formatCardWhen(event)}

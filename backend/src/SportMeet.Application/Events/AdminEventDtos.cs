@@ -42,7 +42,9 @@ public sealed record AdminEventDto(
     string Timezone,
     DateTimeOffset StartAt,
     DateTimeOffset EndAt,
-    int MaxParticipants,
+    /// <summary>Null means no limit, matching the create path so a moderator
+    /// editing an unlimited event does not have to invent a number for it.</summary>
+    int? MaxParticipants,
     SkillLevel? SkillLevel,
     decimal? Cost,
     EventStatus Status,
@@ -62,11 +64,18 @@ public sealed record UpdateAdminEventRequest
     public required string Timezone { get; init; }
     public required DateTimeOffset StartAt { get; init; }
     public required DateTimeOffset EndAt { get; init; }
-    public required int MaxParticipants { get; init; }
+    /// <summary>Null means no limit. Sent as JSON null by the admin edit form when
+    /// the host left Spots empty.</summary>
+    public required int? MaxParticipants { get; init; }
     public SkillLevel? SkillLevel { get; init; }
     public decimal? Cost { get; init; }
     public required EventStatus Status { get; init; }
     public required EventVisibility Visibility { get; init; }
+
+    /// <summary>Nullable so an omitted value means "leave it as it is": a client
+    /// built before this field existed editing an event must not reopen one the host
+    /// had gated. The host editor sends it explicitly in both directions.</summary>
+    public bool? RequiresJoinApproval { get; init; }
     public IReadOnlyList<string> Tags { get; init; } = [];
 }
 
@@ -90,6 +99,9 @@ internal static class EventUpdateRules
             throw new DomainRuleException("Finish must be after the start.");
         if (request.Latitude is < -90 or > 90 || request.Longitude is < -180 or > 180)
             throw new DomainRuleException("Location coordinates are invalid.");
+        // `is < 2 or > 50` is already null-tolerant - a null matches neither
+        // comparison - so an unlimited event passes without an extra clause. This
+        // is the same shape the Cost rule below relies on.
         if (request.MaxParticipants is < 2 or > 50)
             throw new DomainRuleException("Maximum participants must be between 2 and 50.");
         if (request.Cost is < 0 or > 1000)
@@ -119,6 +131,15 @@ internal static class EventUpdateRules
         entity.Cost = request.Cost;
         entity.Status = request.Status;
         entity.Visibility = request.Visibility;
+        // The host's moderation switch, carried through the same rules the admin
+        // panel and the host editor both use. Nullable so a client that never sends
+        // it leaves the current value alone rather than silently reopening an event
+        // the host had gated.
+        if (request.RequiresJoinApproval is { } approval)
+        {
+            entity.RequiresJoinApproval = approval;
+        }
+
         entity.UpdatedAt = now;
     }
 

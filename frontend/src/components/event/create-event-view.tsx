@@ -643,6 +643,13 @@ function buildDraftPayload(
     address: venue?.address ?? v.address ?? "",
     ...(v.thumbnailUrl?.trim() ? { thumbnailUrl: v.thumbnailUrl.trim() } : {}),
     ...(venue ? { latitude: venue.latitude, longitude: venue.longitude } : {}),
+    // Autosave cannot tell "left empty on purpose" from "not reached yet", and the
+    // draft contract treats an absent field as *missing* - it drives the
+    // missing-field report and the reviewer's flags. So an empty box omits the key
+    // rather than writing an explicit null: an unlimited event still autosaves as
+    // "capacity not stated", which is honest, whereas a deliberate null would make
+    // every half-filled form claim the host chose no limit. The choice is applied
+    // for real by toCreateEventPayload on submit.
     ...(Number.isFinite(spots) && spots >= 2 && spots <= 50 ? { maxParticipants: Math.trunc(spots) } : {}),
     ...(v.cost?.trim() && Number.isFinite(cost) ? { cost } : {}),
     ...(v.description?.trim() ? { description: v.description.trim() } : {}),

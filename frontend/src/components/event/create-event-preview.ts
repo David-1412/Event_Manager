@@ -11,6 +11,7 @@ type Draft = Partial<CreateEventValues>;
 /** The preview needs an `EventListItem`; synthesize one from the draft. */
 export function previewOf(values: Draft, venue: VenueSelection | null): EventListItem {
   const spots = Number(values.maxParticipants);
+  const spotsSet = Number.isFinite(spots) && spots >= 2;
   const cost = Number(values.cost);
   return {
     id: "preview",
@@ -33,7 +34,10 @@ export function previewOf(values: Draft, venue: VenueSelection | null): EventLis
     latitude: venue?.latitude ?? 0,
     longitude: venue?.longitude ?? 0,
     cost: Number.isFinite(cost) && cost > 0 ? cost : null,
-    maxParticipants: Number.isFinite(spots) && spots >= 2 ? spots : 4,
+    // Mirrors the form rather than substituting a number: an empty Spots box means
+    // no limit, and previewing 4 would show the user a capacity they never chose -
+    // and mark the card "1 of 4" when the real event will never fill.
+    maxParticipants: spotsSet ? spots : null,
     joinedCount: 1,
     interestedCount: 0,
     status: "Scheduled",

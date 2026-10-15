@@ -18,6 +18,7 @@ import {
 } from "@/components/map/map-surface";
 import type { MapProps } from "@/components/map/map-types";
 import { cn } from "@/lib/cn";
+import { formatSpotsRatio, isFull as isEventFull } from "@/lib/format";
 
 /** Sport is optional decoration now, but a map pin must show *something*; a
  * calendar reads as "an event" without implying a sport the host never chose. */
@@ -71,6 +72,7 @@ export function EventMap({
       heightClass={variant === "detail" ? "h-[200px]" : "h-full min-h-48"}
       ariaLabel={variant === "detail" ? "Map of venue" : "Map of events"}
       flyToCenterOnChange={variant !== "browse"}
+      onBrowsePanTo={variant === "browse" ? flyTo : null}
       onMapClick={() => onSelect(null)}
       onCameraChanged={(next) => {
         if (!onSearchThisArea || variant !== "browse") return;
@@ -136,12 +138,17 @@ function EventPinMarker({
   onSelect: (id: string) => void;
 }) {
   const supportsAdvanced = useAdvancedMarkerSupport();
+  // One ratio string for all three places it appears (pin badge, both a11y titles),
+  // so an unlimited event reads the same in each and the `full` test below is
+  // derived from the same numbers rather than recomputed per call site.
+  const count = formatSpotsRatio(event.joinedCount, event.maxParticipants);
+  const full = isEventFull(event.joinedCount, event.maxParticipants);
   const visual = (
     <Pin
       icon={event.sportIcon ?? PIN_FALLBACK_ICON}
-      count={`${event.joinedCount}/${event.maxParticipants}`}
+      count={count}
       selected={selected}
-      full={event.joinedCount >= event.maxParticipants}
+      full={full}
     />
   );
 
@@ -149,7 +156,7 @@ function EventPinMarker({
     return (
       <AdvancedMarker
         position={{ lat: event.latitude, lng: event.longitude }}
-        title={`${event.title} ${event.joinedCount}/${event.maxParticipants}`}
+        title={`${event.title} ${count}`}
         onClick={() => onSelect(event.id)}
       >
         {visual}
@@ -159,11 +166,11 @@ function EventPinMarker({
   return (
     <OverlayPin
       position={{ lat: event.latitude, lng: event.longitude }}
-      title={`${event.title} ${event.joinedCount}/${event.maxParticipants}`}
+      title={`${event.title} ${count}`}
       icon={event.sportIcon ?? PIN_FALLBACK_ICON}
-      count={`${event.joinedCount}/${event.maxParticipants}`}
+      count={count}
       selected={selected}
-      full={event.joinedCount >= event.maxParticipants}
+      full={full}
       onClick={() => onSelect(event.id)}
     />
   );

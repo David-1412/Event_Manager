@@ -1,0 +1,11 @@
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/react";
+import { ShareButton } from "@/components/event/share-button";
+
+describe("debug", () => {
+  it("dumps markup", () => {
+    const { container } = render(<ShareButton title="T" description="D" />);
+    console.log("MARKUP>>>" + container.innerHTML + "<<<");
+    expect(true).toBe(true);
+  });
+});

@@ -126,7 +126,7 @@ function TabPanel({
           key={item.id}
           event={item}
           isJoined={my.isJoined(item.id)}
-          action={<CardActions eventId={item.id} />}
+          action={<CardActions eventId={item.id} requiresJoinApproval={item.requiresJoinApproval} />}
         />
       ))}
     </>

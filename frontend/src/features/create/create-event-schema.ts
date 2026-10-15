@@ -38,11 +38,58 @@ export const createEventSchema = z
     thumbnailUrl: z.string().trim().max(400).nullish(),
     latitude: z.number(),
     longitude: z.number(),
-    maxParticipants: z.coerce
-      .number({ message: "Enter how many people can join" })
-      .int("Whole people only")
-      .min(2, "At least 2 people")
-      .max(50, "50 is the maximum for now"),
+    /**
+     * Empty means no limit, so the value is `number | null` rather than a number.
+     *
+     * Three shapes were wrong before this one settled, all worth recording:
+     *
+     *  - `z.coerce.number().optional()` - `z.coerce.number("")` is `0`, which passes
+     *    `.optional()` and stores a capacity of zero: an event born full, the
+     *    opposite of what an empty box means.
+     *  - `z.preprocess(emptyToNull, z.number()...)` - preprocess rewrites "" to null
+     *    and then hands null to a non-nullable number, so it fails as "Invalid
+     *    input" and the empty case never reaches the chain at all.
+     *  - `z.union([z.null(), z.coerce.number()...])` - reads best, but a failed union
+     *    member is reported as a generic "Invalid input" because a union cannot say
+     *    which arm was meant. "Whole people only" and "Enter how many people can
+     *    join" both disappear, and the user is left with a message that names
+     *    nothing. A test caught exactly this.
+     *
+     * So: accept the raw field, then decide in one place. `unknown` is deliberate -
+     * a typed schema here would have to pass the empty string through a number
+     * check to get to the branch that handles it. `superRefine` returns early so a
+     * cleared box does not additionally fail the bounds, and a value that arrives
+     * as numeric text ("10" from an input) is coerced here rather than by the
+     * schema, which is what makes the empty and numeric cases distinguishable.
+     */
+    maxParticipants: z.unknown().superRefine((raw, ctx) => {
+      const add = (message: string) => ctx.addIssue({ code: "custom", message });
+
+      // A number input reports "" when cleared, and null/undefined cover a field
+      // dropped by a draft or an import. All three mean "no limit".
+      if (raw === "" || raw === null || raw === undefined) return;
+
+      const value = Number(raw);
+      if (!Number.isFinite(value)) {
+        add("Enter how many people can join");
+        return;
+      }
+      if (!Number.isInteger(value)) {
+        add("Whole people only");
+        return;
+      }
+      if (value < 2) {
+        add("At least 2 people");
+        return;
+      }
+      if (value > 50) add("50 is the maximum for now");
+    })
+      // Validation above only decides whether the form may be submitted; this is
+      // what the payload actually carries. Without it an empty box would reach the
+      // API as "" instead of null, and "" is not a value the server can store.
+      .transform((raw) =>
+        raw === "" || raw === null || raw === undefined ? null : Number(raw),
+      ),
     cost: z
       .string()
       .trim()
@@ -57,6 +104,10 @@ export const createEventSchema = z
      * set the server accepts.
      */
     visibility: z.enum(["Public", "Private"], { message: "Pick public or private" }),
+
+  /** Opt-in moderation. Defaults false so a form that never shows the control —
+   *  or a draft saved before it existed — produces an open event. */
+  requiresJoinApproval: z.boolean().optional(),
   })
   .superRefine((values, ctx) => {
     const start = new Date(`${values.date}T${values.startTime}`);
@@ -94,12 +145,20 @@ export const CREATE_EVENT_DEFAULTS: CreateEventValues = {
   thumbnailUrl: null,
   latitude: 0,
   longitude: 0,
-  maxParticipants: 4,
+  // No capacity by default: an event the host did not think about should not
+  // quietly cap itself at four, which is what the old default did to every form
+  // submitted without looking at the field.
+  maxParticipants: null,
   cost: "",
   description: "",
   // Public by default: an event the host forgot to think about should be
   // findable, not silently hidden from everyone including their friends.
   visibility: "Public",
+
+  // Open by default, for the opposite reason to the one above: gating joins is a
+  // rule the host has to choose, and a default of true would make an event nobody
+  // thought about impossible to join without anyone telling them why.
+  requiresJoinApproval: false,
 };
 
 /**
@@ -129,10 +188,12 @@ export function toCreateEventPayload(values: z.output<typeof createEventSchema>)
     thumbnailUrl: values.thumbnailUrl?.trim() ? values.thumbnailUrl.trim() : null,
     latitude: values.latitude,
     longitude: values.longitude,
+    // null when the host left Spots empty, which the API stores as "no limit".
     maxParticipants: values.maxParticipants,
     cost,
     description: values.description?.trim() ? values.description.trim() : null,
     visibility: values.visibility,
+    requiresJoinApproval: values.requiresJoinApproval ?? false,
   };
 }
 

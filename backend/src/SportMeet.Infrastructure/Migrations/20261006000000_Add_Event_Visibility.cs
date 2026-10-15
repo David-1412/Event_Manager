@@ -15,7 +15,7 @@ namespace SportMeet.Infrastructure.Migrations;
 /// table, recreate the view. EF cannot snapshot a view, so the view half of a
 /// change like this produces no model diff and has to be spelled out here.
 ///
-/// The new view SQL is a private constant rather than EventViewSql.Definition,
+/// The new view SQL is a private constant rather than EventViewSql.Definition (as
 /// and that is load-bearing rather than stylistic. Definition is replayed by
 /// both Add_Tags and Increase_Event_Title_Length, so a column added to it makes
 /// those *earlier* migrations reference events.visibility before this migration
@@ -27,7 +27,7 @@ namespace SportMeet.Infrastructure.Migrations;
 [Migration("20261006000000_Add_Event_Visibility")]
 public partial class Add_Event_Visibility : Migration
 {
-    /// <summary>EventViewSql.Definition plus e.visibility, appended last: CREATE
+    /// <summary>EventViewSql.Definition (as it stood then) plus e.visibility, appended last: CREATE
     /// OR REPLACE only allows new columns at the end, and here the view is dropped
     /// and recreated anyway.</summary>
     private const string ViewSql = """
@@ -114,6 +114,6 @@ public partial class Add_Event_Visibility : Migration
             table: "events");
 
         // Back to the shape the previous migration left behind.
-        migrationBuilder.Sql(EventViewSql.Definition);
+        migrationBuilder.Sql(EventViewSql.AddEventVisibilityViewLegacy);
     }
 }

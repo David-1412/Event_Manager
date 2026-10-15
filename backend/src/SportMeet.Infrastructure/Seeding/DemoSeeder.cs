@@ -178,6 +178,7 @@ public sealed class DemoSeeder(AppDbContext db, IOptions<DemoUserOptions> option
                 SkillLevel = seed.Skill,
                 Cost = seed.Cost,
                 Status = EventStatus.Scheduled,
+                RequiresJoinApproval = seed.RequiresJoinApproval,
                 CreatedAt = now,
                 UpdatedAt = now,
                 // No EventTags on purpose: tags are user vocabulary and nobody has

@@ -115,5 +115,7 @@ public static class JsonOptionsConfiguration
         options.Converters.Add(new NullableEventVisibilityJsonConverter());
         options.Converters.Add(new UserRoleJsonConverter());
         options.Converters.Add(new NullableUserRoleJsonConverter());
+        options.Converters.Add(new JoinRequestStatusJsonConverter());
+        options.Converters.Add(new NullableJoinRequestStatusJsonConverter());
     }
 }

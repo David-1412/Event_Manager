@@ -25,7 +25,11 @@ export function payloadToFormValues(payload: DraftPayload): CreateEventValues {
     thumbnailUrl: payload.thumbnailUrl ?? "",
     latitude: payload.latitude ?? 0,
     longitude: payload.longitude ?? 0,
-    maxParticipants: payload.maxParticipants ?? 4,
+    // Restored as-is: a draft with no capacity is an unlimited event, and the form
+    // shows an empty box. The old `?? 4` invented a limit for any draft saved
+    // before the field was optional - including every ingested one, since
+    // extraction only sets a capacity when the message actually states it.
+    maxParticipants: payload.maxParticipants ?? null,
     cost: payload.cost != null ? String(payload.cost) : "",
     tags: payload.tags ?? [],
     // An ingested message never says "private", so a draft with no visibility

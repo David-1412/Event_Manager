@@ -67,6 +67,20 @@ export const AUTH_ME_PATH = "/api/auth/me";
  * regardless of what this returned.
  */
 export async function fetchRole(token: string, signal?: AbortSignal): Promise<UserRole | null> {
+  return (await fetchMe(token, signal))?.role ?? null;
+}
+
+/**
+ * `GET /api/auth/me`, reduced to the two fields the session needs: the role, and our
+ * `users.id`. The id matters while `POST /api/auth/login` does not exist — this is then
+ * the only place the client can learn it, and without it every feature keyed on
+ * `user.id` (following, "is this my profile") treats the reader as signed out.
+ * Never throws, for the same reasons as `fetchRole`.
+ */
+export async function fetchMe(
+  token: string,
+  signal?: AbortSignal,
+): Promise<{ id: string | undefined; role: UserRole | null } | null> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   try {
     const response = await fetch(`${base}${AUTH_ME_PATH}`, {
@@ -75,10 +89,14 @@ export async function fetchRole(token: string, signal?: AbortSignal): Promise<Us
     });
     if (!response.ok) return null;
     const dto = (await response.json()) as MeDto;
-    // Guard the wire value: a role outside the union must not reach the badges.
-    return dto.role === "Admin" || dto.role === "Moderator" || dto.role === "Member"
-      ? dto.role
-      : null;
+    return {
+      id: typeof dto.id === "string" && dto.id ? dto.id : undefined,
+      // Guard the wire value: a role outside the union must not reach the badges.
+      role:
+        dto.role === "Admin" || dto.role === "Moderator" || dto.role === "Member"
+          ? dto.role
+          : null,
+    };
   } catch {
     return null;
   }
@@ -118,8 +136,16 @@ export async function establishSession(
   const idToken = await firebaseUser.getIdToken();
   const fallback: Session = { user: toAuthUser(firebaseUser), token: idToken, apiTrusted: false };
   const withRole = async (): Promise<Session> => {
-    const role = await fetchRole(idToken, signal);
-    return role ? { ...fallback, user: { ...fallback.user, role } } : fallback;
+    const me = await fetchMe(idToken, signal);
+    if (!me) return fallback;
+    return {
+      ...fallback,
+      user: {
+        ...fallback.user,
+        ...(me.id ? { id: me.id } : {}),
+        ...(me.role ? { role: me.role } : {}),
+      },
+    };
   };
 
   try {
