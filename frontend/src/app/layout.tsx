@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Viewport } from "next";
 import localFont from "next/font/local";
 import { SiteHeader } from "@/components/layout/site-header";
 import { AuthProvider } from "@/lib/auth/auth-provider";
@@ -21,11 +21,6 @@ const inter = localFont({
   variable: "--font-sans",
   display: "swap",
 });
-
-export const metadata: Metadata = {
-  title: { default: "MonaHub", template: "%s · MonaHub" },
-  description: "MonaHub helps you find and join local sports games near you.",
-};
 
 export const viewport: Viewport = {
   themeColor: [

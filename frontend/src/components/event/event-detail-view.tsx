@@ -95,9 +95,9 @@ function DetailBody({ event }: { event: EventDetail }) {
       event.maxParticipants === null
         ? `${event.joinedCount} joined`
         : `${event.joinedCount}/${event.maxParticipants}`
-    }) ┬╖ MonaHub`;
+    }) ┬╖ Monafy`;
     return () => {
-      document.title = "MonaHub";
+      document.title = "Monafy";
     };
   }, [event.title, event.joinedCount, event.maxParticipants]);
 

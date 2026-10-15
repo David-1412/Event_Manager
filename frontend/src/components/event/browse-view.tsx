@@ -319,13 +319,7 @@ export function BrowseView() {
             : cn(SPLIT_LIST_WIDTH, "lg:border-r lg:border-border"),
         )}
       >
-        <div className="px-4 pb-3 pt-5 lg:px-6">
-          <h1 className="text-h1 text-fg">MonaHub</h1>
-          <p className="mt-1 text-meta text-fg-muted">
-            Connect, Join, and Discover Campus Life at Monash University.
-          </p>
-          <h2 className="sr-only">{heading}</h2>
-        </div>
+        <h2 className="sr-only">{heading}</h2>
         <FilterBar
           query={query}
           onPatch={patch}
