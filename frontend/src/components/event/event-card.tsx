@@ -85,7 +85,7 @@ export interface EventCardProps {
 export type EventCardDensity = "default" | "compact";
 
 /**
- * Variant priority (spec Â§7): cancelled > pending-review > mine (hosting) >
+ * Variant priority (spec §7): cancelled > pending-review > mine (hosting) >
  * joined > full > one-spot > open. `past` is only ever passed explicitly by /my-events.
  *
  * Pending-review outranks `mine` deliberately. A public event a regular user
@@ -144,9 +144,9 @@ export function EventCard({
       >
         <span aria-hidden>{icon}</span>
         <span className="truncate">
-          {tagLine} Â· {formatCardWhen(event)}
+          {tagLine} · {formatCardWhen(event)}
         </span>
-        {/* reserved slot for the post-MVP rating control (spec Â§8) */}
+        {/* reserved slot for the post-MVP rating control (spec §8) */}
         <span aria-hidden className="ml-auto text-micro uppercase">
           Rate
         </span>
@@ -157,7 +157,7 @@ export function EventCard({
   const countLabel = spotsTakenSentence(event.joinedCount, event.maxParticipants);
   // The when-line is rendered separately in brand colour (see below) so the time
   // reads as the card's key fact; distance and cost stay in the muted meta line.
-  const meta = [formatDistance(event.distanceKm), formatCost(event.cost)].join(" Â· ");
+  const meta = [formatDistance(event.distanceKm), formatCost(event.cost)].join(" · ");
 
   // Two interaction models share this component.
   //
@@ -207,7 +207,7 @@ export function EventCard({
           "press group relative flex flex-1 overflow-hidden rounded-md border border-border bg-surface",
           compact ? "flex-row p-3" : "flex-col md:flex-row",
         ),
-        // hover lifts by translation only â€” `scale` would reflow the grid (spec Â§7)
+        // hover lifts by translation only — `scale` would reflow the grid (spec §7)
         "hover:-translate-y-0.5 hover:shadow-raise transition-[transform,box-shadow] duration-200",
         kind === "mine" && "border-l-[3px] border-l-brand-600",
         // Not muted like cancelled/ended: a pending event is live-in-waiting, not
@@ -381,7 +381,7 @@ export function EventCard({
 }
 
 /**
- * The poster panel â€” the card's dominant visual. On mobile a full-width banner
+ * The poster panel — the card's dominant visual. On mobile a full-width banner
  * above the details; at >=768px a fixed 280px column (roughly a third of the
  * card) that fills the card's full
  * height on the right. The compact card reuses this for its square thumbnail.
@@ -487,7 +487,7 @@ function Count({
       <span data-count aria-hidden>
         {formatSpotsRatio(event.joinedCount, event.maxParticipants)}
       </span>
-      <span className="sr-only"> â€” {spotsTakenSentence(event.joinedCount, event.maxParticipants)}</span>
+      <span className="sr-only"> — {spotsTakenSentence(event.joinedCount, event.maxParticipants)}</span>
     </span>
   );
 }
@@ -539,7 +539,7 @@ function SocialProof({
 /**
  * The two count lines the browse card shows (spec): joined against capacity, and
  * interested as a standalone tally. Interest reserves no spot, so it is shown
- * beside â€” never summed into â€” the joined number.
+ * beside — never summed into — the joined number.
  */
 function Tally({ event }: { event: EventListItem }) {
   return (
