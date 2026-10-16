@@ -15,10 +15,11 @@ services:
     environment:
       POSTGRES_DB: sportmeet
       POSTGRES_USER: sportmeet
-      # Dev-only credential. Deliberately not secret-managed: this database only
-      # ever holds throwaway local data, and real deployments get their
-      # connection string from Key Vault (IMPLEMENTATION_PLAN.md §7).
-      POSTGRES_PASSWORD: sportmeet
+      # `sportmeet` is the local dev default. The VPS sets POSTGRES_PASSWORD in its
+      # .env, and the api connection string below reads the same variable, so even
+      # a deploy that runs this file alone (without docker-compose.prod.yml)
+      # connects with the real password instead of failing at startup.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sportmeet}
       # Force UTC so the container clock matches the API host clock. Seeded demo
       # events are generated relative to "now", and a zone mismatch would shift
       # every event by the offset (e.g. Melbourne AEST is UTC+10).
@@ -68,7 +69,7 @@ services:
     # database is `postgres`, not `localhost`.
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=sportmeet;Username=sportmeet;Password=sportmeet"
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=sportmeet;Username=sportmeet;Password=${POSTGRES_PASSWORD:-sportmeet}"
       # The demo identity, overridable so the two sides of a moderated join can be
       # tested without editing a tracked file: DEMO_AS_USER_ID=<host id> brings the
       # stack up as that host (their events then render the Join requests panel and
