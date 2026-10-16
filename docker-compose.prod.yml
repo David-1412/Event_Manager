@@ -1,0 +1,49 @@
+# Production overrides for the VPS, layered on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# (or set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in the VPS .env
+# so a plain `docker compose ...` picks both up). The base file stays the local
+# demo stack; this file changes only what is unsafe on a public host.
+#
+# Required in the VPS .env - compose refuses to start with a clear error if any
+# is missing, rather than silently falling back to a dev default:
+#   POSTGRES_PASSWORD   database password (hex, e.g. `openssl rand -hex 24`)
+#   FIREBASE_PROJECT_ID must match NEXT_PUBLIC_FIREBASE_PROJECT_ID
+#   Cors__Origins__0    the site's public origin, e.g. http://<ip>:3000
+#   NEXT_PUBLIC_API_BASE_URL  the API's public origin, e.g. http://<ip>:5000
+services:
+  postgres:
+    environment:
+      # Only read when the data volume is first initialised. On an existing
+      # volume, change the live password with ALTER USER as well (see README).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    # Not published at all: the API reaches the database over the compose network
+    # as `postgres:5432`, and nothing outside the host has any reason to.
+    ports: !reset []
+
+  api:
+    environment:
+      # Production: no Swagger UI, no Development error detail, Information-level
+      # logging rather than Debug.
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=sportmeet;Username=sportmeet;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      # Migrations still apply on deploy (Production defaults AutoMigrate off);
+      # demo data is never seeded into the live database.
+      Database__AutoMigrate: "true"
+      Database__SeedDemoData: "false"
+      # No demo identity: every write needs a verified Firebase token.
+      Demo__AsUserId: ""
+      Firebase__ProjectId: ${FIREBASE_PROJECT_ID:?set FIREBASE_PROJECT_ID in .env}
+      Cors__Origins__0: ${Cors__Origins__0:?set Cors__Origins__0 in .env}
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build:
+      args:
+        # The browser calls this, so a localhost fallback would ship a site that
+        # only works on the server itself.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?set NEXT_PUBLIC_API_BASE_URL in .env}
+    security_opt:
+      - no-new-privileges:true

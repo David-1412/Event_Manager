@@ -4,9 +4,10 @@
 # the check) but never receives registry credentials, which keeps them
 # unavailable to workflows from forks.
 #
-# Deploy reads those images from GHCR and updates the production Compose stack
-# on the VPS after smoke tests pass. The production environment supplies the SSH
-# host, user, key, and known-hosts secrets.
+# Deploy runs after smoke tests pass: it fast-forwards the VPS checkout to the
+# tested commit and rebuilds there with docker-compose.prod.yml, because the web
+# bundle compiles in NEXT_PUBLIC_* values that only the VPS .env holds. The
+# production environment supplies the SSH host, user, key, and known-hosts secrets.
 name: ci
 
 on:
@@ -197,24 +198,24 @@ jobs:
           echo "$html" | grep -qi '<html' || { echo "web did not serve HTML"; exit 1; }
           echo "web served $(echo "$html" | wc -c) bytes of HTML"
 
+  # Builds on the VPS rather than pulling the GHCR images: the web bundle compiles
+  # in NEXT_PUBLIC_* values (API origin, Firebase project, Maps key) that live only
+  # in the VPS .env, so an image built here in CI would point browsers at the wrong
+  # API. The images/smoke jobs above still gate this on a build that actually runs.
   deploy:
     runs-on: ubuntu-latest
     needs: [smoke]
     if: github.ref == 'refs/heads/main'
     environment: production
+    # One deploy at a time; a queued one waits instead of racing the running one.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     permissions:
       contents: read
-      packages: read
     env:
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/docker/Monafy' }}
     steps:
-      - name: Normalize image names
-        id: image-names
-        run: |
-          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
-          echo "api_image=ghcr.io/$owner/sportmeet-api" >> "$GITHUB_OUTPUT"
-          echo "web_image=ghcr.io/$owner/sportmeet-web" >> "$GITHUB_OUTPUT"
-
       - name: Deploy to VPS
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -222,10 +223,6 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          API_IMAGE: ${{ steps.image-names.outputs.api_image }}
-          WEB_IMAGE: ${{ steps.image-names.outputs.web_image }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
         run: |
           set -Eeuo pipefail
 
@@ -238,6 +235,7 @@ jobs:
 
           keyfile="$RUNNER_TEMP/Monafy-deploy-key"
           known_hosts_file="$RUNNER_TEMP/Monafy-known-hosts"
+          trap 'rm -f "$keyfile" "$known_hosts_file"' EXIT
           printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$keyfile"
           chmod 600 "$keyfile"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$known_hosts_file"
@@ -249,28 +247,36 @@ jobs:
             -o BatchMode=yes
             -o StrictHostKeyChecking=yes
             -o UserKnownHostsFile="$known_hosts_file"
+            # The build runs inside this session for several minutes.
+            -o ServerAliveInterval=30
           )
-          target="$DEPLOY_USER@$DEPLOY_HOST"
-          cleanup() {
-            ssh "${ssh_options[@]}" "$target" "docker logout ghcr.io" >/dev/null 2>&1 || true
-            rm -f "$keyfile" "$known_hosts_file"
-          }
-          trap cleanup EXIT
 
-          printf '%s' "$GHCR_TOKEN" |
-            ssh "${ssh_options[@]}" "$target" \
-              "docker login ghcr.io --username $(printf '%q' "$GHCR_USER") --password-stdin"
-
-          remote_command="bash -s -- $(printf '%q' "$API_IMAGE:$GITHUB_SHA") $(printf '%q' "$WEB_IMAGE:$GITHUB_SHA") $(printf '%q' "$DEPLOY_PATH")"
-          ssh "${ssh_options[@]}" "$target" "$remote_command" <<'REMOTE'
+          remote_command="bash -s -- $(printf '%q' "$GITHUB_SHA") $(printf '%q' "$DEPLOY_PATH")"
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "$remote_command" <<'REMOTE'
           set -Eeuo pipefail
-          api_image="$1"
-          web_image="$2"
-          deploy_path="$3"
+          sha="$1"
+          deploy_path="$2"
           cd "$deploy_path"
-          [[ -f docker-compose.yml ]] || { echo "docker-compose.yml not found in $deploy_path" >&2; exit 1; }
-          export API_IMAGE="$api_image" WEB_IMAGE="$web_image"
-          docker compose pull api web
-          docker compose up -d --wait --wait-timeout 180
-          docker compose ps
+          [[ -d .git ]] || { echo "$deploy_path is not a git checkout" >&2; exit 1; }
+          [[ -f .env ]] || { echo "$deploy_path/.env is missing" >&2; exit 1; }
+
+          # Hand edits to tracked files on the server would be silently built
+          # into production, so refuse instead. .env is untracked and unaffected.
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+            echo "Tracked files were modified on the server; commit them or run 'git checkout -- .':" >&2
+            git status --short --untracked-files=no >&2
+            exit 1
+          fi
+
+          # Exactly the commit CI tested, forward-only: a diverged checkout fails
+          # rather than being overwritten, and an older run never rolls back a newer one.
+          git fetch --quiet origin main
+          git merge --ff-only --quiet "$sha"
+          echo "Deploying $(git rev-parse --short HEAD)"
+
+          compose=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
+          "${compose[@]}" config --quiet
+          "${compose[@]}" up -d --build --wait --wait-timeout 300
+          "${compose[@]}" ps
+          docker image prune -f >/dev/null
           REMOTE

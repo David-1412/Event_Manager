@@ -89,7 +89,7 @@ Docker network.
 | `backend` | push, PR | `dotnet restore --locked-mode`, `dotnet build` (Release) |
 | `images` | after both | `docker buildx bake` of `docker-compose.yml`, pushed to GHCR on `main` only |
 | `smoke` | `main` only | pulls the **published images**, runs the stack, checks `/healthz`, `/api/events`, and web HTML |
-| `deploy` | `main` only | placeholder that **fails on purpose** until you fill it in |
+| `deploy` | `main` only | SSHes to the VPS, fast-forwards `/docker/Monafy` to the tested commit, rebuilds with `docker-compose.prod.yml` |
 
 PRs get a full image build but never receive registry credentials, so a fork cannot
 push images.
@@ -111,6 +111,36 @@ $env:WEB_IMAGE = "ghcr.io/<owner>/sportmeet-web"
 
 Before a PR, run `npm run verify` locally — CI gates on it, and it caught a real
 failure the first time it ran.
+
+### Production (VPS)
+
+The VPS builds its own images: `NEXT_PUBLIC_*` values are compiled into the web
+bundle, and only the VPS `.env` has the real ones. `/docker/Monafy` is a git
+checkout of this repo plus an untracked `.env`; `docker-compose.prod.yml` layers
+the production settings on top of `docker-compose.yml` — `Production` environment
+(no Swagger), no demo identity, no demo seed, Postgres not published, and a real
+database password. It refuses to start if any of these `.env` values is missing:
+
+```
+POSTGRES_PASSWORD=<openssl rand -hex 24>
+FIREBASE_PROJECT_ID=<same as NEXT_PUBLIC_FIREBASE_PROJECT_ID>
+Cors__Origins__0=http://<server>:3000
+NEXT_PUBLIC_API_BASE_URL=http://<server>:5000
+COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+```
+
+`COMPOSE_FILE` makes a plain `docker compose ...` on the server use both files.
+`POSTGRES_PASSWORD` is only applied when the data volume is first created; on an
+existing volume, change the live password to match before deploying:
+
+```bash
+docker exec sportmeet-postgres psql -U sportmeet -d sportmeet \
+  -c "ALTER USER sportmeet WITH PASSWORD '<the same value>';"
+```
+
+The `deploy` job needs `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` and
+`DEPLOY_KNOWN_HOSTS` (optionally `DEPLOY_PORT`) in the **production** environment,
+and refuses to deploy over hand-edited tracked files on the server.
 
 ## Run it without Docker
 
