@@ -28,6 +28,7 @@ import {
   formatDistance,
   formatFullDate,
   formatTimeRange,
+  isFull as isEventFull,
   spotsLeft,
 } from "@/lib/format";
 import type { EventDetail } from "@/types/events";
@@ -94,7 +95,10 @@ function DetailBody({ event }: { event: EventDetail }) {
   const secondsUntilStart = Math.floor(
     (new Date(event.startAt).getTime() - now) / 1000,
   );
-  const isFull = event.joinedCount >= event.maxParticipants;
+  // `isFull` from lib/format rather than a raw comparison: maxParticipants is
+  // nullable, and `joinedCount >= null` coerces to `>= 0`, which would report
+  // every unlimited event as full.
+  const isFull = isEventFull(event.joinedCount, event.maxParticipants);
   const requiresApproval = event.requiresJoinApproval === true;
   const isRequestPending = event.myJoinRequestStatus === "Pending";
   const derived = deriveJoinState({
