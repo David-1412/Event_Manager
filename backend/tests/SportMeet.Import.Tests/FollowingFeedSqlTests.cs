@@ -149,3 +149,4 @@ public sealed class FollowingFeedSqlTests
 
     private static EventQueryModel NarrowedBy(Guid viewer) => new() { FollowedByUserId = viewer };
 
+}

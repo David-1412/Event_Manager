@@ -150,6 +150,15 @@ public static class DependencyInjection
         // The demo identity is configuration, never a constant: unset Demo:AsUserId
         // and the API has no identity at all.
         services.Configure<DemoUserOptions>(config.GetSection(DemoUserOptions.SectionName));
+        // An explicitly empty value (production's `Demo__AsUserId: ""`) means "off".
+        // Stated here rather than left to the binder, whose handling of an empty
+        // string for a nullable has varied between versions - and the fallback it
+        // would keep is the seeded participant, i.e. a live demo login.
+        services.PostConfigure<DemoUserOptions>(options =>
+        {
+            var configured = config[$"{DemoUserOptions.SectionName}:{nameof(DemoUserOptions.AsUserId)}"];
+            if (configured is not null && string.IsNullOrWhiteSpace(configured)) options.AsUserId = null;
+        });
         services.Configure<SportMeet.Application.Ingestion.FirebaseOptions>(
             config.GetSection(SportMeet.Application.Ingestion.FirebaseOptions.SectionName));
         services.AddHttpContextAccessor();
