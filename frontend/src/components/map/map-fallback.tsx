@@ -39,7 +39,7 @@ export function MapFallback({
   );
 }
 
-/** Mini card inside the InfoWindow: title, count, when (spec §7). */
+/** Mini card inside the InfoWindow: title, count, when, where (spec §7). */
 export function MapInfoCard({ event }: { event: EventListItem }) {
   return (
     <div className="flex w-52 flex-col gap-1 p-1 text-fg">
@@ -60,6 +60,9 @@ export function MapInfoCard({ event }: { event: EventListItem }) {
       <span className="text-micro uppercase text-fg-muted">
         {formatTimeRange(event.startAt, event.endAt)}
       </span>
+      {event.venueName?.trim() && (
+        <span className="truncate text-meta text-fg-muted">{event.venueName}</span>
+      )}
     </div>
   );
 }

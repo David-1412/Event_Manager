@@ -41,6 +41,7 @@ export function EventMap({
   events,
   selectedEventId,
   onSelect,
+  onOpen,
   onSearchThisArea,
   variant = "browse",
   className,
@@ -117,7 +118,20 @@ export function EventMap({
               onCloseClick={() => onSelect(null)}
               ariaLabel={`Details for ${event.title}`}
             >
-              <MapInfoCard event={event} />
+              {onOpen ? (
+                // The popup is the selected event's preview, so it is also the
+                // way into it - the same second step as tapping the card again.
+                <button
+                  type="button"
+                  onClick={() => onOpen(event.id)}
+                  className="block cursor-pointer rounded-sm text-left hover:bg-surface-2"
+                  aria-label={`Open ${event.title}`}
+                >
+                  <MapInfoCard event={event} />
+                </button>
+              ) : (
+                <MapInfoCard event={event} />
+              )}
             </InfoWindow>
           ))}
     </MapSurface>

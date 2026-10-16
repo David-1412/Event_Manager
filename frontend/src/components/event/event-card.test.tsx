@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { EventPreviewPanel } from "@/components/event/event-preview-panel";
 import { EventCard, eventCardVariant } from "@/components/event/event-card";
 import { isPublishedStatus } from "@/types/events";
 import type { EventListItem } from "@/types/events";
@@ -177,62 +176,6 @@ describe("EventCard activation", () => {
 });
 
 /**
- * The preview's host line.
- *
- * The host arrives on the feed row, so the panel must never invent one. It used
- * to fall back to "Monash Sport", which is a real club name and therefore reads
- * as a true statement rather than a gap - a preview that attributes an event to
- * the wrong person is worse than one that admits it has no host.
- */
-describe("EventPreviewPanel host", () => {
-  function renderPanel(overrides: Partial<EventListItem> = {}) {
-    render(
-      <EventPreviewPanel
-        event={item(overrides)}
-        onOpen={vi.fn()}
-        onClose={vi.fn()}
-      />,
-    );
-  }
-
-  it("names the host from the feed row", () => {
-    renderPanel({ hostName: "Priya Raman", hostPhotoUrl: null });
-    expect(screen.getByRole("complementary").textContent).toContain("Priya Raman");
-  });
-
-  it("renders the host photo when the feed row carries one", () => {
-    renderPanel({ hostName: "Priya Raman", hostPhotoUrl: "/uploads/priya.png" });
-    const img = screen.getByTitle("Priya Raman").querySelector("img");
-    expect(img).not.toBeNull();
-    expect(img?.getAttribute("src")).toContain("/uploads/priya.png");
-  });
-
-  it("falls back to initials, not a broken image, when there is no photo", () => {
-    renderPanel({ hostName: "Priya Raman", hostPhotoUrl: null });
-    expect(screen.getByTitle("Priya Raman")).toHaveTextContent("PR");
-    expect(screen.getByTitle("Priya Raman").querySelector("img")).toBeNull();
-  });
-
-  it("never substitutes a placeholder club name", () => {
-    renderPanel({ hostName: null });
-    const text = screen.getByRole("complementary").textContent ?? "";
-    expect(text).not.toMatch(/Monash Sport/i);
-  });
-
-  it("says so when the feed row has no host", () => {
-    renderPanel({ hostName: null });
-    const panel = screen.getByRole("complementary");
-    expect(panel.textContent).toContain("Not stated");
-    expect(panel.textContent).not.toContain("Priya");
-  });
-
-  it("treats a whitespace-only name as no host", () => {
-    renderPanel({ hostName: "   " });
-    expect(screen.getByRole("complementary").textContent).toContain("Not stated");
-  });
-});
-
-/**
  * The compact density the browse redesign uses. What matters here is not pixels
  * but the contract that makes the density safe to ship on a shared component:
  * `default` must render exactly what it always did, and `compact` must move the
@@ -375,8 +318,8 @@ describe("EventCard compact thumbnail", () => {
   it("is a square that scales up at lg rather than a fixed 56px box", () => {
     const cls = thumbClasses();
     expect(cls).toContain("aspect-square");
-    expect(cls).toContain("w-20");
-    expect(cls).toContain("lg:w-32");
+    expect(cls).toContain("w-28");
+    expect(cls).toContain("lg:w-44");
     // The old fixed pair must not come back alongside the aspect ratio.
     expect(cls).not.toMatch(/h-14/);
   });

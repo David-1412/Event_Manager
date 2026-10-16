@@ -14,7 +14,6 @@ import {
   type BrowseMapMode,
 } from "@/components/event/browse-layout";
 import { VirtualizedCardList } from "@/components/event/virtualized-card-list";
-import { EventPreviewPanel } from "@/components/event/event-preview-panel";
 import { FilterBar } from "@/components/event/filter-bar";
 import { EventMap } from "@/components/map/event-map";
 import { EmptyState, ErrorState } from "@/components/state/empty-error";
@@ -56,78 +55,59 @@ export function BrowseView() {
   const following = useFollowingEvents(params, followingTabActive);
   const joined = useJoinedEvents();
   // One list for the whole view: the Following tab's rows when active, the
-  // browse rows otherwise. Everything downstream (selection, map, preview,
-  // empty state) reads `items` and so applies to both feeds unchanged — which is
+  // browse rows otherwise. Everything downstream (selection, map, empty state) reads `items` and so applies to both feeds unchanged — which is
   // the point of narrowing the query server-side rather than forking the page.
   const { items, totalCount, error, isLoading, mutate } = followingTabActive ? following : browse;
   const { tags: popularTags } = usePopularTags();
   const geo = useGeolocation();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [mapSheetOpen, setMapSheetOpen] = useState(false);
-  // Whether the mobile preview sheet is showing. Kept separate from the
-  // selection itself because the two diverge: closing the sheet leaves the card
-  // selected (and the map where it panned), and a second tap on that card should
-  // open the sheet back up rather than do nothing.
-  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
-  // Desktop map visibility, toggled from the filter bar. Open by default so the
-  // split list+map layout (spec §6) is what a first visit shows; closing it lets
-  // the list take the full width. The mobile sheet has its own open state.
   // Desktop map mode, toggled from the filter bar. "none" is the default now: the
   // split used to be permanently open, which spent 40% of the viewport on a map
   // most browsing never looks at. "split" is that old layout, still one tap away.
   // The mobile sheet keeps its own open state - it is a different control.
   //
   // This is also what decides what a card tap does: with the map open a tap
-  // previews the event in the map column, with it closed a tap opens the event.
+  // focuses the event on the map, with it closed a tap opens the event.
   // See `selectEvent`.
   const [mapMode, setMapMode] = useState<BrowseMapMode>("none");
   // List vs grid. Local state rather than a URL param on purpose: it is a display
   // preference, not a description of which events are being looked at, so it must
   // not become a history entry and must survive Back.
   const [mode, setMode] = useState<BrowseLayoutMode>("list");
-  // The `lg` breakpoint, so this component knows whether the preview panel it is
-  // about to populate actually exists. See `selectEvent`.
+  // The `lg` breakpoint: the map column only renders from here up, so below it
+  // the list is never beside a visible map. See `selectEvent`.
   const isWide = useMediaQuery(LG_MIN_WIDTH_QUERY);
+  const mapVisible = isWide && mapMode !== "none";
 
   // Selection is browse-local state keyed by event id: it is not a filter, so it
   // deliberately stays out of the URL and survives nothing but a page reload.
-  //
-  // `?? null` rather than trusting the id: the list is live and an event can
-  // disappear underneath the selection (cancelled, unlisted, paged out). The
-  // panel renders from `selectedEvent`, never from the id, so a vanished event
-  // closes the panel on its own without a second state to keep in sync.
-  const selectedEvent = items?.find((event) => event.id === selectedEventId) ?? null;
+  // The map renders its popup from the id against the live list, so an event
+  // that disappears underneath the selection simply loses its popup.
 
   // Both are memoised because every card sits behind a memo boundary, and a
   // callback that is new each render would make that boundary useless: the list
   // would re-render all ~100 cards on any state change in this component, which
   // is precisely the re-render cost the virtualisation exists to avoid.
   //
-  // What a tap means depends on whether the map is open.
+  // What a tap means depends on whether the map is visible.
   //
-  // Map open: the preview has somewhere to live, so a tap previews the event
-  // beside the map and a second tap on the same card opens it (the two-stage
-  // contract EventCard implements).
+  // Map visible: a tap focuses the event on the map - pans to its pin and opens
+  // the pin's popup - and a second tap on the same card opens it (the two-stage
+  // contract EventCard implements). The popup itself also opens the event.
   //
-  // Map closed: there is no panel to preview into on a wide screen, so a tap
-  // goes straight to the event. Leaving it to select would look like a dead
-  // click. Mobile keeps the sheet in both cases - it is the preview surface the
-  // narrow viewport has room for, and it is not the thing being toggled here.
+  // Map hidden (including every narrow viewport, where the map lives in a sheet
+  // that covers the list): there is nothing to focus, so a tap goes straight to
+  // the event. Selecting would look like a dead click.
   const selectEvent = useCallback(
     (id: string) => {
-      if (mapMode === "none") {
-        setSelectedEventId(null);
-        if (!isWide) {
-          setMobilePreviewOpen(true);
-          return;
-        }
+      if (!mapVisible) {
         router.push(`/events/${id}`);
         return;
       }
       setSelectedEventId(id);
-      setMobilePreviewOpen(true);
     },
-    [isWide, mapMode, router],
+    [mapVisible, router],
   );
   const openEvent = useCallback(
     (id: string) => router.push(`/events/${id}`),
@@ -143,7 +123,7 @@ export function BrowseView() {
 
   /**
    * A filter change drops the selection. The selected event may simply not be in
-   * the new result set, and a preview panel describing an event that is no longer
+   * the new result set, and a popup describing an event that is no longer
    * listed - while its card is nowhere to highlight - is worse than no selection.
    *
    * Done in the handlers rather than an effect on `params` because every filter
@@ -155,12 +135,17 @@ export function BrowseView() {
    */
   function clearSelection() {
     setSelectedEventId(null);
-    setMobilePreviewOpen(false);
   }
 
   function patch(partial: Partial<EventQuery>) {
-    const next = patchQuery(query, partial);
     clearSelection();
+    navigate(partial);
+  }
+  // The URL half of `patch`. The dispatched `popstate` reaches the listener below,
+  // which clears the selection on its own - so this is what an effect calls, where
+  // a synchronous setState would be a cascading render.
+  function navigate(partial: Partial<EventQuery>) {
+    const next = patchQuery(query, partial);
     startTransition(() => {
       window.history.pushState(null, "", `/${writeQuery(next)}`);
       window.dispatchEvent(new PopStateEvent("popstate"));
@@ -187,7 +172,7 @@ export function BrowseView() {
   // (spec §8). Deliberately after render, never while the user is mid-tap.
   useEffect(() => {
     if (geo.status === "granted" && query.radiusKm && query.sort !== "distance") {
-      patch({ sort: "distance" });
+      navigate({ sort: "distance" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geo.status, query.radiusKm]);
@@ -353,10 +338,10 @@ export function BrowseView() {
           redesign.
 
           The map fills the column top to bottom, which is what "show the map"
-          asks for. It used to be a fixed 160/256px strip with the preview stacked
-          above it, so the map read as a footnote parked in the corner. The preview
-          is an overlay now rather than a sibling: any block that takes its own
-          share of the column height necessarily takes it away from the map. */}
+          asks for. It used to be a fixed 160/256px strip with a preview stacked
+          above it, so the map read as a footnote parked in the corner. The
+          selected event's details live in the pin's own popup, so the map gives
+          up no height to them. */}
       {mapMode !== "none" && (
         <div
           className={cn(
@@ -370,58 +355,18 @@ export function BrowseView() {
               events={items ?? []}
               selectedEventId={selectedEventId}
               onSelect={setSelectedEventId}
+              onOpen={openEvent}
               className="h-full"
             />
-            {/* The preview floats over the map it belongs to, so reading an event
-                costs the map no height. */}
-            {selectedEvent && (
-              <EventPreviewPanel
-                key={selectedEvent.id}
-                event={selectedEvent}
-                onOpen={openEvent}
-                onClose={() => setSelectedEventId(null)}
-                className="absolute inset-x-3 bottom-3 z-10 max-h-[55%] min-h-0"
-              />
-            )}
           </div>
         </div>
       )}
-
-      {/* Mobile preview drawer. A tap on a card selects it, which is also what
-          opens this - the narrow viewport has no room for a side panel, so the
-          same selection surfaces as a bottom sheet instead.
-
-          The map sheet below keeps its own open state: the two are alternate
-          views of the same selection, never open at once, and opening one has to
-          close the other or they stack into an unreadable pile. */}
-      <Dialog
-        open={mobilePreviewOpen}
-        onClose={() => setMobilePreviewOpen(false)}
-        labelledBy="event-preview-title"
-        variant="sheet"
-      >
-        <h2 id="event-preview-title" className="sr-only">
-          {selectedEvent ? `Preview of ${selectedEvent.title}` : "Event preview"}
-        </h2>
-        {selectedEvent && (
-          <EventPreviewPanel
-            key={selectedEvent.id}
-            event={selectedEvent}
-            onOpen={openEvent}
-            onClose={() => setMobilePreviewOpen(false)}
-            className="border-0 bg-transparent shadow-none"
-          />
-        )}
-      </Dialog>
 
       {/* Mobile collapsed map sheet expanding to 60vh (spec §6). */}
       <div className="sticky bottom-0 z-20 lg:hidden">
         <button
           type="button"
-          onClick={() => {
-            setMobilePreviewOpen(false);
-            setMapSheetOpen(true);
-          }}
+          onClick={() => setMapSheetOpen(true)}
           className="press flex h-12 w-full items-center justify-center gap-2 border-t border-border bg-surface text-meta font-medium text-fg"
           aria-haspopup="dialog"
           aria-expanded={mapSheetOpen}
@@ -442,16 +387,8 @@ export function BrowseView() {
           <EventMap
             events={items ?? []}
             selectedEventId={selectedEventId}
-            onSelect={(id) => {
-              setSelectedEventId(id);
-              // Tapping a pin is a selection, and on mobile a selection is shown
-              // in the preview sheet - so swap sheets rather than closing into
-              // nothing. Selecting the already-selected pin just dismisses.
-              if (id) {
-                setMapSheetOpen(false);
-                setMobilePreviewOpen(true);
-              }
-            }}
+            onSelect={setSelectedEventId}
+            onOpen={openEvent}
           />
         </div>
       </Dialog>

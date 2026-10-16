@@ -1,7 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { HostLink, profileHref } from "@/components/profile/host-link";
-import { EventPreviewPanel } from "@/components/event/event-preview-panel";
 import { EventCard } from "@/components/event/event-card";
 import { RoleBadge, isCreatorRole } from "@/components/admin/role-badge";
 import type { EventListItem } from "@/types/events";
@@ -118,24 +117,6 @@ describe("isCreatorRole", () => {
     expect(isCreatorRole("Member")).toBe(false);
     expect(isCreatorRole(null)).toBe(false);
     expect(isCreatorRole(undefined)).toBe(false);
-  });
-});
-
-describe("EventPreviewPanel host link", () => {
-  function renderPanel(overrides: Partial<EventListItem> = {}) {
-    render(<EventPreviewPanel event={item(overrides)} onOpen={vi.fn()} onClose={vi.fn()} />);
-  }
-
-  it("links the host line to the profile when the row carries a host id", () => {
-    renderPanel({ hostName: "Priya Raman", hostPhotoUrl: null, hostId: "u-42" });
-    const link = screen.getByRole("link", { name: /Priya Raman/ });
-    expect(link.getAttribute("href")).toBe("/profile/u-42");
-  });
-
-  it("keeps naming the host without a link when the row has no host id", () => {
-    renderPanel({ hostName: "Priya Raman", hostPhotoUrl: null });
-    expect(screen.queryByRole("link", { name: /Priya Raman/ })).toBeNull();
-    expect(screen.getByRole("complementary").textContent).toContain("Priya Raman");
   });
 });
 

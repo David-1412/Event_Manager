@@ -64,13 +64,13 @@ export interface EventCardProps {
    * page and the create preview have always rendered, and what they keep.
    *
  * `compact` is the browse card: the poster becomes a square thumbnail leading
- * the row (80px on mobile, 128px from `lg` up) and vertically centred against
+ * the row (112px on mobile, 176px from `lg` up) and vertically centred against
  * the text, the social proof moves up under the title, and the vertical rhythm
  * tightens so a screenful still holds 6-8 events.
  *
  * The thumbnail stays smaller than the `default` poster on purpose. It is a row
  * leader, not a banner: row height is what a screenful of events is divided by,
- * so the image can only grow by making every card taller. 128px is where those
+ * so the image can only grow by making every card taller. 176px is where those
  * two pressures balance - big enough to recognise an event by its art at a
  * glance, small enough that the list still reads as a list.
    *
@@ -423,7 +423,7 @@ function Poster({
         // shrink-0 is load-bearing - the text column is min-w-0 and flex-1, so
         // without it the thumbnail absorbs the squeeze and stops being square.
         thumb
-          ? "order-first aspect-square w-20 shrink-0 self-center rounded-md mr-3 lg:w-32"
+          ? "order-first aspect-square w-28 shrink-0 self-center rounded-md mr-3 lg:w-44"
           : "order-first h-48 w-full md:order-none md:h-auto md:w-70",
       )}
     >

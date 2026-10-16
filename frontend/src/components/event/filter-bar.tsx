@@ -66,7 +66,10 @@ export function FilterBar({
   return (
     <div
       className={cn(
-        "sticky top-14 z-20 border-b border-border bg-surface px-4 py-3",
+        // top-14 clears the 56px site header while the window scrolls. From lg up
+        // the list column is its own scroll container, where top-14 would be
+        // measured from the column itself and leave a 56px gap under the header.
+        "sticky top-14 z-20 border-b border-border bg-surface px-4 py-3 lg:top-0",
         scrolled && "shadow-raise",
       )}
     >

@@ -204,23 +204,6 @@
   .press:active:not(:disabled) {
     transform: translateY(1px);
   }
-  /* The browse preview sliding in when an event is selected. The panel is
-     mounted fresh per selection, so the animation replays on every change of
-     event rather than only on the panel's first appearance. The global
-     reduced-motion rule above already flattens the duration. */
-  .preview-panel {
-    animation: preview-in var(--dur-2) var(--ease);
-  }
-  @keyframes preview-in {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
   /* the 2/4 -> 3/4 nudge; JS sets data-changed then clears it after 200ms */
   .count-shift {
     transition: transform var(--dur-2) var(--ease), color var(--dur-2) var(--ease);

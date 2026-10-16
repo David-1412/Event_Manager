@@ -14,13 +14,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *
  * The number is the card height plus its share of the list gap, so it has to move
  * with the thumbnail. At the old 56px thumb the text column measured ~120px and
- * the row was 108; the 128px thumb (`lg:w-32`) is now the taller side, and the
- * tightened gap-0.5/pt-1.5 rhythm keeps the text under it. Rows below `lg` are
- * ~152px, so on a narrow desktop this over-reserves by ~40px - which only ever
- * renders more cards than needed, never fewer, so the scrollbar runs slightly long
+ * the row was 108; the 176px thumb (`lg:w-44`) is now the taller side, and the
+ * tightened gap-0.5/pt-1.5 rhythm keeps the text under it (176 + 24 padding + 2
+ * border + 8 gap = 210, plus headroom for a wrapped title). Rows below `lg` are
+ * ~152px, so on a narrow desktop this over-reserves - which only ever renders
+ * more cards than needed, never fewer, so the scrollbar runs slightly long
  * rather than the window losing rows.
  */
-export const ROW_HEIGHT = 192;
+export const ROW_HEIGHT = 240;
 
 /** Rows rendered beyond the viewport in each direction, so a fast flick never
  *  reveals bare padding where a card should be. */

@@ -4,6 +4,9 @@ export interface MapProps {
   events: EventListItem[];
   selectedEventId: string | null;
   onSelect: (id: string | null) => void;
+  /** Browse only: activating the selected pin's popup opens that event. Without it
+   *  the popup is informational. */
+  onOpen?: (id: string) => void;
   /** Fired when the centre moves > 0.5 km so the parent can re-query. */
   onSearchThisArea?: (center: { lat: number; lng: number }) => void;
   /** `detail` = single marker, 200px, no `Search this area` pill (spec §8). */
