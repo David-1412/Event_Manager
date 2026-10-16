@@ -17,7 +17,7 @@ import {
  * a browser.
  */
 const LOC = {
-  origin: "https://Monafy.example",
+  origin: "https://monahub.example",
   pathname: "/events/e-1",
   search: "",
 };
@@ -42,24 +42,24 @@ describe("canNativeShare", () => {
 
 describe("shareUrl", () => {
   it("returns the absolute event URL", () => {
-    expect(shareUrl(LOC)).toBe("https://Monafy.example/events/e-1");
+    expect(shareUrl(LOC)).toBe("https://monahub.example/events/e-1");
   });
 
   it("drops browse search state so the recipient lands on the event, not a filtered list", () => {
     expect(shareUrl({ ...LOC, search: "?q=pickleball" })).toBe(
-      "https://Monafy.example/events/e-1",
+      "https://monahub.example/events/e-1",
     );
   });
 
   it("keeps unrelated query params, which may carry meaning the sender wants kept", () => {
     expect(shareUrl({ ...LOC, search: "?ref=share" })).toBe(
-      "https://Monafy.example/events/e-1?ref=share",
+      "https://monahub.example/events/e-1?ref=share",
     );
   });
 
   it("tolerates a search written without its leading question mark", () => {
     expect(shareUrl({ ...LOC, search: "q=pickleball" })).toBe(
-      "https://Monafy.example/events/e-1",
+      "https://monahub.example/events/e-1",
     );
   });
 });
@@ -103,7 +103,7 @@ describe("sharePayload", () => {
     ).toEqual({
       title: "Sunday social",
       text: "Casual basketball, all levels.",
-      url: "https://Monafy.example/events/e-1",
+      url: "https://monahub.example/events/e-1",
     });
   });
 
@@ -111,7 +111,7 @@ describe("sharePayload", () => {
     expect(sharePayload({ title: "Run club" }, LOC)).toEqual({
       title: "Run club",
       text: "",
-      url: "https://Monafy.example/events/e-1",
+      url: "https://monahub.example/events/e-1",
     });
   });
 });

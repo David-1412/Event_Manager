@@ -48,12 +48,12 @@ export function SiteHeader() {
         <Link
           href="/"
           className="flex items-center gap-2 text-h3 text-fg no-underline"
-          aria-label="Monafy home"
+          aria-label="MonaHub home"
         >
           <span aria-hidden className="text-brand-600">
             ◆
           </span>
-          Monafy
+          MonaHub
         </Link>
 
         <nav aria-label="Primary" className="flex items-center gap-1 overflow-x-auto">
