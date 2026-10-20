@@ -15,6 +15,8 @@ import {
 } from "@/components/event/browse-layout";
 import { VirtualizedCardList } from "@/components/event/virtualized-card-list";
 import { FilterBar } from "@/components/event/filter-bar";
+import { GlobalSearch } from "@/components/layout/global-search";
+import { SectionSubnav } from "@/components/layout/section-subnav";
 import { EventMap } from "@/components/map/event-map";
 import { EmptyState, ErrorState } from "@/components/state/empty-error";
 import { LG_MIN_WIDTH_QUERY, useMediaQuery } from "@/lib/use-media-query";
@@ -305,6 +307,21 @@ export function BrowseView() {
         )}
       >
         <h2 className="sr-only">{heading}</h2>
+        {/* Search first, then the section's own tabs and Create; the filter bar
+            below stays sticky while these scroll away with the list. */}
+        <div className="px-4 pt-4 lg:px-6">
+          <GlobalSearch context="events" />
+          <SectionSubnav
+            label="Events"
+            className="mt-4"
+            createFirst="event"
+            items={[
+              { label: "All", active: !followingTabActive, onSelect: () => patch({ tab: "all" }) },
+              { label: "Following", active: followingTabActive, onSelect: () => patch({ tab: "following" }) },
+              { label: "My Events", active: false, href: "/my-events" },
+            ]}
+          />
+        </div>
         <FilterBar
           query={query}
           onPatch={patch}

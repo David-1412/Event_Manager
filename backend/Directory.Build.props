@@ -7,7 +7,12 @@
        Bump this one line when .NET 12 LTS lands. -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <LangVersion>latest</LangVersion>
+    <!-- Pinned, not `latest`: `latest` follows the installed SDK, and C# 14 (the .NET 10
+         SDK) binds `array.Contains(x)` inside LINQ queries to the span overload,
+         which EF Core 8 cannot translate - every query filtering on a string[] then
+         fails at runtime. C# 12 is what the net8 SDK in CI and Docker already uses,
+         so this changes nothing there. Raise it together with the EF Core version. -->
+    <LangVersion>12</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>

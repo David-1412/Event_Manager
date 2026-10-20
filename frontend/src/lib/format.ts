@@ -162,6 +162,25 @@ export function isTomorrow(value: string | Date, now = new Date()): boolean {
  * `Tonight 6PM` / `Tomorrow 6AM` / `Mon 12 Oct 6PM`.
  * `Tonight` only while the Melbourne clock is still 17:00+ on that same day.
  */
+/**
+ * How long ago something was posted, the way a feed says it: `just now`, `5m`,
+ * `3h`, `2d`, then the date once it is over a week old (`12 Oct`). A future time
+ * (a skewed client clock) reads as `just now` rather than a negative age.
+ */
+export function formatTimeAgo(value: string | Date, now = new Date()): string {
+  const date = toDate(value);
+  if (!date) return "—";
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return formatDayMonth(date);
+}
+
 export function formatRelativeDayTime(
   value: string | Date,
   now = new Date(),

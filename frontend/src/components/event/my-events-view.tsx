@@ -1,5 +1,7 @@
 "use client";
 
+import { GlobalSearch } from "@/components/layout/global-search";
+import { SectionSubnav } from "@/components/layout/section-subnav";
 import { useMemo, useState } from "react";
 import { EventCard } from "@/components/event/event-card";
 import { CardActions } from "@/components/event/card-actions";
@@ -62,6 +64,19 @@ export function MyEventsView() {
   return (
     <div className="mx-auto w-full max-w-[680px] px-4 py-4">
       {my.slots}
+      {/* The same search and Events sub-navigation as the Events page, with My
+          Events selected - this page is that tab. */}
+      <GlobalSearch context="other" />
+      <SectionSubnav
+        label="Events"
+        className="mb-5 mt-4"
+        createFirst="event"
+        items={[
+          { label: "All", active: false, href: "/" },
+          { label: "Following", active: false, href: "/?tab=following" },
+          { label: "My Events", active: true, href: "/my-events" },
+        ]}
+      />
       <h1 className="text-h1 text-fg">My events</h1>
       <p className="mt-1 text-meta text-fg-muted">
         Events you&apos;re interested in or have joined.

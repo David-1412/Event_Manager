@@ -40,6 +40,8 @@ public static class DependencyInjection
         // for an anonymous one. Keeping them apart is what makes "did that new
         // IEventRepository method remember to filter?" a question with a short answer.
         services.AddScoped<SportMeet.Application.Profiles.IProfileRepository, ProfileRepository>();
+        services.AddScoped<SportMeet.Application.Forum.IForumRepository, ForumRepository>();
+        services.AddScoped<SportMeet.Application.Trending.ITrendingRepository, TrendingRepository>();
 
         // View tracking, its own seam and its own repository: the analytics path
         // shares nothing with the feed read, and coupling them would let a browse

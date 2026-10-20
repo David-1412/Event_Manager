@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { FireButton } from "@/components/ui/fire-button";
 import { toast } from "@/components/ui/toast";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { signInReturnTo } from "@/lib/auth/types";
@@ -67,15 +67,13 @@ export function FollowButton({
 
   return (
     <div className="flex flex-col items-start gap-1">
-      <Button
-        variant={isFollowing ? "secondary" : "primary"}
-        size="sm"
+      <FireButton
+        label="Follow"
+        activeLabel="Following"
+        active={isFollowing}
+        loading={isPending}
         onClick={() => void onClick()}
-        disabled={isPending}
-        aria-pressed={isFollowing}
-      >
-        {isFollowing ? "Following" : "Follow"}
-      </Button>
+      />
       {failure && (
         <p role="alert" className="text-meta text-danger">
           {failure}

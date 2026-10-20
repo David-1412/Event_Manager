@@ -18,6 +18,8 @@ public static class DependencyInjection
         // endpoint with a single implementation gains nothing from a second seam. The
         // privacy boundary is IProfileRepository, which does have one.
         services.AddScoped<Profiles.ProfileService>();
+        services.AddScoped<Forum.ForumService>();
+        services.AddScoped<Trending.TrendingService>();
 
         // The follow fan-out. Its own service rather than more methods on
         // ProfileService: ProfileService is the read side of a public profile and is

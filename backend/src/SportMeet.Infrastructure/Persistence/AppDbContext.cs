@@ -53,6 +53,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     /// by the fan-out that tells followers about a newly published event; never read by
     /// the feed.</summary>
     public DbSet<UserFollow> UserFollows => Set<UserFollow>();
+    public DbSet<ForumCategory> ForumCategories => Set<ForumCategory>();
+    public DbSet<ForumPost> ForumPosts => Set<ForumPost>();
+    public DbSet<ForumPostLike> ForumPostLikes => Set<ForumPostLike>();
 
 
     /// <summary>Read-only projection over v_event_feed. Never in SaveChanges -

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { FireButton } from "@/components/ui/fire-button";
 import { toast } from "@/components/ui/toast";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useInterests, useToggleInterest } from "@/features/events/use-interests";
@@ -93,21 +94,18 @@ export function CardActions({
     toast(filedRequest ? "Join request submitted" : "You're in", "success");
   }
 
-  const interestLabel = interested ? "★ Interested" : "Interested";
   const busy = isJoining || isLeaving || isToggling;
 
   return (
     <div className={cnRow(fullWidth, busy)}>
-      <Button
-        size={size}
-        variant={interested ? "primary" : "secondary"}
+      <FireButton
+        label="Interested"
+        active={interested}
+        size={size === "sm" ? "sm" : "md"}
         fullWidth={fullWidth}
         loading={isToggling}
         onClick={() => void onInterest()}
-        aria-pressed={interested}
-      >
-        {interestLabel}
-      </Button>
+      />
 
       {isCancelled ? (
         <Button size={size} variant="secondary" fullWidth={fullWidth} disabled>

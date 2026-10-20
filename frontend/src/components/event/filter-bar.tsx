@@ -5,12 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Chip, ChipRow } from "@/components/ui/chip";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/field";
-import { SearchInput } from "@/components/ui/search-input";
 import { cn } from "@/lib/cn";
 import { activeFilterCount } from "@/lib/query";
 import { RADIUS_OPTIONS } from "@/lib/sports";
 import type { BrowseLayoutMode, BrowseMapMode } from "@/components/event/browse-layout";
-import type { BrowseTab, EventDateFilter, EventQuery, EventSort, PopularTag } from "@/types/events";
+import type { EventDateFilter, EventQuery, EventSort, PopularTag } from "@/types/events";
 
 /**
  * Sticky, gains a shadow once the list scrolls (spec §7). Mobile: scrolling tag
@@ -73,11 +72,10 @@ export function FilterBar({
         scrolled && "shadow-raise",
       )}
     >
-      <BrowseTabs tab={query.tab} onSelect={(tab) => onPatch({ tab })} />
-
+      {/* All / Following and the text search moved up: the tabs into the page's
+          sub-navigation, the search into the global search bar (whose Events chip
+          writes the same `q` this list reads). */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <SearchInput value={query.q} onChange={(q) => onPatch({ q })} />
-
         <div className="flex items-center gap-2">
           {/* Mobile: chips scroll horizontally and also live in the sheet. */}
           <TagChipRow
@@ -157,45 +155,6 @@ export function FilterBar({
   );
 }
 
-
-/**
- * The feed selector: All | Following.
- *
- * A tablist rather than chips because it swaps the *source* of the list, not a
- * filter within it — Following is a different endpoint (the viewer's follow
- * graph), and the search/tag/date/radius/sort controls below keep applying on
- * top of whichever tab is active. "Upcoming" and "Nearby" are deliberately not
- * here: they already exist as the date filter and the distance sort, and
- * duplicating them as tabs would put two controls in charge of one value.
- */
-function BrowseTabs({ tab, onSelect }: { tab: BrowseTab; onSelect: (tab: BrowseTab) => void }) {
-  return (
-    <div role="tablist" aria-label="Browse feed" className="mb-3 flex items-center gap-1">
-      {BROWSE_TABS.map((entry) => (
-        <button
-          key={entry.value}
-          type="button"
-          role="tab"
-          aria-selected={tab === entry.value}
-          onClick={() => onSelect(entry.value)}
-          className={cn(
-            "press h-9 rounded-md px-3 text-meta font-medium",
-            tab === entry.value
-              ? "bg-brand-tint text-brand-600"
-              : "text-fg-muted hover:bg-surface-2 hover:text-fg",
-          )}
-        >
-          {entry.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const BROWSE_TABS: { value: BrowseTab; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "following", label: "Following" },
-];
 
 
 function FilterSelect({

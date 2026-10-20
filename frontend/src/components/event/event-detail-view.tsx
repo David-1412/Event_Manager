@@ -10,6 +10,7 @@ import { ErrorState } from "@/components/state/empty-error";
 import { Avatar, AvatarStack } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FireButton } from "@/components/ui/fire-button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/field";
 import { SkeletonBlock } from "@/components/ui/skeleton";
@@ -388,16 +389,15 @@ function InterestButton({ event }: { event: EventDetail }) {
   }
 
   return (
-    <Button
-      variant={event.isInterested ? "primary" : "secondary"}
+    <FireButton
+      label="Interested"
+      active={event.isInterested}
+      size="md"
       fullWidth
       loading={isPending}
       disabled={event.isJoined || event.isCancelled}
-      aria-pressed={event.isInterested}
       onClick={() => void onClick()}
-    >
-      {event.isInterested ? "\u2605 Interested" : "Interested"}
-    </Button>
+    />
   );
 }
 

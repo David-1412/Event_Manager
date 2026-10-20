@@ -28,7 +28,7 @@ public sealed class ProfileRepository(AppDbContext db) : IProfileRepository
 {
     /// <summary>Statuses that are never publicly visible. The excluded set, so a status
     /// added later fails closed and stays off every profile until this line changes.</summary>
-    private static readonly string[] UnpublishedStatuses =
+    internal static readonly string[] UnpublishedStatuses =
     [
         nameof(EventStatus.Draft),
         nameof(EventStatus.PendingReview),
