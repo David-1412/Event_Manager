@@ -9,6 +9,8 @@ namespace SportMeet.Application.Forum;
 /// someone - see <see cref="ForumCommentService"/>.</param>
 /// <param name="CanDelete">The caller may delete it: their own, or they are an admin.</param>
 /// <param name="Replies">One level only: replies never carry replies of their own.</param>
+/// <param name="EditedAt">When the author last edited it; null if never.</param>
+/// <param name="CanEdit">The caller wrote it. Editing is author-only, admins included.</param>
 public sealed record ForumCommentDto(
     Guid Id,
     Guid? ParentCommentId,
@@ -20,9 +22,13 @@ public sealed record ForumCommentDto(
     bool IsOp,
     bool CanDelete,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<ForumCommentDto> Replies);
+    IReadOnlyList<ForumCommentDto> Replies,
+    DateTimeOffset? EditedAt = null,
+    bool CanEdit = false);
 
 public sealed record CreateForumCommentDto(string Content, Guid? ParentCommentId, bool IsAnonymous);
+
+public sealed record UpdateForumCommentDto(string Content);
 
 /// <summary>A comment with its author's display columns. Always the real author;
 /// redaction happens in the service.</summary>
@@ -37,7 +43,8 @@ public sealed record ForumCommentRow(
     string? AuthorPhotoUrl,
     UserRole AuthorRole,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? DeletedAt);
+    DateTimeOffset? DeletedAt,
+    DateTimeOffset? EditedAt = null);
 
 public interface IForumCommentRepository
 {
@@ -49,6 +56,12 @@ public interface IForumCommentRepository
     Task AddAsync(ForumComment comment, CancellationToken ct = default);
 
     Task SoftDeleteAsync(Guid id, DateTimeOffset deletedAt, CancellationToken ct = default);
+
+    /// <summary>Removes the row. Any (already deleted) replies under it go too.</summary>
+    Task HardDeleteAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>Replaces a live comment's text and stamps edited_at.</summary>
+    Task UpdateContentAsync(Guid id, string content, DateTimeOffset editedAt, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -70,7 +83,9 @@ public sealed class ForumCommentService(
 
     public async Task<IReadOnlyList<ForumCommentDto>> ListAsync(Guid postId, CancellationToken ct = default)
     {
-        var post = await forum.GetPostAsync(postId, ct) ?? throw new NotFoundException("Forum post", postId, postId);
+        // A deleted post kept for its comments still lists them.
+        var post = await forum.GetPostIncludingDeletedAsync(postId, ct)
+            ?? throw new NotFoundException("Forum post", postId, postId);
         var rows = await comments.ListForPostAsync(postId, ct);
 
         var replies = rows
@@ -92,10 +107,7 @@ public sealed class ForumCommentService(
     {
         var authorId = currentUser?.UserId
             ?? throw new DomainRuleException("You must be signed in to comment.");
-        var content = dto.Content?.Trim() ?? "";
-        if (content.Length == 0) throw new DomainRuleException("Write something before posting a comment.");
-        if (content.Length > ContentMaxLength)
-            throw new DomainRuleException($"Comments can be at most {ContentMaxLength:N0} characters.");
+        var content = ValidateContent(dto.Content);
 
         var post = await forum.GetPostAsync(postId, ct) ?? throw new NotFoundException("Forum post", postId, postId);
 
@@ -127,6 +139,34 @@ public sealed class ForumCommentService(
         return ToDto(row, post, []);
     }
 
+    /// <summary>Edit a comment's text. Author only; the anonymity choice stays.</summary>
+    public async Task<ForumCommentDto> UpdateAsync(Guid commentId, UpdateForumCommentDto dto, CancellationToken ct = default)
+    {
+        var viewer = currentUser?.UserId
+            ?? throw new DomainRuleException("You must be signed in to edit a comment.");
+        var row = await comments.GetAsync(commentId, ct);
+        if (row is null || row.DeletedAt is not null) throw new NotFoundException("Comment", commentId, commentId);
+        if (row.AuthorUserId != viewer) throw new ForbiddenException("You can only edit your own comments.");
+
+        var content = ValidateContent(dto.Content);
+        await comments.UpdateContentAsync(commentId, content, DateTimeOffset.UtcNow, ct);
+
+        var post = await forum.GetPostIncludingDeletedAsync(row.PostId, ct)
+            ?? throw new NotFoundException("Forum post", row.PostId, row.PostId);
+        var updated = await comments.GetAsync(commentId, ct)
+            ?? throw new NotFoundException("Comment", commentId, commentId);
+        return ToDto(updated, post, []);
+    }
+
+    /// <summary>
+    /// Delete a comment: its author, or an admin.
+    ///
+    /// A comment that still has replies is soft-deleted - it stays as a "[deleted]"
+    /// placeholder so the replies keep their context. One with no replies has nothing
+    /// to hold up and its row is removed. Removing the last reply under an
+    /// already-deleted comment removes that placeholder too, so a thread never ends in
+    /// an empty "[deleted]" with nothing beneath it.
+    /// </summary>
     public async Task DeleteAsync(Guid commentId, CancellationToken ct = default)
     {
         var viewer = currentUser?.UserId
@@ -134,10 +174,46 @@ public sealed class ForumCommentService(
         var row = await comments.GetAsync(commentId, ct);
         if (row is null || row.DeletedAt is not null) throw new NotFoundException("Comment", commentId, commentId);
         if (row.AuthorUserId != viewer && currentUser?.IsAdmin != true)
-            throw new DomainRuleException("You can only delete your own comments.");
+            throw new ForbiddenException("You can only delete your own comments.");
 
-        await comments.SoftDeleteAsync(commentId, DateTimeOffset.UtcNow, ct);
+        var thread = await comments.ListForPostAsync(row.PostId, ct);
+        bool HasLiveReplies(Guid id, Guid? except = null) =>
+            thread.Any(r => r.ParentCommentId == id && r.DeletedAt is null && r.Id != except);
+
+        if (HasLiveReplies(commentId))
+        {
+            await comments.SoftDeleteAsync(commentId, DateTimeOffset.UtcNow, ct);
+        }
+        else
+        {
+            await comments.HardDeleteAsync(commentId, ct);
+            if (row.ParentCommentId is { } parentId
+                && thread.FirstOrDefault(r => r.Id == parentId) is { DeletedAt: not null }
+                && !HasLiveReplies(parentId, except: commentId))
+            {
+                await comments.HardDeleteAsync(parentId, ct);
+            }
+        }
+
+        // The same rule one level up: a deleted post was only kept for its comments,
+        // so when the last one goes, the post goes too.
+        var post = await forum.GetPostIncludingDeletedAsync(row.PostId, ct);
+        if (post?.DeletedAt is not null && !thread.Any(r => r.Id != commentId && r.DeletedAt is null))
+        {
+            await forum.HardDeletePostAsync(row.PostId, ct);
+            return;
+        }
+
         await forum.RefreshEngagementAsync(row.PostId, ct);
+    }
+
+    private static string ValidateContent(string? text)
+    {
+        var content = text?.Trim() ?? "";
+        if (content.Length == 0) throw new DomainRuleException("Write something before posting a comment.");
+        if (content.Length > ContentMaxLength)
+            throw new DomainRuleException($"Comments can be at most {ContentMaxLength:N0} characters.");
+        return content;
     }
 
     private ForumCommentDto ToDto(ForumCommentRow row, ForumPostRow post, IReadOnlyList<ForumCommentDto>? replies)
@@ -162,6 +238,8 @@ public sealed class ForumCommentService(
             isOp,
             !deleted && (isMine || isAdmin),
             row.CreatedAt,
-            replies ?? []);
+            replies ?? [],
+            deleted ? null : row.EditedAt,
+            CanEdit: isMine && !deleted);
     }
 }

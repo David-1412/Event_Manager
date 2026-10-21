@@ -74,7 +74,19 @@ export function PostMeta({ post, className }: { post: ForumPost; className?: str
       <time dateTime={post.createdAt} title={new Date(post.createdAt).toLocaleString("en-AU")}>
         {formatTimeAgo(post.createdAt)}
       </time>
+      <EditedMark editedAt={post.editedAt} />
     </div>
+  );
+}
+
+/** "(edited)" after a timestamp, with when as its tooltip. Nothing when never edited. */
+export function EditedMark({ editedAt }: { editedAt?: string | null }) {
+  if (!editedAt) return null;
+  const when = new Date(editedAt).toLocaleString("en-AU");
+  return (
+    <span className="italic" title={`Edited ${when}`}>
+      (edited)
+    </span>
   );
 }
 
@@ -84,6 +96,9 @@ export function PostMeta({ post, className }: { post: ForumPost; className?: str
  * component cannot leak a name it was never sent.
  */
 export function PostAuthor({ post, size = "sm" }: { post: ForumPost; size?: "sm" | "md" }) {
+  if (post.isDeleted) {
+    return <span className="italic text-fg-muted">[deleted]</span>;
+  }
   if (!post.author) {
     return (
       <span className="inline-flex items-center gap-2">

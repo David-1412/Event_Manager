@@ -46,7 +46,13 @@ public class ForumPost
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
 
-    /// <summary>Soft delete: a removed post keeps its row so its comments keep their thread.</summary>
+    /// <summary>When the author last changed the title or body, or null if never.
+    /// Shown as "(edited)" next to the timestamp.</summary>
+    public DateTimeOffset? EditedAt { get; set; }
+
+    /// <summary>Soft delete: a removed post that has comments keeps its row so the
+    /// thread stays readable. A post with no comments is removed outright. The
+    /// database also exposes this as the generated column <c>is_deleted</c>.</summary>
     public DateTimeOffset? DeletedAt { get; set; }
 }
 

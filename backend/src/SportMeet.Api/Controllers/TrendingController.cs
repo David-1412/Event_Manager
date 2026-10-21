@@ -4,7 +4,7 @@ using SportMeet.Application.Trending;
 namespace SportMeet.Api.Controllers;
 
 /// <summary>
-/// Monash Pulse - <c>GET /api/trending?window=today|3d|week</c>. Anonymous, like the
+/// Campus Pulse - <c>GET /api/trending?window=today|3d|week</c>. Anonymous, like the
 /// feeds it summarises: it lists only public events and visible posts, and names no
 /// one.
 /// </summary>

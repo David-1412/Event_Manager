@@ -71,7 +71,7 @@ export function useForumFeed(query: ForumQuery) {
   };
 }
 
-/** Monash Pulse for one window. Refreshes every minute while open: the list is
+/** Campus Pulse for one window. Refreshes every minute while open: the list is
  * about what is happening now, and the rolling widget would otherwise show a
  * morning's ranking all afternoon. */
 export function useTrending(window: TrendingWindow) {

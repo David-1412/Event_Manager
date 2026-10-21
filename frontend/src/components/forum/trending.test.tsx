@@ -8,7 +8,7 @@ const ten = Array.from({ length: 10 }, (_, i) => `item ${i + 1}`);
 const ranks = (start: number) => rollingRows(ten, start).map((r) => r.rank);
 
 /**
- * The roll is the part of Monash Pulse with an exact spec: three rows, one step a
+ * The roll is the part of Campus Pulse with an exact spec: three rows, one step a
  * second, 1,2,3 -> 2,3,4 -> ... -> 9,10,1 -> 10,1,2 and round again.
  */
 describe("rollingRows", () => {

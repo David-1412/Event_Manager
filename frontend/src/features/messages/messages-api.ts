@@ -48,6 +48,9 @@ export const addComment = (
 export const deleteComment = (commentId: string) =>
   request<void>(`/api/forum/comments/${commentId}`, { method: "DELETE" });
 
+export const updateComment = (commentId: string, content: string) =>
+  request<ForumComment>(`/api/forum/comments/${commentId}`, { method: "PUT", body: { content } });
+
 /** One activity tab's items: likes, follows or comments. */
 export const activityKey = (kind: ActivityKind, viewerId?: string | null) =>
   `${API_BASE_URL}/api/notifications/${kind}${viewer(viewerId)}`;

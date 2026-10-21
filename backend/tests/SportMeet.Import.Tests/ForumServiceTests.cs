@@ -339,6 +339,94 @@ public sealed class ForumServiceTests
             service.CreatePostAsync(new CreateForumPostDto("nope", null, "Hello", false)));
     }
 
+    // ---- Edit and delete ---------------------------------------------------------
+
+    [Fact]
+    public async Task The_author_can_edit_a_post_and_it_is_marked_edited()
+    {
+        var row = Row();
+        var repo = new FakeForum(row);
+        var service = new ForumService(repo, new FakeUser(Author));
+        Assert.Null((await service.GetPostAsync(row.Id)).EditedAt);
+
+        var edited = await service.UpdatePostAsync(row.Id, new UpdateForumPostDto("  ", "  New body  "));
+
+        Assert.Null(edited.Title);
+        Assert.Equal("New body", edited.Content);
+        Assert.NotNull(edited.EditedAt);
+        Assert.True(edited.CanEdit);
+        Assert.True(edited.CanDelete);
+    }
+
+    [Fact]
+    public async Task Only_the_author_can_edit_a_post_not_even_an_admin()
+    {
+        var row = Row();
+        var repo = new FakeForum(row);
+        var stranger = new ForumService(repo, new FakeUser(Guid.NewGuid()));
+        var admin = new ForumService(repo, new FakeUser(Guid.NewGuid(), isAdmin: true));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => stranger.UpdatePostAsync(row.Id, new(null, "Hacked")));
+        await Assert.ThrowsAsync<ForbiddenException>(() => admin.UpdatePostAsync(row.Id, new(null, "Hacked")));
+        Assert.Equal("Body", repo.Rows.Single().Content);
+
+        var asStranger = await stranger.GetPostAsync(row.Id);
+        Assert.False(asStranger.CanEdit);
+        Assert.False(asStranger.CanDelete);
+        var asAdmin = await admin.GetPostAsync(row.Id);
+        Assert.False(asAdmin.CanEdit);
+        Assert.True(asAdmin.CanDelete);
+    }
+
+    [Fact]
+    public async Task An_edit_is_validated_like_a_new_post()
+    {
+        var row = Row();
+        var service = new ForumService(new FakeForum(row), new FakeUser(Author));
+        await Assert.ThrowsAsync<DomainRuleException>(() => service.UpdatePostAsync(row.Id, new(null, "   ")));
+    }
+
+    [Fact]
+    public async Task Deleting_a_post_without_comments_removes_it()
+    {
+        var row = Row();
+        var repo = new FakeForum(row);
+        await new ForumService(repo, new FakeUser(Author)).DeletePostAsync(row.Id);
+
+        Assert.Empty(repo.Rows);
+    }
+
+    [Fact]
+    public async Task Deleting_a_post_with_comments_keeps_a_placeholder_that_reveals_nothing()
+    {
+        var row = Row(anonymous: true) with { CommentCount = 3 };
+        var repo = new FakeForum(row);
+        var admin = new ForumService(repo, new FakeUser(Guid.NewGuid(), isAdmin: true));
+
+        await admin.DeletePostAsync(row.Id);
+
+        Assert.NotNull(repo.Rows.Single().DeletedAt);
+        var placeholder = await new ForumService(repo, new FakeUser(Author)).GetPostAsync(row.Id);
+        Assert.True(placeholder.IsDeleted);
+        Assert.Null(placeholder.Title);
+        Assert.Equal("", placeholder.Content);
+        Assert.Null(placeholder.Author);
+        Assert.False(placeholder.CanEdit);
+        Assert.False(placeholder.CanDelete);
+        // Gone from every action but reading.
+        await Assert.ThrowsAsync<NotFoundException>(() => admin.DeletePostAsync(row.Id));
+    }
+
+    [Fact]
+    public async Task Only_the_author_or_an_admin_can_delete_a_post()
+    {
+        var row = Row();
+        var repo = new FakeForum(row);
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            new ForumService(repo, new FakeUser(Guid.NewGuid())).DeletePostAsync(row.Id));
+        Assert.Single(repo.Rows);
+    }
+
     [Fact]
     public void Newer_post_outranks_older_post_with_equal_engagement()
     {
@@ -383,7 +471,30 @@ public sealed class ForumServiceTests
         }
 
         public Task<ForumPostRow?> GetPostAsync(Guid id, CancellationToken ct = default) =>
+            Task.FromResult(Rows.FirstOrDefault(r => r.Id == id && r.DeletedAt == null));
+
+        public Task<ForumPostRow?> GetPostIncludingDeletedAsync(Guid id, CancellationToken ct = default) =>
             Task.FromResult(Rows.FirstOrDefault(r => r.Id == id));
+
+        public Task UpdatePostAsync(Guid id, string? title, string content, DateTimeOffset editedAt, CancellationToken ct = default)
+        {
+            var i = Rows.FindIndex(r => r.Id == id && r.DeletedAt == null);
+            Rows[i] = Rows[i] with { Title = title, Content = content, EditedAt = editedAt };
+            return Task.CompletedTask;
+        }
+
+        public Task SoftDeletePostAsync(Guid id, DateTimeOffset deletedAt, CancellationToken ct = default)
+        {
+            var i = Rows.FindIndex(r => r.Id == id);
+            Rows[i] = Rows[i] with { DeletedAt = deletedAt };
+            return Task.CompletedTask;
+        }
+
+        public Task HardDeletePostAsync(Guid id, CancellationToken ct = default)
+        {
+            Rows.RemoveAll(r => r.Id == id);
+            return Task.CompletedTask;
+        }
 
         public HashSet<(Guid Post, Guid User)> Likes { get; } = [];
         public Dictionary<Guid, int> Views { get; } = [];

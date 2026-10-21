@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageButton } from "@/components/messages/message-button";
 import { CommentsSection } from "@/components/forum/comments-section";
-import { messagesHref } from "@/features/messages/messages-api";
+import { messagesHref, updateComment } from "@/features/messages/messages-api";
 import { useComments } from "@/features/messages/use-messages";
 import { useAuth } from "@/lib/auth/auth-provider";
 import type { ForumPost } from "@/types/forum";
@@ -16,6 +16,8 @@ vi.mock("@/features/messages/use-messages", () => ({ useComments: vi.fn() }));
 vi.mock("@/features/messages/messages-api", async (original) => ({
   ...(await original<object>()),
   startConversation: vi.fn(async () => ({ id: "c-9" })),
+  updateComment: vi.fn(async () => ({})),
+  deleteComment: vi.fn(async () => undefined),
 }));
 
 const me = { id: "u-me", displayName: "Me", photoURL: null };
@@ -90,10 +92,11 @@ describe("CommentsSection", () => {
     } as never);
     render(<CommentsSection post={post} />);
     expect(screen.getByText("[deleted]")).toBeInTheDocument();
+    expect(screen.getByText("[This comment has been deleted]")).toBeInTheDocument();
     expect(screen.getByText("Still here")).toBeInTheDocument();
   });
 
-  it("offers delete only where the server allows it", () => {
+  it("offers the actions menu only where the server allows an action", async () => {
     vi.mocked(useAuth).mockReturnValue({ user: me, loading: false } as never);
     vi.mocked(useComments).mockReturnValue({
       comments: [comment({ id: "a", canDelete: true }), comment({ id: "b", canDelete: false })],
@@ -102,7 +105,54 @@ describe("CommentsSection", () => {
       refresh: vi.fn(),
     } as never);
     render(<CommentsSection post={post} />);
-    expect(screen.getAllByRole("button", { name: /Delete/ })).toHaveLength(1);
+    const menus = screen.getAllByRole("button", { name: "Comment actions" });
+    expect(menus).toHaveLength(1);
+
+    // An admin on someone else's comment: Delete, but no Edit.
+    await userEvent.click(menus[0]);
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+  });
+
+  it("edits your own comment in place and marks an edited one", async () => {
+    const refresh = vi.fn(async () => undefined);
+    vi.mocked(useAuth).mockReturnValue({ user: me, loading: false } as never);
+    vi.mocked(useComments).mockReturnValue({
+      comments: [
+        comment({ id: "mine", content: "Frist", isMine: true, canEdit: true, canDelete: true }),
+        comment({ id: "old", content: "Earlier", editedAt: new Date().toISOString() }),
+      ],
+      isLoading: false,
+      error: undefined,
+      refresh,
+    } as never);
+    render(<CommentsSection post={post} />);
+    expect(screen.getAllByText("(edited)")).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Comment actions" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Edit" }));
+    const box = screen.getByRole("textbox", { name: "Edit comment" });
+    await userEvent.clear(box);
+    await userEvent.type(box, "First");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(updateComment).toHaveBeenCalledWith("mine", "First");
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("closes a deleted post to new comments but keeps its thread", () => {
+    vi.mocked(useAuth).mockReturnValue({ user: me, loading: false } as never);
+    vi.mocked(useComments).mockReturnValue({
+      comments: [comment({ content: "Still readable" })],
+      isLoading: false,
+      error: undefined,
+      refresh: vi.fn(),
+    } as never);
+    render(<CommentsSection post={{ ...post, isDeleted: true }} />);
+    expect(screen.getByText("Still readable")).toBeInTheDocument();
+    expect(screen.getByText(/closed to new comments/)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Reply/ })).toBeNull();
   });
 
   it("pre-ticks anonymous when an anonymous poster replies in their own thread", () => {

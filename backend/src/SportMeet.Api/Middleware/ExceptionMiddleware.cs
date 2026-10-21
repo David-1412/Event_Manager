@@ -39,6 +39,11 @@ public sealed class ExceptionMiddleware
             _logger.LogInformation("Domain rule rejected the request: {Message}", ex.Message);
             await WriteAsync(context, StatusCodes.Status422UnprocessableEntity, ProblemDetailsDefaults.DomainRule(ex.Message));
         }
+        catch (ForbiddenException ex)
+        {
+            _logger.LogInformation("Forbidden: {Message}", ex.Message);
+            await WriteAsync(context, StatusCodes.Status403Forbidden, ProblemDetailsDefaults.Forbidden(ex.Message));
+        }
         catch (EventFullException ex)
         {
             // 409 + code "EventFull" is the contract JoinButton branches on for

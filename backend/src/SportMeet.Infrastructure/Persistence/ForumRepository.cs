@@ -60,6 +60,28 @@ public sealed class ForumRepository(AppDbContext db) : IForumRepository
             .Select(ToRow)
             .FirstOrDefaultAsync(ct);
 
+    public Task<ForumPostRow?> GetPostIncludingDeletedAsync(Guid id, CancellationToken ct = default) =>
+        db.ForumPosts.AsNoTracking()
+            .Where(p => p.Id == id)
+            .Select(ToRow)
+            .FirstOrDefaultAsync(ct);
+
+    public Task UpdatePostAsync(
+        Guid id, string? title, string content, DateTimeOffset editedAt, CancellationToken ct = default) =>
+        db.ForumPosts.Where(p => p.Id == id && p.DeletedAt == null)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.Title, title)
+                .SetProperty(p => p.Content, content)
+                .SetProperty(p => p.EditedAt, editedAt)
+                .SetProperty(p => p.UpdatedAt, editedAt), ct);
+
+    public Task SoftDeletePostAsync(Guid id, DateTimeOffset deletedAt, CancellationToken ct = default) =>
+        db.ForumPosts.Where(p => p.Id == id && p.DeletedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.DeletedAt, deletedAt), ct);
+
+    public Task HardDeletePostAsync(Guid id, CancellationToken ct = default) =>
+        db.ForumPosts.Where(p => p.Id == id).ExecuteDeleteAsync(ct);
+
     public async Task AddPostAsync(ForumPost post, CancellationToken ct = default)
     {
         db.ForumPosts.Add(post);
@@ -199,5 +221,7 @@ public sealed class ForumRepository(AppDbContext db) : IForumRepository
         p.HotScore,
         p.IsPinned,
         p.CreatedAt,
-        p.ViewCount);
+        p.ViewCount,
+        p.EditedAt,
+        p.DeletedAt);
 }

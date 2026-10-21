@@ -19,7 +19,7 @@ public static class WriteRateLimit
     public const string Comments = "comments";
 
     /// <summary>Page-view recording. Generous for real browsing, but a cap on how fast
-    /// one client can push a post up Monash Pulse.</summary>
+    /// one client can push a post up Campus Pulse.</summary>
     public const string Views = "views";
 
     public static void Configure(RateLimiterOptions options)

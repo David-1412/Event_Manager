@@ -34,7 +34,7 @@ public interface ITrendingRepository
 }
 
 /// <summary>
-/// "Monash Pulse": the ten most-viewed things on campus right now, events and forum
+/// "Campus Pulse": the ten most-viewed things on campus right now, events and forum
 /// posts on one list.
 ///
 /// The score is total page views, and it never goes down: views are counted, never

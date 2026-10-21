@@ -25,6 +25,12 @@ public sealed class DomainRuleException : Exception
 }
 
 /// <summary>
+/// The caller is signed in but may not do this to this row - editing someone else's
+/// post, say. Maps to 403 + code "Forbidden" with the message as the detail.
+/// </summary>
+public sealed class ForbiddenException(string message) : Exception(message);
+
+/// <summary>
 /// The event was full at the moment of joining. Distinct from
 /// <see cref="DomainRuleException"/> because JoinButton branches on it
 /// (409 + code "EventFull" -> "This event just filled up", spec §7).

@@ -34,8 +34,17 @@ export interface ForumPost {
   commentCount: number;
   isPinned: boolean;
   createdAt: string;
-  /** Total page views. Only ever rises - it is the Monash Pulse score. */
+  /** Total page views. Only ever rises - it is the Campus Pulse score. */
   viewCount: number;
+  /** When the author last edited it; null if never. Shown as "(edited)". */
+  editedAt?: string | null;
+  /** Deleted, but kept so its comments stay readable: title, body and author are
+   *  withheld and the page shows a placeholder. Never appears in feeds. */
+  isDeleted?: boolean;
+  /** The viewer wrote it (editing is author-only). */
+  canEdit?: boolean;
+  /** The viewer wrote it, or is an admin. */
+  canDelete?: boolean;
 }
 
 /** Mirrors `ForumViewResultDto`: after opening a post. */
@@ -70,6 +79,12 @@ export interface ForumPostPage {
 }
 
 export type ForumSort = "hot" | "new";
+
+/** Mirrors `UpdateForumPostDto`. Category and anonymity are fixed once posted. */
+export interface UpdateForumPost {
+  title: string | null;
+  content: string;
+}
 
 /** Mirrors `CreateForumPostDto`. `category` is the slug. */
 export interface CreateForumPost {

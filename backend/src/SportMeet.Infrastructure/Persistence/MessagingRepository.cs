@@ -28,6 +28,15 @@ public sealed class ForumCommentRepository(AppDbContext db) : IForumCommentRepos
         db.ForumComments.Where(c => c.Id == id && c.DeletedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.DeletedAt, deletedAt), ct);
 
+    public Task HardDeleteAsync(Guid id, CancellationToken ct = default) =>
+        db.ForumComments.Where(c => c.Id == id).ExecuteDeleteAsync(ct);
+
+    public Task UpdateContentAsync(Guid id, string content, DateTimeOffset editedAt, CancellationToken ct = default) =>
+        db.ForumComments.Where(c => c.Id == id && c.DeletedAt == null)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Content, content)
+                .SetProperty(c => c.EditedAt, editedAt), ct);
+
     private static readonly Expression<Func<ForumComment, ForumCommentRow>> ToRow = c => new ForumCommentRow(
         c.Id,
         c.PostId,
@@ -39,7 +48,8 @@ public sealed class ForumCommentRepository(AppDbContext db) : IForumCommentRepos
         c.Author.PhotoUrl,
         c.Author.Role,
         c.CreatedAt,
-        c.DeletedAt);
+        c.DeletedAt,
+        c.EditedAt);
 }
 
 public sealed class MessagingRepository(AppDbContext db) : IMessagingRepository

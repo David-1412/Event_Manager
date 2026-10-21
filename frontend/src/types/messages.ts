@@ -47,7 +47,11 @@ export interface ForumComment {
   /** Written by the post's author - withheld by the server wherever it would unmask them. */
   isOp: boolean;
   canDelete: boolean;
+  /** The viewer wrote it (editing is author-only). */
+  canEdit?: boolean;
   createdAt: string;
+  /** When the author last edited it; null if never. Shown as "(edited)". */
+  editedAt?: string | null;
   /** One level only. */
   replies: ForumComment[];
 }

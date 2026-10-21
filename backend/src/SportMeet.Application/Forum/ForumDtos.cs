@@ -15,6 +15,12 @@ public sealed record ForumAuthorDto(Guid Id, string Name, string? PhotoUrl, User
 /// <param name="IsMine">True for the caller's own posts, anonymous ones included, so
 /// the author can still find and manage what they posted. It reveals nothing to anyone
 /// else: it is computed per caller.</param>
+/// <param name="EditedAt">When the author last edited it; null if never. The UI shows
+/// "(edited)".</param>
+/// <param name="IsDeleted">A deleted post kept because it has comments. Title, body
+/// and author are withheld; the page shows a placeholder above the thread.</param>
+/// <param name="CanEdit">The caller wrote it (editing is author-only, admins included).</param>
+/// <param name="CanDelete">The caller wrote it, or is an admin.</param>
 public sealed record ForumPostDto(
     Guid Id,
     ForumCategoryDto Category,
@@ -29,7 +35,11 @@ public sealed record ForumPostDto(
     int CommentCount,
     bool IsPinned,
     DateTimeOffset CreatedAt,
-    int ViewCount = 0);
+    int ViewCount = 0,
+    DateTimeOffset? EditedAt = null,
+    bool IsDeleted = false,
+    bool CanEdit = false,
+    bool CanDelete = false);
 
 /// <summary>The settled state after opening a post: its view total (never decreases) and
 /// the caller's Interested state, which a first view may just have set.</summary>
@@ -44,6 +54,10 @@ public sealed record ForumPostPage(IReadOnlyList<ForumPostDto> Items, string? Ne
 
 /// <param name="Category">The category slug, e.g. "qa".</param>
 public sealed record CreateForumPostDto(string Category, string? Title, string Content, bool IsAnonymous);
+
+/// <summary>An edit to a post: the new title (null or blank for none) and body. The
+/// category and anonymity are fixed once posted.</summary>
+public sealed record UpdateForumPostDto(string? Title, string Content);
 
 public enum ForumSort
 {
@@ -74,7 +88,9 @@ public sealed record ForumPostRow(
     double HotScore,
     bool IsPinned,
     DateTimeOffset CreatedAt,
-    int ViewCount = 0);
+    int ViewCount = 0,
+    DateTimeOffset? EditedAt = null,
+    DateTimeOffset? DeletedAt = null);
 
 /// <param name="Search">Text to find in titles and bodies; null for no search.</param>
 /// <param name="AuthorUserId">Only this author's posts, anonymous ones included (My Posts).</param>

@@ -51,7 +51,7 @@ public class ForumController(ForumService forum, ForumCommentService comments) :
 
     /// <summary>
     /// Record that the post page was opened. The view total only ever rises (it is the
-    /// Monash Pulse score), and a signed-in reader's first ever view of someone else's
+    /// Campus Pulse score), and a signed-in reader's first ever view of someone else's
     /// post marks them Interested, which they can turn off - that never lowers views.
     /// Rate-limited so a script cannot pump a post up the list.
     /// </summary>
@@ -86,6 +86,29 @@ public class ForumController(ForumService forum, ForumCommentService comments) :
         return CreatedAtAction(nameof(Post), new { id = post.Id }, post);
     }
 
+    /// <summary>Edit your own post's title and body. Sets <c>editedAt</c>.</summary>
+    [HttpPut("posts/{id:guid}")]
+    [EnableRateLimiting(WriteRateLimit.Comments)]
+    [ProducesResponseType(typeof(ForumPostDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<ForumPostDto>> UpdatePost(
+        Guid id, [FromBody] UpdateForumPostDto dto, CancellationToken ct) =>
+        Ok(await forum.UpdatePostAsync(id, dto, ct));
+
+    /// <summary>Delete your own post (admins: any). Kept as a placeholder while it has
+    /// comments, so the thread stays readable; removed outright otherwise.</summary>
+    [HttpDelete("posts/{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeletePost(Guid id, CancellationToken ct)
+    {
+        await forum.DeletePostAsync(id, ct);
+        return NoContent();
+    }
+
     /// <summary>The post's comments, each with its replies (one level), oldest first.</summary>
     [HttpGet("posts/{id:guid}/comments")]
     [ProducesResponseType(typeof(IReadOnlyList<ForumCommentDto>), StatusCodes.Status200OK)]
@@ -107,8 +130,25 @@ public class ForumController(ForumService forum, ForumCommentService comments) :
         return StatusCode(StatusCodes.Status201Created, comment);
     }
 
-    /// <summary>Delete your own comment (admins: any). Soft: replies keep their place.</summary>
+    /// <summary>Edit your own comment's text. Sets <c>editedAt</c>. Also served at
+    /// <c>/api/comments/{id}</c>.</summary>
+    [HttpPut("comments/{id:guid}")]
+    [HttpPut("~/api/comments/{id:guid}")]
+    [EnableRateLimiting(WriteRateLimit.Comments)]
+    [ProducesResponseType(typeof(ForumCommentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<ForumCommentDto>> UpdateComment(
+        Guid id, [FromBody] UpdateForumCommentDto dto, CancellationToken ct) =>
+        Ok(await comments.UpdateAsync(id, dto, ct));
+
+    /// <summary>Delete your own comment (admins: any). A comment with replies stays as a
+    /// "[deleted]" placeholder so they keep their context; one without is removed. Also
+    /// served at <c>/api/comments/{id}</c>.</summary>
     [HttpDelete("comments/{id:guid}")]
+    [HttpDelete("~/api/comments/{id:guid}")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]

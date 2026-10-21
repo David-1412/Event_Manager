@@ -79,10 +79,47 @@ public sealed class ForumService(IForumRepository forum, ICurrentUser? currentUs
         return new ForumPostPage(page.Select(r => ToDto(r, excerpt: true, liked)).ToList(), next);
     }
 
+    /// <summary>One post in full. A post deleted while it had comments still opens, as
+    /// a placeholder, so its thread stays readable.</summary>
     public async Task<ForumPostDto> GetPostAsync(Guid id, CancellationToken ct = default)
     {
+        var row = await forum.GetPostIncludingDeletedAsync(id, ct) ?? throw new NotFoundException("Forum post", id, id);
+        var liked = row.DeletedAt is null ? await LikedAsync([row.Id], ct) : new HashSet<Guid>();
+        return ToDto(row, excerpt: false, liked);
+    }
+
+    /// <summary>
+    /// Edit a post's title and body. Author only - an admin can remove a post but not
+    /// put words in someone's mouth. Category and anonymity stay as posted: changing
+    /// either after people have replied would change what they replied to.
+    /// </summary>
+    public async Task<ForumPostDto> UpdatePostAsync(Guid id, UpdateForumPostDto dto, CancellationToken ct = default)
+    {
+        var viewer = currentUser?.UserId
+            ?? throw new DomainRuleException("You must be signed in to edit a post.");
         var row = await forum.GetPostAsync(id, ct) ?? throw new NotFoundException("Forum post", id, id);
-        return ToDto(row, excerpt: false, await LikedAsync([row.Id], ct));
+        if (row.AuthorUserId != viewer) throw new ForbiddenException("You can only edit your own posts.");
+
+        var (title, content) = ValidatePost(dto.Title, dto.Content);
+        await forum.UpdatePostAsync(id, title, content, DateTimeOffset.UtcNow, ct);
+        return await GetPostAsync(id, ct);
+    }
+
+    /// <summary>
+    /// Delete a post: its author, or an admin. A post with comments is soft-deleted, so
+    /// the thread stays readable under a "[deleted]" placeholder; one with no comments
+    /// has nothing to keep and its row is removed.
+    /// </summary>
+    public async Task DeletePostAsync(Guid id, CancellationToken ct = default)
+    {
+        var viewer = currentUser?.UserId
+            ?? throw new DomainRuleException("You must be signed in to delete a post.");
+        var row = await forum.GetPostAsync(id, ct) ?? throw new NotFoundException("Forum post", id, id);
+        if (row.AuthorUserId != viewer && currentUser?.IsAdmin != true)
+            throw new ForbiddenException("You can only delete your own posts.");
+
+        if (row.CommentCount > 0) await forum.SoftDeletePostAsync(id, DateTimeOffset.UtcNow, ct);
+        else await forum.HardDeletePostAsync(id, ct);
     }
 
     /// <summary>
@@ -109,7 +146,7 @@ public sealed class ForumService(IForumRepository forum, ICurrentUser? currentUs
     /// view of someone else's post - mark them Interested.
     ///
     /// Views and Interested are kept apart on purpose: the view total only ever goes
-    /// up (it is the Monash Pulse score), while Interested can be turned off at any
+    /// up (it is the Campus Pulse score), while Interested can be turned off at any
     /// time and only moves the post's interested count. "First ever" rather than "not
     /// interested yet" is what makes turning it off stick when they come back.
     /// </summary>
@@ -144,15 +181,7 @@ public sealed class ForumService(IForumRepository forum, ICurrentUser? currentUs
         var authorId = currentUser?.UserId
             ?? throw new DomainRuleException("You must be signed in to post.");
 
-        // Checked here rather than by a FluentValidation validator: the API's
-        // ValidationFilter only runs CreateEventDto's. The migration's CHECK is the
-        // backstop, but it would surface as a 500 instead of a readable 422.
-        if (string.IsNullOrWhiteSpace(dto.Content))
-            throw new DomainRuleException("Write something before posting.");
-        if (dto.Content.Trim().Length > ContentMaxLength)
-            throw new DomainRuleException($"Posts can be at most {ContentMaxLength:N0} characters.");
-        if (dto.Title?.Trim().Length > TitleMaxLength)
-            throw new DomainRuleException($"Titles can be at most {TitleMaxLength} characters.");
+        var (title, content) = ValidatePost(dto.Title, dto.Content);
 
         var category = await forum.FindCategoryAsync(dto.Category, ct)
             ?? throw new DomainRuleException("Choose one of the forum's categories.");
@@ -163,10 +192,8 @@ public sealed class ForumService(IForumRepository forum, ICurrentUser? currentUs
             Id = Guid.NewGuid(),
             AuthorUserId = authorId,
             CategoryId = category.Id,
-            // An all-whitespace title is no title: the card would otherwise render an
-            // empty headline above the body.
-            Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim(),
-            Content = dto.Content.Trim(),
+            Title = title,
+            Content = content,
             IsAnonymous = dto.IsAnonymous,
             HotScore = ForumRanking.HotScore(0, 0, now),
             CreatedAt = now,
@@ -176,11 +203,43 @@ public sealed class ForumService(IForumRepository forum, ICurrentUser? currentUs
         return await GetPostAsync(post.Id, ct);
     }
 
+    /// <summary>The trimmed title (null when blank) and body, or a 422 naming the
+    /// problem. Checked here rather than by a FluentValidation validator: the API's
+    /// ValidationFilter only runs CreateEventDto's. The migration's CHECK is the
+    /// backstop, but it would surface as a 500 instead of a readable 422.</summary>
+    private static (string? Title, string Content) ValidatePost(string? title, string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            throw new DomainRuleException("Write something before posting.");
+        if (content.Trim().Length > ContentMaxLength)
+            throw new DomainRuleException($"Posts can be at most {ContentMaxLength:N0} characters.");
+        if (title?.Trim().Length > TitleMaxLength)
+            throw new DomainRuleException($"Titles can be at most {TitleMaxLength} characters.");
+
+        // An all-whitespace title is no title: the card would otherwise render an
+        // empty headline above the body.
+        return (string.IsNullOrWhiteSpace(title) ? null : title.Trim(), content.Trim());
+    }
+
     private ForumPostDto ToDto(ForumPostRow row, bool excerpt, IReadOnlySet<Guid> liked)
     {
         var viewerId = currentUser?.UserId;
+        var isAdmin = currentUser?.IsAdmin == true;
         var isMine = viewerId is { } viewer && viewer == row.AuthorUserId;
-        var showAuthor = !row.IsAnonymous || isMine || currentUser?.IsAdmin == true;
+
+        if (row.DeletedAt is not null)
+        {
+            // Kept only so its comments stay readable: nothing of the post itself -
+            // not its words, not who wrote it - is shown to anyone.
+            return new ForumPostDto(
+                row.Id,
+                new ForumCategoryDto(row.CategoryId, row.CategoryName, row.CategorySlug),
+                null, "", false, row.IsAnonymous, null, false, false,
+                row.LikeCount, row.CommentCount, false, row.CreatedAt, row.ViewCount,
+                EditedAt: null, IsDeleted: true, CanEdit: false, CanDelete: false);
+        }
+
+        var showAuthor = !row.IsAnonymous || isMine || isAdmin;
 
         var truncated = excerpt && row.Content.Length > ExcerptLength;
         var content = truncated ? row.Content[..ExcerptLength].TrimEnd() : row.Content;
@@ -201,7 +260,11 @@ public sealed class ForumService(IForumRepository forum, ICurrentUser? currentUs
             row.CommentCount,
             row.IsPinned,
             row.CreatedAt,
-            row.ViewCount);
+            row.ViewCount,
+            row.EditedAt,
+            IsDeleted: false,
+            CanEdit: isMine,
+            CanDelete: isMine || isAdmin);
     }
 
     private static ForumTab ParseTab(string? tab) => tab?.ToLowerInvariant() switch

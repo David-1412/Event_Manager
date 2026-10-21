@@ -7,6 +7,7 @@ import type {
   ForumQuery,
   TrendingItem,
   TrendingWindow,
+  UpdateForumPost,
 } from "@/types/forum";
 
 /**
@@ -46,6 +47,14 @@ export const isForumPostsKey = (key: unknown) =>
 
 export const createForumPost = (body: CreateForumPost) =>
   request<ForumPost>("/api/forum/posts", { method: "POST", body });
+
+/** Author only. Returns the post as it now reads, with `editedAt` set. */
+export const updateForumPost = (id: string, body: UpdateForumPost) =>
+  request<ForumPost>(`/api/forum/posts/${id}`, { method: "PUT", body });
+
+/** Author or admin. A post with comments stays as a placeholder; one without is removed. */
+export const deleteForumPost = (id: string) =>
+  request<void>(`/api/forum/posts/${id}`, { method: "DELETE" });
 
 /** Record that the post page was opened. On a signed-in reader's first ever view the
  * server also marks them Interested; the result says so. */

@@ -17,6 +17,24 @@ public interface IForumRepository
     /// <summary>Null for a missing or deleted post.</summary>
     Task<ForumPostRow?> GetPostAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>Like <see cref="GetPostAsync"/>, but a soft-deleted post (one kept for
+    /// its comments) is returned too, with <see cref="ForumPostRow.DeletedAt"/> set.</summary>
+    Task<ForumPostRow?> GetPostIncludingDeletedAsync(Guid id, CancellationToken ct = default) =>
+        GetPostAsync(id, ct);
+
+    /// <summary>Replaces a live post's title and body and stamps edited_at.</summary>
+    Task UpdatePostAsync(Guid id, string? title, string content, DateTimeOffset editedAt, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>Soft-deletes the post (sets deleted_at) - used when it has comments.</summary>
+    Task SoftDeletePostAsync(Guid id, DateTimeOffset deletedAt, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>Removes the post's row. Its likes, views and any deleted comments go
+    /// with it (ON DELETE CASCADE).</summary>
+    Task HardDeletePostAsync(Guid id, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
     Task AddPostAsync(ForumPost post, CancellationToken ct = default);
 
     /// <summary>Marks the post Interested. False when the caller already had - the

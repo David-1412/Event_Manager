@@ -37,7 +37,7 @@ export function rollingRows<T>(items: readonly T[], start: number, size = VISIBL
 }
 
 /**
- * Monash Pulse (Campus Buzz): the campus top 10 - events and forum posts ranked by
+ * Campus Pulse: the campus top 10 - events and forum posts ranked by
  * total page views (the flame number, which never goes down) - rolling one row per
  * second.
  *
@@ -85,7 +85,7 @@ export function TrendingBanner({ className }: { className?: string }) {
             className="fill-red-500 text-red-500 drop-shadow-[0_0_6px_rgb(239_68_68/0.6)]"
           />
           <h2 id={titleId} className="text-h3 text-fg">
-            Monash Pulse <span className="text-fg-muted">(Campus Buzz)</span>
+            Campus Pulse
           </h2>
           <button
             type="button"

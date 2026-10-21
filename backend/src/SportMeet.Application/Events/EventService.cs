@@ -257,6 +257,7 @@ public sealed class EventService(
             var oldStatus = entity.Status;
             var oldVisibility = entity.Visibility;
             EventUpdateRules.Apply(entity, request, now);
+            entity.EditedAt = now;
 
             if (!currentUser.CanPublishPublicEvents)
             {

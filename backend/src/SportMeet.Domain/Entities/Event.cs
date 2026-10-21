@@ -89,6 +89,13 @@ public class Event
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>When the host last edited the event's details, or null if never.
+    /// Separate from <see cref="UpdatedAt"/>, which also moves on status changes
+    /// (review decisions, cancel, reopen) that are not edits.</summary>
+    public DateTimeOffset? EditedAt { get; set; }
+
+    /// <summary>Soft delete. Exposed by the database as <c>is_deleted</c>.</summary>
     public DateTimeOffset? DeletedAt { get; set; }
 
     public ICollection<EventParticipant> Participants { get; set; } = new List<EventParticipant>();

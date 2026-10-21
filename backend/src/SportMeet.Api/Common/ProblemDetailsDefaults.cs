@@ -98,6 +98,17 @@ public static class ProblemDetailsDefaults
         Extensions = { ["code"] = "Unauthorized" },
     };
 
+    /// <summary>Signed in, but not allowed to act on this row (someone else's post or
+    /// comment). The detail is the sentence the UI shows.</summary>
+    public static ProblemDetails Forbidden(string message) => new()
+    {
+        Type = Type,
+        Title = "Not allowed.",
+        Detail = message,
+        Status = StatusCodes.Status403Forbidden,
+        Extensions = { ["code"] = "Forbidden" },
+    };
+
     /// <summary>A refusal from the import pipeline that the user can act on. The title is
     /// the sentence shown in the UI, so it is written for a person.</summary>
     public static ProblemDetails Import(ImportErrorCode code, string message)

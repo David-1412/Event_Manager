@@ -26,7 +26,7 @@ public sealed class EventInterestConfiguration : IEntityTypeConfiguration<EventI
         // user side. The event side is already served by the composite key's
         // leading column, so the per-event COUNT in v_event_feed needs no index.
         b.HasIndex(x => x.UserId).HasDatabaseName("ix_event_interests_user_id");
-        // Trending ("Monash Pulse") counts interests created inside a time window.
+        // Trending ("Campus Pulse") counts interests created inside a time window.
         b.HasIndex(x => x.CreatedAt).HasDatabaseName("ix_event_interests_interested_at");
     }
 }

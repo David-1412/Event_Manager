@@ -44,7 +44,7 @@ public sealed class EventViewConfiguration : IEntityTypeConfiguration<EventView>
         // The per-event count over the whole table, including anonymous rows the
         // unique index above never covers.
         b.HasIndex(x => x.EventId).HasDatabaseName("ix_event_views_event_id");
-        // Monash Pulse asks "which events were viewed in this period".
+        // Campus Pulse asks "which events were viewed in this period".
         b.HasIndex(x => x.ViewedAt).HasDatabaseName("ix_event_views_viewed_at");
     }
 }

@@ -9,8 +9,8 @@ namespace SportMeet.Domain.Entities;
 /// replies - the shape a phone screen can show without indenting off the edge.
 ///
 /// As with posts, the author is always stored and anonymity is a display rule.
-/// Deletes are soft: a removed comment with replies stays as "[deleted]" so the
-/// replies keep their context.
+/// A deleted comment that still has replies stays as a "[deleted]" placeholder so
+/// the replies keep their context (soft delete); one without replies is removed.
 /// </summary>
 public class ForumComment
 {
@@ -29,5 +29,10 @@ public class ForumComment
     public bool IsAnonymous { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>When the author last changed the text, or null if never.</summary>
+    public DateTimeOffset? EditedAt { get; set; }
+
+    /// <summary>Set on a soft delete. Exposed by the database as <c>is_deleted</c>.</summary>
     public DateTimeOffset? DeletedAt { get; set; }
 }
