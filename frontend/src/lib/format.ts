@@ -279,6 +279,13 @@ export function spotsTakenSentence(current: number, max: number | null): string 
 /** Remaining seats, or null when there is no limit. Null is returned rather than
  *  Infinity so callers cannot accidentally render "Infinity spots left" or compare
  *  against a number that is not a capacity. */
+/** An event's capacity, or null when it has none. A missing value and 0 both mean
+ *  "no limit" (0 is not a valid capacity - the API's floor is 2), so every display
+ *  reads this instead of the raw field and can never print "null of null". */
+export function capacityLimit(max: number | null | undefined): number | null {
+  return typeof max === "number" && max > 0 ? max : null;
+}
+
 export function spotsLeft(current: number, max: number | null): number | null {
   return max === null ? null : Math.max(0, max - current);
 }

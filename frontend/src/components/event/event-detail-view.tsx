@@ -32,6 +32,7 @@ import {
   formatTimeRange,
   isFull as isEventFull,
   spotsLeft,
+  capacityLimit,
 } from "@/lib/format";
 import type { EventDetail } from "@/types/events";
 import { isPendingReviewStatus } from "@/types/events";
@@ -88,7 +89,8 @@ function DetailBody({ event }: { event: EventDetail }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   useEffect(() => {
-    document.title = `${event.title} (${event.joinedCount}/${event.maxParticipants}) · MonaHub`;
+    const limit = capacityLimit(event.maxParticipants);
+    document.title = `${event.title} (${limit === null ? `${event.joinedCount} going` : `${event.joinedCount}/${limit}`}) · MonaHub`;
     return () => {
       document.title = "MonaHub";
     };
@@ -100,7 +102,7 @@ function DetailBody({ event }: { event: EventDetail }) {
   // `isFull` from lib/format rather than a raw comparison: maxParticipants is
   // nullable, and `joinedCount >= null` coerces to `>= 0`, which would report
   // every unlimited event as full.
-  const isFull = isEventFull(event.joinedCount, event.maxParticipants);
+  const isFull = isEventFull(event.joinedCount, capacityLimit(event.maxParticipants));
   const requiresApproval = event.requiresJoinApproval === true;
   const isRequestPending = event.myJoinRequestStatus === "Pending";
   const derived = deriveJoinState({
@@ -144,7 +146,7 @@ function DetailBody({ event }: { event: EventDetail }) {
     <JoinButton
       state={state}
       current={event.joinedCount}
-      max={event.maxParticipants}
+      max={capacityLimit(event.maxParticipants)}
       isHost={event.isHost}
       isCancelled={event.isCancelled}
       failure={join.failure}
@@ -283,8 +285,9 @@ function DetailBody({ event }: { event: EventDetail }) {
  * user scrolls the left column.
  */
 function ActionCard({ event, joinSlot }: { event: EventDetail; joinSlot: React.ReactNode }) {
-  const left = spotsLeft(event.joinedCount, event.maxParticipants);
-  const availability = availabilityOf(event.joinedCount, event.maxParticipants);
+  const limit = capacityLimit(event.maxParticipants);
+  const left = spotsLeft(event.joinedCount, limit);
+  const availability = availabilityOf(event.joinedCount, limit);
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-raise">
       <Thumb event={event} />
@@ -307,7 +310,7 @@ function ActionCard({ event, joinSlot }: { event: EventDetail; joinSlot: React.R
         <div className="rounded-md bg-surface-2 px-3 py-2">
           <span className="text-micro uppercase text-fg-muted">Spots remaining</span>
           <p className={cn("text-count", countTextClass[availability])} data-count>
-            {left === 0 ? "Full" : `${left} of ${event.maxParticipants}`}
+            {limit === null ? "Open to all" : left === 0 ? "Full" : `${left} of ${limit}`}
           </p>
         </div>
 
@@ -516,8 +519,9 @@ function DetailHeader({
   menu: React.ReactNode;
   joinSlot: React.ReactNode;
 }) {
-  const left = spotsLeft(event.joinedCount, event.maxParticipants);
-  const availability = availabilityOf(event.joinedCount, event.maxParticipants);
+  const limit = capacityLimit(event.maxParticipants);
+  const left = spotsLeft(event.joinedCount, limit);
+  const availability = availabilityOf(event.joinedCount, limit);
   return (
     <header>
       <Link
@@ -546,7 +550,11 @@ function DetailHeader({
                 : "neutral"
           }
         >
-          {left === 0 ? "Full" : `${left} ${left === 1 ? "spot" : "spots"} left`}
+          {left === null
+            ? "Open event"
+            : left === 0
+              ? "Full"
+              : `${left} ${left === 1 ? "spot" : "spots"} left`}
         </Badge>
         {event.distanceKm !== null && <Badge>{formatDistance(event.distanceKm)}</Badge>}
         {/* One badge per tag; hidden when the event has none instead of showing
