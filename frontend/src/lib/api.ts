@@ -35,20 +35,49 @@ export class ApiError extends Error {
   }
 }
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-export const usingFixtures = API_BASE_URL === "";
+const CONFIGURED_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+
+/** No API configured at all: the app runs on its built-in fixtures. Decided from
+ *  the configured value, not the resolved one below, which can legitimately be "". */
+export const usingFixtures = CONFIGURED_API_BASE_URL === "";
 
 /**
- * Resolve an uploaded-media URL (a stored `/uploads/<key>` path) to something a
- * browser <img> can load. The API serves uploads from its own origin, which is
- * NOT the web app's origin, so a relative `/uploads/...` would 404 against the
- * Next server. An already-absolute URL is returned untouched. Empty input stays
- * empty so callers can branch on falsy rather than on this function's output.
+ * The origin API calls are prefixed with. Normally the configured
+ * NEXT_PUBLIC_API_BASE_URL - but on an https page a plain-http API address would
+ * have every call, upload and image blocked as mixed content, so the browser uses
+ * the site's own origin instead ("", i.e. `/api/...`), which the web server
+ * forwards to the API (next.config.ts). On the server, and on an http page, the
+ * configured value stands.
+ */
+export function resolveApiBaseUrl(configured: string, pageProtocol: string | undefined): string {
+  if (pageProtocol === "https:" && /^http:\/\//i.test(configured)) return "";
+  return configured;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl(
+  CONFIGURED_API_BASE_URL,
+  typeof window === "undefined" ? undefined : window.location.protocol,
+);
+
+/**
+ * Resolve an uploaded-media URL to something a browser <img> can load.
+ *
+ * - Absolute (`http...`): used as-is.
+ * - Root-relative (`/uploads/<key>.png`, what the upload endpoint returns and the
+ *   event stores): used as-is, against the page's own origin. The web server
+ *   forwards `/uploads/*` to the API (next.config.ts), so this loads on any domain
+ *   the site is served from - including https, where an `http://<ip>:5000` image
+ *   would be blocked as mixed content.
+ * - Bare (`uploads/x.png`, from an older or hand-made row): made root-relative.
+ *
+ * Empty input stays empty so callers can branch on falsy rather than on this
+ * function's output.
  */
 export function mediaUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${API_BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+  const value = url?.trim();
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value) || value.startsWith("/")) return value;
+  return `/${value}`;
 }
 
 const TIMEOUT_MS = 10_000;

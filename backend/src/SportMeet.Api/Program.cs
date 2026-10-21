@@ -89,6 +89,24 @@ builder.Services.AddEventReminders(builder.Configuration);
 
 var app = builder.Build();
 
+// Behind the web app. On an https site the browser reaches this API through the
+// Next server's /api, /hubs and /uploads rewrites, so the TCP peer is the web
+// container, not the person. Read the client address from X-Forwarded-For - but
+// only when the peer is on a private network (the compose network), so nobody
+// calling port 5000 directly can pick their own IP to dodge the per-IP limits.
+var forwarded = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor,
+    ForwardLimit = 1,
+};
+forwarded.KnownNetworks.Clear();
+forwarded.KnownProxies.Clear();
+foreach (var (prefix, length) in new[] { ("10.0.0.0", 8), ("172.16.0.0", 12), ("192.168.0.0", 16), ("127.0.0.0", 8) })
+{
+    forwarded.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(System.Net.IPAddress.Parse(prefix), length));
+}
+app.UseForwardedHeaders(forwarded);
+
 // Host-uploaded event thumbnails are written to App_Data/uploads (a compose
 // volume) and referenced by the URL /uploads/<key>. Serving them here keeps the
 // stored URL exactly what the browser requests; the GUID-named key cannot

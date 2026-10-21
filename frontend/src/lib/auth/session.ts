@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/api";
+import { API_BASE_URL, ApiError } from "@/lib/api";
 import type { UserRole } from "@/types/admin";
 import type { AuthUser } from "./types";
 
@@ -81,7 +81,7 @@ export async function fetchMe(
   token: string,
   signal?: AbortSignal,
 ): Promise<{ id: string | undefined; role: UserRole | null } | null> {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+  const base = API_BASE_URL;
   try {
     const response = await fetch(`${base}${AUTH_ME_PATH}`, {
       signal,
@@ -198,7 +198,7 @@ export async function registerWithApi(
 }
 
 async function postLogin(body: unknown, signal?: AbortSignal): Promise<Response> {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+  const base = API_BASE_URL;
   // Deliberately not `request()` from lib/api: that one attaches the bearer
   // token and enforces a 10s timeout, and the auth exchange has neither job
   // before a token exists.

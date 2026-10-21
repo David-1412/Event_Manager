@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useSWRConfig } from "swr";
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, usingFixtures } from "@/lib/api";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { getAccessToken } from "@/lib/auth/token-store";
 import { isMessagesKey } from "./messages-api";
@@ -33,7 +33,7 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
   const userId = user?.id;
 
   useEffect(() => {
-    if (!userId || !API_BASE_URL) return;
+    if (!userId || usingFixtures) return;
     let disposed = false;
     let connection: import("@microsoft/signalr").HubConnection | null = null;
 

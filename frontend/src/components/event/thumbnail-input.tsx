@@ -33,6 +33,9 @@ export function ThumbnailInput({
   const [error, setError] = useState<string | null>(null);
 
   const src = mediaUrl(value);
+  // The src that failed to load, if any. Keyed by src rather than a boolean so a
+  // new upload gets a fresh attempt without an effect to reset it.
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
 
   async function onPick(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -71,12 +74,18 @@ export function ThumbnailInput({
     <div className="flex flex-col gap-2">
       {src ? (
         <div className="relative overflow-hidden rounded-md border border-border">
-          {/* Plain <img>, not next/image: the bytes come from the API origin, which
-              isn't a configured image domain, and these are the host's own files.
+          {/* Plain <img>, not next/image: the bytes are the host's own upload, served
+              same-origin from /uploads (proxied to the API by next.config.ts).
               alt="" - the file name and the Remove control carry the meaning; the
               image is a preview of the host's own upload, not event content. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt="" className="h-40 w-full object-cover" />
+          {brokenSrc === src ? (
+            <p className="flex h-40 items-center justify-center bg-surface-2 px-4 text-center text-meta text-fg-muted">
+              Uploaded, but the preview couldn&apos;t load. The photo is still attached.
+            </p>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt="" className="h-40 w-full object-cover" onError={() => setBrokenSrc(src)} />
+          )}
           <Button
             size="sm"
             variant="secondary"
