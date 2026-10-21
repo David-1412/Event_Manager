@@ -191,6 +191,14 @@ public interface IEventRepository
     /// even if approving it is a no-op for the feed.</summary>
     Task<bool> TrySetReviewStatusAsync(Guid eventId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default);
 
+    /// <summary>Carries a review decision across the rest of a recurring series: every
+    /// other session of <paramref name="seriesId"/> still in
+    /// <paramref name="expectedStatus"/> moves to <paramref name="status"/>. A series
+    /// is submitted as one thing, so it is approved or rejected as one. Returns the
+    /// number of sessions changed. The default is for fakes that have no series.</summary>
+    Task<int> SetSeriesReviewStatusAsync(Guid seriesId, Guid exceptEventId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default)
+        => Task.FromResult(0);
+
     /// <summary>Removes the participant row; no-op when absent. Returns true when
     /// the event row itself was cancelled by this call (the host left).</summary>
     Task<bool> RemoveParticipantAsync(Guid eventId, Guid userId, DateTimeOffset cancelledAt, CancellationToken ct = default);

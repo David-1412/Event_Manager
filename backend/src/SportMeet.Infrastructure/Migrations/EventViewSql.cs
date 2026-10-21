@@ -243,7 +243,10 @@ internal static class EventViewSql
         JOIN sportsmeet.users u ON u.id = e.host_id;
         """;
 
-    /// <summary>The current shape: Admin_Event_Management plus
+    /// <summary>The current shape: Add_Recurring_Events, which appends the series
+    /// columns (is_recurring ... series_id) to the join-approval shape below.
+    ///
+    /// Before that: Admin_Event_Management plus
     /// <c>e.requires_join_approval</c>, so the detail page can render the
     /// "Pending approval" join state from the same single round-trip that already
     /// carries the event.
@@ -293,22 +296,72 @@ internal static class EventViewSql
             (SELECT COUNT(*)::int FROM sportsmeet.event_interests i WHERE i.event_id = e.id)
                 AS interested_count,
             e.thumbnail_url,
-            u.role AS host_role
+            u.role AS host_role,
+            e.is_recurring,
+            e.recurrence_frequency,
+            e.recurrence_days,
+            e.recurrence_end_date,
+            e.recurrence_count,
+            e.series_id
         FROM sportsmeet.events e
         LEFT JOIN sportsmeet.sports s ON s.id = e.sport_id
         JOIN sportsmeet.users u ON u.id = e.host_id
         WHERE e.deleted_at IS NULL;
         """;
 
-    /// <summary>The shape as of Add_Event_Join_Approval, and the live one:
+    /// <summary>The shape as of Add_Event_Join_Approval, no longer the live one:
     /// Admin_Event_Management plus the approval flag.
     ///
-    /// This and <see cref="Definition"/> are the same string today. It exists as a
-    /// named constant so the migration that introduced the column cites the shape it
-    /// actually created: when the next view column arrives, Definition moves on and
-    /// this stays, so a rollback to just after this migration still rebuilds the right
+    /// Frozen when Add_Recurring_Events moved Definition on. The migration that
+    /// introduced the column (and Allow_Unlimited_Capacity) cite the shape it
+    /// actually created, so it stays, so a rollback to just after this migration still rebuilds the right
     /// shape. The same reason <see cref="AddEventRejectionReasonView"/> exists.</summary>
-    public const string AddEventJoinApprovalView = Definition;
+    public const string AddEventJoinApprovalView = """
+        CREATE OR REPLACE VIEW sportsmeet.v_event_feed AS
+        SELECT
+            e.id,
+            e.host_id,
+            e.title,
+            e.description,
+            e.sport_id,
+            e.venue_name,
+            e.address,
+            e.place_id,
+            e.lat,
+            e.lng,
+            e.timezone,
+            e.start_at,
+            e.end_at,
+            e.max_participants,
+            e.skill_level,
+            e.cost,
+            e.status,
+            e.cancelled_at,
+            e.rejection_reason,
+            e.created_at,
+            e.updated_at,
+            e.requires_join_approval,
+            (SELECT COUNT(*)::int FROM sportsmeet.event_participants p WHERE p.event_id = e.id)
+                AS current_participants,
+            s.name AS sport_name,
+            s.slug AS sport_slug,
+            s.icon AS sport_icon,
+            u.name AS host_name,
+            u.photo_url AS host_photo_url,
+            (SELECT string_agg(t.name::text, ',' ORDER BY t.name)
+               FROM sportsmeet.event_tags et
+               JOIN sportsmeet.tags t ON t.id = et.tag_id
+              WHERE et.event_id = e.id) AS tags,
+            e.visibility,
+            (SELECT COUNT(*)::int FROM sportsmeet.event_interests i WHERE i.event_id = e.id)
+                AS interested_count,
+            e.thumbnail_url,
+            u.role AS host_role
+        FROM sportsmeet.events e
+        LEFT JOIN sportsmeet.sports s ON s.id = e.sport_id
+        JOIN sportsmeet.users u ON u.id = e.host_id
+        WHERE e.deleted_at IS NULL;
+        """;
 
     /// <summary>The shape Add_Tags replaces, used only by its Down(): inner join on
     /// sports, no tag aggregate. Kept here so a rollback does not have to hand-write

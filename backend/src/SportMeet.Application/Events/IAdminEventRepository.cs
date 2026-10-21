@@ -19,4 +19,8 @@ public interface IAdminEventRepository
     Task ReplaceEventTagsAsync(Guid eventId, IReadOnlyList<string> names, DateTimeOffset now, CancellationToken ct = default);
     Task SoftDeleteAsync(Event eventEntity, DateTimeOffset deletedAt, CancellationToken ct = default);
     Task RunInTransactionAsync(Func<CancellationToken, Task> action, CancellationToken ct = default);
+
+    /// <summary>See <see cref="IEventRepository.SetSeriesReviewStatusAsync"/>.</summary>
+    Task<int> SetSeriesReviewStatusAsync(Guid seriesId, Guid exceptEventId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default)
+        => Task.FromResult(0);
 }

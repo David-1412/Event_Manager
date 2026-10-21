@@ -110,7 +110,20 @@ public class EventReviewWorkflowTests
         public Task SaveChangesAsync(CancellationToken ct = default) => Task.CompletedTask;
 
         public Task<FeedRow?> FindAsync(Guid id, CancellationToken ct = default)
-            => Task.FromResult(Found is { } f && f.Event.Id == id ? f : null);
+            => Task.FromResult(Found is { } f && f.Event.Id == id
+                ? f
+                // Any session a series create wrote, not only the last one.
+                : Added.FirstOrDefault(e => e.Id == id) is { } added
+                    ? new FeedRow(added, [], null, "Host", null, 0, 0)
+                    : null);
+
+        public (Guid Series, Guid Except, EventStatus Expected, EventStatus Applied)? LastSeriesReview;
+
+        public Task<int> SetSeriesReviewStatusAsync(Guid seriesId, Guid exceptEventId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default)
+        {
+            LastSeriesReview = (seriesId, exceptEventId, expectedStatus, status);
+            return Task.FromResult(0);
+        }
 
         public Task<List<FeedRow>> ListPendingReviewAsync(CancellationToken ct = default)
             => Task.FromResult(PendingQueue);
@@ -507,6 +520,133 @@ public class EventReviewWorkflowTests
 
         await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.DeleteCancelledAsync(rig.Repo.Found.Event.Id));
         Assert.Null(rig.Repo.Deleted);
+    }
+
+    // ---- Recurring series ------------------------------------------------------
+
+    private static CreateEventDto Series(EventVisibility visibility, CreateRecurrenceDto recurrence) => new()
+    {
+        Title = "Weekly social hit",
+        StartAt = Start,
+        EndAt = Start.AddHours(2),
+        VenueName = "Seddon Park",
+        Address = "42 Railway Ave, Seddon",
+        Latitude = -37.81,
+        Longitude = 144.89,
+        MaxParticipants = 12,
+        Visibility = visibility,
+        Timezone = "Australia/Melbourne",
+        Recurrence = recurrence,
+    };
+
+    [Fact]
+    public async Task Recurring_create_writes_one_event_per_session_linked_by_series()
+    {
+        var rig = new Rig { IsModerator = true };
+
+        var dto = await rig.Service.CreateAsync(Series(EventVisibility.Public, new CreateRecurrenceDto
+        {
+            Frequency = "WEEKLY",
+            Count = 4,
+        }));
+
+        Assert.Equal(4, rig.Repo.Added.Count);
+        var first = rig.Repo.Added[0];
+        Assert.Equal(first.Id, dto.Id);
+        Assert.Equal(Start, first.StartAt);
+        Assert.All(rig.Repo.Added, e =>
+        {
+            Assert.True(e.IsRecurring);
+            Assert.Equal(first.Id, e.SeriesId);
+            Assert.Equal(RecurrenceFrequency.Weekly, e.RecurrenceFrequency);
+            Assert.Equal(4, e.RecurrenceCount);
+            Assert.Equal(TimeSpan.FromHours(2), e.EndAt - e.StartAt);
+            Assert.Equal(EventStatus.Scheduled, e.Status);
+        });
+        Assert.Equal(4, rig.Repo.Added.Select(e => e.Id).Distinct().Count());
+        Assert.Equal(Start.AddDays(21), rig.Repo.Added[^1].StartAt);
+        Assert.True(dto.IsRecurring);
+        Assert.StartsWith("Weekly on ", dto.RecurrenceSummary);
+        Assert.EndsWith("4 sessions", dto.RecurrenceSummary);
+    }
+
+    [Fact]
+    public async Task Recurring_create_from_a_member_puts_every_session_in_review()
+    {
+        var rig = new Rig();
+
+        await rig.Service.CreateAsync(Series(EventVisibility.Public, new CreateRecurrenceDto
+        {
+            Frequency = "weekly",
+            EndDate = DateOnly.FromDateTime(Start.UtcDateTime).AddDays(14),
+        }));
+
+        Assert.Equal(3, rig.Repo.Added.Count);
+        Assert.All(rig.Repo.Added, e => Assert.Equal(EventStatus.PendingReview, e.Status));
+        Assert.NotNull(rig.Repo.Added[0].RecurrenceEndDate);
+        Assert.Null(rig.Repo.Added[0].RecurrenceCount);
+    }
+
+    [Theory]
+    [InlineData("HOURLY", 4)]
+    [InlineData("WEEKLY", null)]
+    [InlineData("WEEKLY", 99)]
+    public async Task Recurring_create_with_a_bad_rule_is_a_domain_error_and_writes_nothing(string frequency, int? count)
+    {
+        var rig = new Rig { IsModerator = true };
+
+        await Assert.ThrowsAsync<DomainRuleException>(() => rig.Service.CreateAsync(
+            Series(EventVisibility.Public, new CreateRecurrenceDto { Frequency = frequency, Count = count })));
+        Assert.Empty(rig.Repo.Added);
+    }
+
+    [Fact]
+    public async Task Approving_one_session_approves_the_rest_of_its_series()
+    {
+        var rig = new Rig { IsAdmin = true };
+        var row = Row(EventStatus.PendingReview, HostId);
+        row.Event.IsRecurring = true;
+        row.Event.SeriesId = row.Event.Id;
+        row.Event.RecurrenceFrequency = RecurrenceFrequency.Weekly;
+        rig.Repo.Found = row;
+
+        await rig.Service.ApproveAsync(row.Event.Id);
+
+        Assert.Equal((row.Event.Id, row.Event.Id, EventStatus.PendingReview, EventStatus.Published), rig.Repo.LastSeriesReview);
+        // Followers hear about the series once, not once per session.
+        Assert.Single(rig.Notifications.Added, n => n.Type == "EventApproved");
+    }
+
+    [Fact]
+    public async Task A_one_off_decision_touches_no_series()
+    {
+        var rig = new Rig { IsAdmin = true };
+        rig.Repo.Found = Row(EventStatus.PendingReview, HostId);
+
+        await rig.Service.RejectAsync(rig.Repo.Found.Event.Id);
+
+        Assert.Null(rig.Repo.LastSeriesReview);
+    }
+
+    [Fact]
+    public async Task Queue_shows_a_series_once_by_its_earliest_session()
+    {
+        var rig = new Rig { IsAdmin = true };
+        var sessions = Enumerable.Range(0, 3).Select(i => Row(EventStatus.PendingReview, HostId)).ToList();
+        var seriesId = sessions[0].Event.Id;
+        for (var i = 0; i < sessions.Count; i++)
+        {
+            sessions[i].Event.SeriesId = seriesId;
+            sessions[i].Event.IsRecurring = true;
+            sessions[i].Event.StartAt = Start.AddDays(7 * (2 - i));
+            sessions[i].Event.EndAt = sessions[i].Event.StartAt.AddHours(2);
+        }
+        rig.Repo.PendingQueue = [.. sessions, Row(EventStatus.PendingReview, OtherId)];
+
+        var queue = await rig.Service.ListPendingReviewAsync();
+
+        Assert.Equal(2, queue.Count);
+        Assert.Equal(sessions[2].Event.Id, queue[0].Id);
     }
 
     [Fact]

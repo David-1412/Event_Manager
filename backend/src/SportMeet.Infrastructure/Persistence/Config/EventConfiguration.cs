@@ -90,6 +90,24 @@ public sealed class EventConfiguration : IEntityTypeConfiguration<Event>
             .HasDefaultValue(false)
             .IsRequired();
 
+        // Recurring series (Add_Recurring_Events). The frequency is stored upper-case
+        // ("WEEKLY"), the iCalendar spelling the CHECK constraint lists, rather than
+        // the PascalCase the other enum columns use.
+        b.Property(x => x.IsRecurring).HasColumnName("is_recurring").HasDefaultValue(false).IsRequired();
+        b.Property(x => x.RecurrenceFrequency)
+            .HasColumnName("recurrence_frequency")
+            .HasConversion(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<RecurrenceFrequency, string>(
+                v => v.ToString().ToUpperInvariant(),
+                s => Enum.Parse<RecurrenceFrequency>(s, true)))
+            .HasMaxLength(10);
+        b.Property(x => x.RecurrenceDays).HasColumnName("recurrence_days").HasMaxLength(27);
+        b.Property(x => x.RecurrenceEndDate).HasColumnName("recurrence_end_date");
+        b.Property(x => x.RecurrenceCount).HasColumnName("recurrence_count");
+        b.Property(x => x.SeriesId).HasColumnName("series_id");
+        b.HasIndex(x => new { x.SeriesId, x.StartAt })
+            .HasDatabaseName("events_series_idx")
+            .HasFilter("series_id IS NOT NULL");
+
         // Reminder sentinels. No default and nullable: null means "not yet sent", and
         // a column default would have to be a timestamp that means nothing.
         b.Property(x => x.TomorrowReminderSentAt).HasColumnName("tomorrow_reminder_sent_at");

@@ -49,4 +49,29 @@ public sealed class CreateEventDto
     /// must not find its event silently gating joins, so the absent case is the
     /// ordinary immediate-join behaviour rather than a judgment call.</summary>
     public bool? RequiresJoinApproval { get; init; }
+
+    /// <summary>Optional. Present when the host turned on "Repeat event": the server
+    /// expands it into one event per session (see RecurrenceRule), and the response
+    /// is the first session. Null is a one-off event, so older clients are unaffected.</summary>
+    public CreateRecurrenceDto? Recurrence { get; init; }
+}
+
+/// <summary>How a new event repeats. Exactly one of <see cref="EndDate"/> and
+/// <see cref="Count"/>.</summary>
+public sealed class CreateRecurrenceDto
+{
+    /// <summary>"DAILY", "WEEKLY", "BIWEEKLY" or "MONTHLY" (case-insensitive). A
+    /// string rather than the enum because this API registers its enum converters
+    /// one by one and the spec spells these upper-case.</summary>
+    public string? Frequency { get; init; }
+
+    /// <summary>Weekday codes for weekly and fortnightly series ("MON", "WED"). The
+    /// first session's weekday is always included, so this may be empty.</summary>
+    public List<string>? Days { get; init; }
+
+    /// <summary>Last day of the series (inclusive), in the event's timezone.</summary>
+    public DateOnly? EndDate { get; init; }
+
+    /// <summary>Total number of sessions, the first included.</summary>
+    public int? Count { get; init; }
 }

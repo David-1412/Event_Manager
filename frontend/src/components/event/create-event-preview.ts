@@ -45,6 +45,8 @@ export function previewOf(values: Draft, venue: VenueSelection | null): EventLis
     // Mirrors the form's choice so the preview is honest about what will be
     // created. The card itself does not render it; the type requires it.
     visibility: values.visibility === "Private" ? "Private" : "Public",
+    // Shows the repeat mark on the preview card while "Repeat event" is on.
+    isRecurring: values.repeat === true,
     distanceKm: null,
   };
 }

@@ -468,6 +468,11 @@ export function CreateEventView() {
           onTags={(tags) => form.setValue("tags", tags, { shouldValidate: true })}
           onVenue={applyVenue}
           onThumbnail={(url) => form.setValue("thumbnailUrl", url)}
+          onRepeat={(patch) =>
+            (Object.keys(patch) as (keyof CreateEventValues)[]).forEach((key) =>
+              form.setValue(key, patch[key] as never, { shouldValidate: form.formState.isSubmitted }),
+            )
+          }
         />
       </div>
 
@@ -577,6 +582,9 @@ const FIELD_LABELS: Record<string, string> = {
   cost: "Cost per person",
   description: "Description",
   visibility: "Who can find it",
+  recurrence: "Repeat",
+  repeatUntil: "Repeat ends",
+  repeatCount: "Sessions",
 };
 
 /** Focus the first invalid control so keyboard users are never stranded. */

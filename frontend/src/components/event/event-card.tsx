@@ -274,6 +274,7 @@ export function EventCard({
               gets all three in one pass down the left edge. */}
           <p className="truncate text-meta font-semibold text-brand-600">
             {formatCardWhen(event)}
+            <RepeatMark event={event} />
           </p>
           <p className="truncate text-meta text-fg-muted">
             <span aria-hidden>{"\u{1F4CD}"}</span> {event.venueName}
@@ -288,7 +289,10 @@ export function EventCard({
       ) : (
         <>
           <p className="text-meta text-fg-muted">{event.venueName}</p>
-          <p className="text-meta font-semibold text-brand-600">{formatCardWhen(event)}</p>
+          <p className="text-meta font-semibold text-brand-600">
+            {formatCardWhen(event)}
+            <RepeatMark event={event} />
+          </p>
           <p className="text-meta text-fg-muted">{meta}</p>
         </>
       )}
@@ -541,6 +545,18 @@ function SocialProof({
  * interested as a standalone tally. Interest reserves no spot, so it is shown
  * beside — never summed into — the joined number.
  */
+/** The repeat mark beside a session's date: this event is one of a series. The
+ *  series line ("Weekly on Tue, Thu · until 15 Dec") is its tooltip and label. */
+function RepeatMark({ event }: { event: EventListItem }) {
+  if (!event.isRecurring) return null;
+  const label = event.recurrenceSummary ? `Repeats: ${event.recurrenceSummary}` : "Repeating event";
+  return (
+    <span role="img" aria-label={label} title={label} className="ml-1.5 font-normal">
+      {"\u{1F502}"}
+    </span>
+  );
+}
+
 function Tally({ event }: { event: EventListItem }) {
   return (
     <span className="flex flex-col text-meta text-fg-muted leading-tight">

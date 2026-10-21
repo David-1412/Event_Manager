@@ -122,6 +122,9 @@ public sealed class EventService(
             IsPublished = row.Event.Status.IsPublished(),
             Visibility = row.Event.Visibility.ToString(),
             RequiresJoinApproval = row.Event.RequiresJoinApproval,
+            IsRecurring = row.Event.IsRecurring,
+            SeriesId = row.Event.SeriesId,
+            RecurrenceSummary = EventSeries.Summary(row.Event),
             DistanceKm = null,
             Description = row.Event.Description,
             Host = new ParticipantDto(row.Event.HostId, row.HostName, row.HostPhotoUrl),
@@ -163,6 +166,18 @@ public sealed class EventService(
             throw new DomainRuleException("Finish must be after the start");
         }
 
+        var timezone = string.IsNullOrWhiteSpace(dto.Timezone) ? EventSeries.DefaultTimezone : dto.Timezone;
+
+        // A repeating event becomes one row per session, all written below. The rule
+        // is checked before anything is written, so a bad schedule saves nothing.
+        var zone = EventSeries.ResolveZone(timezone);
+        var rule = dto.Recurrence is { } recurrence
+            ? EventSeries.ToRule(recurrence, dto.StartAt.Value, zone)
+            : null;
+        var sessions = rule is null
+            ? [(dto.StartAt.Value, dto.EndAt.Value)]
+            : EventSeries.Expand(rule, dto.StartAt.Value, dto.EndAt.Value, zone);
+
         var now = DateTimeOffset.UtcNow;
         var entity = new Event
         {
@@ -180,7 +195,7 @@ public sealed class EventService(
             ThumbnailUrl = string.IsNullOrWhiteSpace(dto.ThumbnailUrl) ? null : dto.ThumbnailUrl.Trim(),
             Lat = dto.Latitude!.Value,
             Lng = dto.Longitude!.Value,
-            Timezone = string.IsNullOrWhiteSpace(dto.Timezone) ? "Australia/Melbourne" : dto.Timezone,
+            Timezone = timezone,
             StartAt = dto.StartAt.Value,
             EndAt = dto.EndAt.Value,
             // Null passes through as null, which is the whole point: an empty Spots
@@ -210,12 +225,40 @@ public sealed class EventService(
             RequiresJoinApproval = dto.RequiresJoinApproval ?? false,
         };
 
-        await events.AddAsync(entity, ct);
+        if (rule is null)
+        {
+            await events.AddAsync(entity, ct);
 
-        // Separate statement rather than building the navigation in memory: the
-        // event row must exist first, and letting EF walk the graph would have it
-        // insert tag rows that are already in the table.
-        await events.ReplaceEventTagsAsync(entity.Id, tagNames, now, ct);
+            // Separate statement rather than building the navigation in memory: the
+            // event row must exist first, and letting EF walk the graph would have it
+            // insert tag rows that are already in the table.
+            await events.ReplaceEventTagsAsync(entity.Id, tagNames, now, ct);
+        }
+        else
+        {
+            // Every session is a full event of its own, carrying the series id (the
+            // first session's) and the rule, so joins, capacity, reminders and
+            // Interested work per session with no special case anywhere else. One
+            // transaction: a series is created whole or not at all.
+            entity.IsRecurring = true;
+            entity.SeriesId = entity.Id;
+            entity.RecurrenceFrequency = rule.Frequency;
+            entity.RecurrenceDays = rule.DaysCode;
+            entity.RecurrenceEndDate = rule.EndDate is { } until ? EventSeries.EndOfDay(until, zone) : null;
+            entity.RecurrenceCount = rule.Count;
+
+            var series = sessions
+                .Select((s, i) => i == 0 ? entity : CopySession(entity, s.Start, s.End))
+                .ToList();
+            await events.RunInTransactionAsync(async inner =>
+            {
+                foreach (var session in series)
+                {
+                    await events.AddAsync(session, inner);
+                    await events.ReplaceEventTagsAsync(session.Id, tagNames, now, inner);
+                }
+            }, ct);
+        }
 
         // Followers hear about it only if it is actually out. A public event from a
         // Member landed in PendingReview above and is not visible to anyone but its
@@ -223,6 +266,7 @@ public sealed class EventService(
         // admin's approval instead. A private event never fires at all. The rule is
         // re-checked inside the notifier rather than decided from the status computed
         // here, so this call site cannot be the place the rule gets it wrong.
+        // A series announces itself once, through its first session.
         await (followers?.PublishAsync(entity, ct) ?? Task.CompletedTask);
 
         // Re-read through the same path as GET so the 201 body is provably what
@@ -717,7 +761,13 @@ public sealed class EventService(
     {
         RequireAdmin(Guid.Empty);
         var rows = await events.ListPendingReviewAsync(ct);
-        return rows.Select(row => ToListItem(row.Event, row, null)).ToList();
+        // One entry per recurring series - its earliest session - because deciding
+        // one session decides them all (DecideAsync).
+        return rows
+            .GroupBy(row => row.Event.SeriesId ?? row.Event.Id)
+            .Select(series => series.MinBy(row => row.Event.StartAt)!)
+            .Select(row => ToListItem(row.Event, row, null))
+            .ToList();
     }
 
     public Task<EventDetailDto> ApproveAsync(Guid eventId, CancellationToken ct = default)
@@ -748,11 +798,20 @@ public sealed class EventService(
         }
 
         var now = DateTimeOffset.UtcNow;
+        var expected = row.Event.Status;
         await events.RunInTransactionAsync(async inner =>
         {
-            if (!await events.TrySetReviewStatusAsync(eventId, row.Event.Status, decision, now, inner))
+            if (!await events.TrySetReviewStatusAsync(eventId, expected, decision, now, inner))
             {
                 throw new DomainRuleException("This event was just reviewed by someone else. Refresh and try again.");
+            }
+
+            // A recurring series was submitted as one thing, so the decision covers
+            // every session still waiting with it. Followers still hear once, below,
+            // about the session the admin opened.
+            if (row.Event.SeriesId is { } seriesId)
+            {
+                await events.SetSeriesReviewStatusAsync(seriesId, eventId, expected, decision, now, inner);
             }
 
             if (decision == EventStatus.Published && row.Event.Visibility == EventVisibility.Public)
@@ -907,6 +966,38 @@ public sealed class EventService(
         return await GetAsync(eventId, ct);
     }
 
+    /// <summary>A later session of a series: the first session's fields at a new time.</summary>
+    private static Event CopySession(Event first, DateTimeOffset startAt, DateTimeOffset endAt) => new()
+    {
+        Id = Guid.NewGuid(),
+        HostId = first.HostId,
+        CreatedAt = first.CreatedAt,
+        UpdatedAt = first.UpdatedAt,
+        Title = first.Title,
+        Description = first.Description,
+        SportId = first.SportId,
+        VenueName = first.VenueName,
+        Address = first.Address,
+        ThumbnailUrl = first.ThumbnailUrl,
+        Lat = first.Lat,
+        Lng = first.Lng,
+        Timezone = first.Timezone,
+        StartAt = startAt,
+        EndAt = endAt,
+        MaxParticipants = first.MaxParticipants,
+        SkillLevel = first.SkillLevel,
+        Cost = first.Cost,
+        Status = first.Status,
+        Visibility = first.Visibility,
+        RequiresJoinApproval = first.RequiresJoinApproval,
+        IsRecurring = true,
+        SeriesId = first.SeriesId,
+        RecurrenceFrequency = first.RecurrenceFrequency,
+        RecurrenceDays = first.RecurrenceDays,
+        RecurrenceEndDate = first.RecurrenceEndDate,
+        RecurrenceCount = first.RecurrenceCount,
+    };
+
     private static EventListItemDto ToListItem(Event e, FeedRow row, double? distanceKm) => new()
 
     {
@@ -937,6 +1028,9 @@ public sealed class EventService(
         IsPublished = e.Status.IsPublished(),
         Visibility = e.Visibility.ToString(),
         RequiresJoinApproval = e.RequiresJoinApproval,
+        IsRecurring = e.IsRecurring,
+        SeriesId = e.SeriesId,
+        RecurrenceSummary = EventSeries.Summary(e),
         DistanceKm = distanceKm,
     };
 
