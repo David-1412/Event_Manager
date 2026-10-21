@@ -328,6 +328,24 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
     public async Task<bool> IsInterestedAsync(Guid eventId, Guid userId, CancellationToken ct = default)
         => await db.EventInterests.AnyAsync(i => i.EventId == eventId && i.UserId == userId, ct);
 
+    public async Task AddAutoInterestAsync(Guid eventId, Guid userId, DateTimeOffset createdAt, CancellationToken ct = default)
+    {
+        if (await db.EventInterests.AnyAsync(i => i.EventId == eventId && i.UserId == userId, ct)) return;
+
+        var interest = new EventInterest { EventId = eventId, UserId = userId, CreatedAt = createdAt, IsAuto = true };
+        db.EventInterests.Add(interest);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
+        {
+            // A tap landed between the check and the insert: the person is interested
+            // either way, and their own tap is the row that should stand.
+            db.Entry(interest).State = EntityState.Detached;
+        }
+    }
+
     public async Task AddInterestAsync(Guid eventId, Guid userId, DateTimeOffset createdAt, CancellationToken ct = default)
     {
         // No-op when the row already exists: the composite key already guarantees

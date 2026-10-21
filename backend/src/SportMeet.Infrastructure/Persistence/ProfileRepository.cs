@@ -195,10 +195,12 @@ public sealed class ProfileRepository(AppDbContext db) : IProfileRepository
                 HostRole = nameof(ProfileActivityKind.Joined),
             };
 
+        // Interests marked automatically by opening an event are not shown: listing them
+        // would publish everything the person ever looked at. Only a tap is a statement.
         var interested =
             from i in db.EventInterests.AsNoTracking()
             join v in PublicFeed on i.EventId equals v.Id
-            where i.UserId == userId && v.Visibility == nameof(EventVisibility.Public)
+            where i.UserId == userId && !i.IsAuto && v.Visibility == nameof(EventVisibility.Public)
             select new VwEventFeed
             {
                 Id = v.Id,

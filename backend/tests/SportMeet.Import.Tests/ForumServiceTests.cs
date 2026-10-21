@@ -151,6 +151,91 @@ public sealed class ForumServiceTests
     }
 
     [Fact]
+    public async Task First_view_marks_a_signed_in_reader_interested()
+    {
+        var repo = new FakeForum(Row());
+        var result = await new ForumService(repo, new FakeUser(Reader)).RecordViewAsync(repo.Rows[0].Id);
+
+        Assert.Equal(new ForumViewResultDto(1, true, 1), result);
+    }
+
+    [Fact]
+    public async Task Turning_interested_off_sticks_when_the_reader_comes_back()
+    {
+        var repo = new FakeForum(Row());
+        var id = repo.Rows[0].Id;
+        var reader = new ForumService(repo, new FakeUser(Reader));
+
+        await reader.RecordViewAsync(id);
+        await reader.SetInterestedAsync(id, false);
+        var again = await reader.RecordViewAsync(id);
+
+        Assert.False(again.IsInterested);
+        Assert.Equal(0, again.LikeCount);
+    }
+
+    [Fact]
+    public async Task A_later_days_first_visit_is_not_a_first_view()
+    {
+        var repo = new FakeForum(Row());
+        var id = repo.Rows[0].Id;
+        repo.ViewedBefore.Add((id, Reader));
+
+        var result = await new ForumService(repo, new FakeUser(Reader)).RecordViewAsync(id);
+        Assert.False(result.IsInterested);
+    }
+
+    [Fact]
+    public async Task Un_marking_interested_never_lowers_the_view_count()
+    {
+        var repo = new FakeForum(Row());
+        var id = repo.Rows[0].Id;
+        var reader = new ForumService(repo, new FakeUser(Reader));
+
+        var viewed = await reader.RecordViewAsync(id);
+        var cleared = await reader.SetInterestedAsync(id, false);
+
+        Assert.Equal(0, cleared.LikeCount);
+        Assert.Equal(viewed.ViewCount, repo.Views[id]);
+        Assert.Equal(1, repo.Views[id]);
+    }
+
+    [Fact]
+    public async Task Opening_your_own_post_counts_a_view_but_marks_nothing()
+    {
+        var repo = new FakeForum(Row());
+        var result = await new ForumService(repo, new FakeUser(Author)).RecordViewAsync(repo.Rows[0].Id);
+        Assert.Equal(new ForumViewResultDto(1, false, 0), result);
+    }
+
+    [Fact]
+    public async Task Anonymous_openings_count_every_time_and_mark_nothing()
+    {
+        var repo = new FakeForum(Row());
+        var id = repo.Rows[0].Id;
+        var anonymous = new ForumService(repo);
+
+        await anonymous.RecordViewAsync(id);
+        var second = await anonymous.RecordViewAsync(id);
+
+        Assert.Equal(2, second.ViewCount);
+        Assert.False(second.IsInterested);
+        Assert.Empty(repo.Likes);
+    }
+
+    [Fact]
+    public async Task A_signed_in_reader_counts_once_a_day()
+    {
+        var repo = new FakeForum(Row());
+        var id = repo.Rows[0].Id;
+        var reader = new ForumService(repo, new FakeUser(Reader));
+
+        await reader.RecordViewAsync(id);
+        var second = await reader.RecordViewAsync(id);
+        Assert.Equal(1, second.ViewCount);
+    }
+
+    [Fact]
     public async Task Marking_interested_twice_counts_once_and_clearing_converges()
     {
         var repo = new FakeForum(Row());
@@ -301,6 +386,22 @@ public sealed class ForumServiceTests
             Task.FromResult(Rows.FirstOrDefault(r => r.Id == id));
 
         public HashSet<(Guid Post, Guid User)> Likes { get; } = [];
+        public Dictionary<Guid, int> Views { get; } = [];
+        private readonly HashSet<(Guid Post, Guid User)> _viewedToday = [];
+
+        /// <summary>Views on earlier days, which the daily index would have kept.</summary>
+        public HashSet<(Guid Post, Guid User)> ViewedBefore { get; } = [];
+
+        public Task<(int ViewCount, bool IsNew)> RecordViewAsync(
+            Guid postId, Guid? userId, DateTimeOffset viewedAt, CancellationToken ct = default)
+        {
+            var isNew = userId is not { } u || _viewedToday.Add((postId, u));
+            if (isNew) Views[postId] = Views.GetValueOrDefault(postId) + 1;
+            return Task.FromResult((Views.GetValueOrDefault(postId), isNew));
+        }
+
+        public Task<int> CountViewsByUserAsync(Guid postId, Guid userId, CancellationToken ct = default) =>
+            Task.FromResult((_viewedToday.Contains((postId, userId)) ? 1 : 0) + (ViewedBefore.Contains((postId, userId)) ? 1 : 0));
 
         public Task<bool> AddLikeAsync(Guid postId, Guid userId, DateTimeOffset createdAt, CancellationToken ct = default) =>
             Task.FromResult(Likes.Add((postId, userId)));

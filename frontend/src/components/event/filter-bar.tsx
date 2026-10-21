@@ -10,6 +10,7 @@ import { activeFilterCount } from "@/lib/query";
 import { RADIUS_OPTIONS } from "@/lib/sports";
 import type { BrowseLayoutMode, BrowseMapMode } from "@/components/event/browse-layout";
 import type { EventDateFilter, EventQuery, EventSort, PopularTag } from "@/types/events";
+import { ViewModeToggle } from "@/components/event/view-mode-toggle";
 
 /**
  * Sticky, gains a shadow once the list scrolls (spec §7). Mobile: scrolling tag
@@ -273,51 +274,6 @@ function SortSelect({
   );
 }
 
-/**
- * List | Grid, as a segmented control.
- *
- * Segmented rather than two independent buttons because the two states are
- * mutually exclusive and the control should say so: pressing the inactive half
- * moves the indicator, and there is no way to end up in neither.
- */
-function ViewModeToggle({
-  mode,
-  onMode,
-}: {
-  mode: BrowseLayoutMode;
-  onMode: (mode: BrowseLayoutMode) => void;
-}) {
-  const options: { value: BrowseLayoutMode; label: string; glyph: string }[] = [
-    { value: "list", label: "List View", glyph: "\u2630" },
-    { value: "grid", label: "Grid View", glyph: "\u25A6" },
-  ];
-  return (
-    <div
-      role="group"
-      aria-label="View mode"
-      className="inline-flex h-9 shrink-0 items-center rounded-md border border-border bg-surface-2 p-0.5"
-    >
-      {options.map((option) => {
-        const active = mode === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onMode(option.value)}
-            aria-pressed={active}
-            className={cn(
-              "press inline-flex h-full items-center gap-1.5 rounded-sm px-2.5 text-meta font-medium",
-              active ? "bg-surface text-brand-600 shadow-raise" : "text-fg-muted hover:text-fg",
-            )}
-          >
-            <span aria-hidden>{option.glyph}</span>
-            <span className="hidden xl:inline">{option.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 /**
  * Mobile bottom sheet. Tapping applies immediately (same single source of truth

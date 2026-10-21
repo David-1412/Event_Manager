@@ -76,6 +76,15 @@ public interface IEventService
     /// state (true = now interested).</summary>
     Task<bool> ToggleInterestAsync(Guid eventId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Mark the caller Interested because they just opened the event for the first time
+    /// (the caller decides "first" - see EventAnalyticsService.TryRecordViewAsync).
+    /// Returns whether an interest was added. Default-implemented so test doubles of
+    /// this interface need not know about it.
+    /// </summary>
+    Task<bool> TryAutoInterestAsync(EventDetailDto detail, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
     /// <summary>Event ids the current viewer has marked interested. Empty (not an
     /// error) when no identity is configured, mirroring ListMyJoinedAsync.</summary>
     Task<IReadOnlyList<Guid>> ListMyInterestedAsync(CancellationToken ct = default);

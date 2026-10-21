@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using SportMeet.Api.Common;
 using SportMeet.Application.Forum;
 
 namespace SportMeet.Api.Controllers;
@@ -14,7 +16,7 @@ namespace SportMeet.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/forum")]
-public class ForumController(ForumService forum) : ControllerBase
+public class ForumController(ForumService forum, ForumCommentService comments) : ControllerBase
 {
     [HttpGet("categories")]
     [ProducesResponseType(typeof(IReadOnlyList<ForumCategoryDto>), StatusCodes.Status200OK)]
@@ -47,6 +49,20 @@ public class ForumController(ForumService forum) : ControllerBase
     public async Task<ActionResult<ForumPostDto>> Post(Guid id, CancellationToken ct) =>
         Ok(await forum.GetPostAsync(id, ct));
 
+    /// <summary>
+    /// Record that the post page was opened. The view total only ever rises (it is the
+    /// Monash Pulse score), and a signed-in reader's first ever view of someone else's
+    /// post marks them Interested, which they can turn off - that never lowers views.
+    /// Rate-limited so a script cannot pump a post up the list.
+    /// </summary>
+    [HttpPost("posts/{id:guid}/view")]
+    [EnableRateLimiting(WriteRateLimit.Views)]
+    [ProducesResponseType(typeof(ForumViewResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<ForumViewResultDto>> View(Guid id, CancellationToken ct) =>
+        Ok(await forum.RecordViewAsync(id, ct));
+
     /// <summary>Mark a post "Interested". Idempotent: returns the settled state.</summary>
     [HttpPut("posts/{id:guid}/interest")]
     [ProducesResponseType(typeof(ForumInterestResultDto), StatusCodes.Status200OK)]
@@ -68,5 +84,37 @@ public class ForumController(ForumService forum) : ControllerBase
     {
         var post = await forum.CreatePostAsync(dto, ct);
         return CreatedAtAction(nameof(Post), new { id = post.Id }, post);
+    }
+
+    /// <summary>The post's comments, each with its replies (one level), oldest first.</summary>
+    [HttpGet("posts/{id:guid}/comments")]
+    [ProducesResponseType(typeof(IReadOnlyList<ForumCommentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<ForumCommentDto>>> Comments(Guid id, CancellationToken ct) =>
+        Ok(await comments.ListAsync(id, ct));
+
+    /// <summary>Comment on a post, or reply to a comment (<c>parentCommentId</c>).</summary>
+    [HttpPost("posts/{id:guid}/comments")]
+    [EnableRateLimiting(WriteRateLimit.Comments)]
+    [ProducesResponseType(typeof(ForumCommentDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<ForumCommentDto>> AddComment(
+        Guid id, [FromBody] CreateForumCommentDto dto, CancellationToken ct)
+    {
+        var comment = await comments.CreateAsync(id, dto, ct);
+        return StatusCode(StatusCodes.Status201Created, comment);
+    }
+
+    /// <summary>Delete your own comment (admins: any). Soft: replies keep their place.</summary>
+    [HttpDelete("comments/{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> DeleteComment(Guid id, CancellationToken ct)
+    {
+        await comments.DeleteAsync(id, ct);
+        return NoContent();
     }
 }

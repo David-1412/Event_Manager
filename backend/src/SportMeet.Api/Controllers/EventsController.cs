@@ -92,7 +92,13 @@ public class EventsController(
     {
         var detail = await events.GetAsync(id, ct);
 
-        await analytics.TryRecordViewAsync(id, ct);
+        // A signed-in visitor's first ever opening marks them Interested. Re-read when
+        // it does, so the page renders the active button and the new count at once.
+        // Only the first view: someone who turns it off and comes back stays off.
+        if (await analytics.TryRecordViewAsync(id, ct) && await events.TryAutoInterestAsync(detail, ct))
+        {
+            detail = await events.GetAsync(id, ct);
+        }
 
         return Ok(detail);
     }

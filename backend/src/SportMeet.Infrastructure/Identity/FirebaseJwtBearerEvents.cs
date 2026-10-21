@@ -19,6 +19,26 @@ public sealed class FirebaseJwtBearerEvents : JwtBearerEvents
     /// signature has been verified.</summary>
     public const string AuthUidClaimType = ".firebase.uid";
 
+    /// <summary>Paths that may carry the token in the query string.</summary>
+    public const string HubPathPrefix = "/hubs/";
+
+    /// <summary>
+    /// Browsers cannot set an Authorization header on a WebSocket, so SignalR's
+    /// client sends the token as <c>?access_token=</c>. It is accepted only on the hub
+    /// paths, so no ordinary API route can be authenticated from a URL - a link or a
+    /// log line can then never carry a usable credential for the REST API. Production
+    /// logs ASP.NET Core at Warning, so hub URLs (with their token) are not logged.
+    /// </summary>
+    public override Task MessageReceived(MessageReceivedContext context)
+    {
+        var token = context.Request.Query["access_token"].ToString();
+        if (!string.IsNullOrEmpty(token) && context.HttpContext.Request.Path.StartsWithSegments(HubPathPrefix.TrimEnd('/')))
+        {
+            context.Token = token;
+        }
+        return base.MessageReceived(context);
+    }
+
     public override Task TokenValidated(TokenValidatedContext context)
     {
         var principal = context.Principal;

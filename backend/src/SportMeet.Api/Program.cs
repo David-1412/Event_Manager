@@ -55,10 +55,20 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
 // Per-user ceiling on paste-to-event imports; see ImportRateLimit.
-builder.Services.AddRateLimiter(limiter => ImportRateLimit.Configure(
-    limiter,
-    builder.Configuration.GetSection(SportMeet.Application.Imports.ImportOptions.SectionName)
-        .Get<SportMeet.Application.Imports.ImportOptions>() ?? new()));
+// Per-user ceilings on direct messages and forum comments; see WriteRateLimit.
+builder.Services.AddRateLimiter(limiter =>
+{
+    ImportRateLimit.Configure(
+        limiter,
+        builder.Configuration.GetSection(SportMeet.Application.Imports.ImportOptions.SectionName)
+            .Get<SportMeet.Application.Imports.ImportOptions>() ?? new());
+    WriteRateLimit.Configure(limiter);
+});
+
+// Real-time delivery for direct messages (push only; see ChatHub). The hub's
+// notifier is the Application's IMessageNotifier, so services never touch SignalR.
+builder.Services.AddSignalR();
+builder.Services.AddScoped<SportMeet.Application.Messaging.IMessageNotifier, SportMeet.Api.Realtime.SignalRMessageNotifier>();
 
 // Firebase bearer authentication, installed only when Firebase:ProjectId is set (see
 // AddFirebaseJwtBearer). Unconfigured it is a no-op and every endpoint stays anonymous
@@ -131,6 +141,7 @@ else
 }
 
 app.MapControllers();
+app.MapHub<SportMeet.Api.Realtime.ChatHub>(SportMeet.Api.Realtime.ChatHub.Path);
 
 await SportMeet.Api.StartupTasks.RunAsync(app);
 

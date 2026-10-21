@@ -29,6 +29,7 @@ function post(overrides: Partial<ForumPost> = {}): ForumPost {
     commentCount: 0,
     isPinned: false,
     createdAt: new Date().toISOString(),
+    viewCount: 0,
     ...overrides,
   };
 }
@@ -131,6 +132,11 @@ describe("isActiveLink", () => {
   it("keeps a section lit on its sub-pages", () => {
     expect(isActiveLink("/forum/p-1", "/forum")).toBe(true);
     expect(isActiveLink("/forum", "/forum")).toBe(true);
+  });
+
+  it("lights Messages on the inbox and a conversation", () => {
+    expect(isActiveLink("/messages", "/messages")).toBe(true);
+    expect(isActiveLink("/messages", "/")).toBe(false);
   });
 
   it("keeps Events lit on its own pages outside /", () => {

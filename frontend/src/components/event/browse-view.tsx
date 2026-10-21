@@ -15,7 +15,7 @@ import {
 } from "@/components/event/browse-layout";
 import { VirtualizedCardList } from "@/components/event/virtualized-card-list";
 import { FilterBar } from "@/components/event/filter-bar";
-import { GlobalSearch } from "@/components/layout/global-search";
+import { ViewModeToggle } from "@/components/event/view-mode-toggle";
 import { SectionSubnav } from "@/components/layout/section-subnav";
 import { EventMap } from "@/components/map/event-map";
 import { EmptyState, ErrorState } from "@/components/state/empty-error";
@@ -81,6 +81,8 @@ export function BrowseView() {
   // the list is never beside a visible map. See `selectEvent`.
   const isWide = useMediaQuery(LG_MIN_WIDTH_QUERY);
   const mapVisible = isWide && mapMode !== "none";
+  // The Forum's centered column, whenever the map is not taking half the screen.
+  const centered = mapMode === "none";
 
   // Selection is browse-local state keyed by event id: it is not a filter, so it
   // deliberately stays out of the URL and survives nothing but a page reload.
@@ -237,10 +239,10 @@ export function BrowseView() {
         />
       )}
       {mode === "grid" ? (
-        // Grid: 2-3 columns of the same compact card. Not windowed - three
-        // columns of short cards means a 100-row page is ~34 rows deep, which
-        // does not justify the fixed-height assumption.
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        // Grid: two columns of the same compact card (one on phones). Not
+        // windowed - two columns halve the depth of the page, which does not
+        // justify the fixed-height assumption the windowed list makes.
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {items?.map((event) => (
             <EventCardMemo
               key={event.id}
@@ -307,46 +309,42 @@ export function BrowseView() {
         )}
       >
         <h2 className="sr-only">{heading}</h2>
-        {/* Search first, then the section's own tabs and Create; the filter bar
-            below stays sticky while these scroll away with the list. */}
-        <div className="px-4 pt-4 lg:px-6">
-          <GlobalSearch context="events" />
-          <SectionSubnav
-            label="Events"
-            className="mt-4"
-            createFirst="event"
-            items={[
-              { label: "All", active: !followingTabActive, onSelect: () => patch({ tab: "all" }) },
-              { label: "Following", active: followingTabActive, onSelect: () => patch({ tab: "following" }) },
-              { label: "My Events", active: false, href: "/my-events" },
-            ]}
+        {/* With the map closed the page is the same centered column as the Forum
+            (max-w-4xl). With it open, the list keeps the full left column of the
+            list + map split: a 4xl box beside a map would squeeze both. */}
+        <div className={cn("w-full", centered && "mx-auto max-w-4xl")}>
+          {/* The section's own tabs, the view toggle and Create (the search is in
+              the header); the filter bar below stays sticky while these scroll away. */}
+          <div className={cn("px-4", centered ? "pt-6" : "pt-4 lg:px-6")}>
+            <SectionSubnav
+              label="Events"
+              createFirst="event"
+              actions={<ViewModeToggle mode={mode} onMode={setMode} />}
+              items={[
+                { label: "All", active: !followingTabActive, onSelect: () => patch({ tab: "all" }) },
+                { label: "Following", active: followingTabActive, onSelect: () => patch({ tab: "following" }) },
+                { label: "My Events", active: false, href: "/my-events" },
+              ]}
+            />
+          </div>
+          <FilterBar
+            query={query}
+            onPatch={patch}
+            onReset={reset}
+            popularTags={popularTags}
+            mapMode={mapMode}
+            onMapMode={setMapMode}
           />
-        </div>
-        <FilterBar
-          query={query}
-          onPatch={patch}
-          onReset={reset}
-          popularTags={popularTags}
-          mapMode={mapMode}
-          onMapMode={setMapMode}
-          mode={mode}
-          onMode={setMode}
-        />
-        {geo.status === "denied" && (
-          <p className="px-4 py-2 text-meta text-fg-muted" role="status">
-            Turn on location to sort by distance.
-          </p>
-        )}
-        <div
-          className={cn(
-            "pb-8 pt-4",
-            // Tighter than the old gap-4: the compact card carries its own
-            // internal spacing, and a 16px gutter between 90px cards is most of
-            // the whitespace the redesign set out to reclaim.
-            mode === "grid" ? "flex flex-col gap-3 px-4 lg:px-6" : "flex flex-col gap-2 px-4 lg:px-6",
+          {geo.status === "denied" && (
+            <p className="px-4 py-2 text-meta text-fg-muted" role="status">
+              Turn on location to sort by distance.
+            </p>
           )}
-        >
-          {listBody}
+          {/* List: one stacked column, spaced like the Forum's post cards.
+              Grid: the grid inside listBody (1 column on phones, 2 from md). */}
+          <div className={cn("flex flex-col gap-4 pb-8 pt-4", centered ? "px-4" : "px-4 lg:px-6")}>
+            {listBody}
+          </div>
         </div>
       </div>
 

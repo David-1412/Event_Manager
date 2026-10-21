@@ -38,7 +38,8 @@ export function rollingRows<T>(items: readonly T[], start: number, size = VISIBL
 
 /**
  * Monash Pulse (Campus Buzz): the campus top 10 - events and forum posts ranked by
- * how many people marked them Interested - rolling one row per second.
+ * total page views (the flame number, which never goes down) - rolling one row per
+ * second.
  *
  * The roll pauses while the pointer or keyboard focus is inside the widget, because
  * a link that moves out from under the cursor every second cannot be clicked, and
@@ -105,7 +106,7 @@ export function TrendingBanner({ className }: { className?: string }) {
             </div>
           ) : count === 0 ? (
             <p className="text-meta text-fg-muted">
-              Nothing trending yet. Mark events and posts Interested to put them here.
+              Nothing trending yet. Open an event or a post and it starts counting.
             </p>
           ) : (
             // Not a live region: announcing a new row every second would talk over
@@ -139,7 +140,7 @@ function TrendingRow({ item, rank }: { item: TrendingItem; rank: number }) {
       <span className="inline-flex shrink-0 items-center gap-1 text-meta font-semibold text-danger tabular-nums">
         <Flame aria-hidden size={14} className="fill-current" />
         {item.score.toLocaleString("en-AU")}
-        <span className="sr-only"> interested</span>
+        <span className="sr-only"> views</span>
       </span>
     </li>
   );
@@ -221,7 +222,7 @@ function TrendingModal({ titleId, onNavigate }: { titleId: string; onNavigate: (
                 </Link>
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-danger-tint px-2.5 py-1 text-xs font-semibold text-danger tabular-nums">
                   <Flame aria-hidden size={13} className="fill-current" />
-                  {item.score.toLocaleString("en-AU")} interested
+                  {item.score.toLocaleString("en-AU")} {item.score === 1 ? "view" : "views"}
                 </span>
               </li>
             ))}

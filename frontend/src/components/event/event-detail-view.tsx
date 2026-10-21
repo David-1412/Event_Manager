@@ -11,6 +11,7 @@ import { Avatar, AvatarStack } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FireButton } from "@/components/ui/fire-button";
+import { MessageButton } from "@/components/messages/message-button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/field";
 import { SkeletonBlock } from "@/components/ui/skeleton";
@@ -312,6 +313,12 @@ function ActionCard({ event, joinSlot }: { event: EventDetail; joinSlot: React.R
 
         <InterestButton event={event} />
         {joinSlot}
+        <MessageButton
+          userId={event.hostId}
+          label="Message host"
+          draft={`Hi! About ${event.title}: `}
+          className="h-11 w-full justify-center text-meta"
+        />
       </div>
     </div>
   );

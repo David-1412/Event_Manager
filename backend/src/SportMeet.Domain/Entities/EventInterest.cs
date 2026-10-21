@@ -21,4 +21,14 @@ public class EventInterest
     public User User { get; set; } = null!;
 
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Marked automatically on the person's first view of the event, not by a tap.
+    ///
+    /// Counted like any other interest (the event's total, My events), but kept off the
+    /// person's public profile activity: there, "Interested in" would otherwise list
+    /// every event they ever opened - their browsing history, published. Tapping
+    /// Interested yourself creates an ordinary (public) interest.
+    /// </summary>
+    public bool IsAuto { get; set; }
 }

@@ -35,6 +35,27 @@ public sealed class ForumPostLikeConfiguration : IEntityTypeConfiguration<ForumP
     }
 }
 
+public sealed class ForumPostViewConfiguration : IEntityTypeConfiguration<ForumPostView>
+{
+    public void Configure(EntityTypeBuilder<ForumPostView> b)
+    {
+        b.ToTable("forum_post_views", SportConfiguration.Schema);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.ViewedAt).IsRequired();
+        b.Property(x => x.ViewedOn).IsRequired();
+
+        b.HasOne(x => x.Post).WithMany().HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
+
+        // One counted view per signed-in reader per post per day, as event_views does.
+        b.HasIndex(x => new { x.PostId, x.UserId, x.ViewedOn })
+            .IsUnique()
+            .HasDatabaseName("ux_forum_post_views_daily")
+            .HasFilter("user_id IS NOT NULL");
+        b.HasIndex(x => x.ViewedAt).HasDatabaseName("ix_forum_post_views_viewed_at");
+    }
+}
+
 public sealed class ForumPostConfiguration : IEntityTypeConfiguration<ForumPost>
 {
     public void Configure(EntityTypeBuilder<ForumPost> b)

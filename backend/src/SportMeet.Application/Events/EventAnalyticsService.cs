@@ -27,7 +27,15 @@ public sealed class EventAnalyticsService(
     /// readable event into an error screen, so nothing here propagates - the failure
     /// is logged here, where the reason for it is still known.
     /// </summary>
-    public async Task TryRecordViewAsync(Guid eventId, CancellationToken ct = default)
+    /// <summary>
+    /// Records the view, and returns whether it was the signed-in viewer's first ever
+    /// view of this event - the moment Interested is marked automatically. False for
+    /// anonymous viewers, repeat views, and any failure to record.
+    ///
+    /// "First ever", not "not interested yet": someone who un-marks Interested and
+    /// comes back must not be re-marked, or turning it off would never stick.
+    /// </summary>
+    public async Task<bool> TryRecordViewAsync(Guid eventId, CancellationToken ct = default)
     {
         try
         {
@@ -36,7 +44,10 @@ public sealed class EventAnalyticsService(
             // seam the rest of the app reads, so a view is attributed to exactly
             // the person the rest of the request acts as - and an anonymous
             // visitor arrives as null, which is what the nullable column is for.
-            await views.RecordViewAsync(eventId, currentUser.UserId, DateTimeOffset.UtcNow, ct);
+            var recorded = await views.RecordViewAsync(eventId, currentUser.UserId, DateTimeOffset.UtcNow, ct);
+            return recorded.IsNew
+                   && currentUser.UserId is { } viewer
+                   && await views.CountViewsByUserAsync(eventId, viewer, ct) == 1;
         }
         catch (Exception ex)
         {
@@ -51,10 +62,11 @@ public sealed class EventAnalyticsService(
             if (ct.IsCancellationRequested || IsCommandAbort(ex))
             {
                 logger.LogDebug("View of event {EventId} was not recorded: the request was cancelled.", eventId);
-                return;
+                return false;
             }
 
             logger.LogWarning(ex, "Could not record a view of event {EventId}.", eventId);
+            return false;
         }
     }
 

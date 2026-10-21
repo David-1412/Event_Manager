@@ -633,6 +633,31 @@ public sealed class EventService(
         return interested;
     }
 
+    /// <summary>
+    /// The automatic Interested on a first view. Unlike <see cref="ToggleInterestAsync"/>
+    /// it notifies nobody: the host hearing "someone is interested" for every page view
+    /// would make the notification meaningless. It is skipped where tapping Interested
+    /// would not make sense either - your own event, one you have joined, a cancelled
+    /// or unpublished one - and it never fails the page: if it cannot be written, the
+    /// visitor simply sees the event without the mark.
+    /// </summary>
+    public async Task<bool> TryAutoInterestAsync(EventDetailDto detail, CancellationToken ct = default)
+    {
+        if (currentUser.UserId is not { } userId) return false;
+        if (detail.IsInterested || detail.IsHost || detail.IsJoined || detail.IsCancelled) return false;
+        if (!Enum.TryParse<EventStatus>(detail.Status, out var status) || !status.IsPublished()) return false;
+
+        try
+        {
+            await events.AddAutoInterestAsync(detail.Id, userId, DateTimeOffset.UtcNow, ct);
+            return true;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
     public async Task<IReadOnlyList<Guid>> ListMyInterestedAsync(CancellationToken ct = default)
     {
         // Mirrors ListMyJoinedAsync: no identity is an empty list, not an error, so

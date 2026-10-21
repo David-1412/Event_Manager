@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
 import { toast } from "@/components/ui/toast";
@@ -22,6 +22,7 @@ import {
   forumPostKey,
   forumPostsKey,
   isForumPostsKey,
+  recordForumView,
   setForumInterest,
   trendingKey,
 } from "./forum-api";
@@ -117,6 +118,39 @@ export function useForumPostInterest(post: ForumPost) {
   }
 
   return { ...state, pending, toggle };
+}
+
+/**
+ * Count one view of the post when its page opens, once per page load (a ref guards
+ * React's development double-run), after the session has resolved so a signed-in
+ * reader's view is attributed to them. The result is written into the cached post:
+ * the view total, and the Interested state a first view may have just set. The post
+ * is then re-read, so a page whose own fetch was still in flight cannot keep showing
+ * the state from before.
+ */
+export function useRecordPostView(id: string) {
+  const { user, loading } = useAuth();
+  const { mutate } = useSWRConfig();
+  const recorded = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!id || loading || recorded.current === id) return;
+    recorded.current = id;
+    recordForumView(id)
+      .then((result) => {
+        void mutate(
+          forumPostKey(id, user?.id),
+          (current: ForumPost | undefined) =>
+            current
+              ? { ...current, viewCount: result.viewCount, isInterested: result.isInterested, likeCount: result.likeCount }
+              : current,
+          { revalidate: true },
+        );
+        void mutate(isForumPostsKey);
+        void mutate((key) => typeof key === "string" && key.includes("/api/trending"));
+      })
+      .catch(() => undefined); // a view that could not be counted never breaks the page
+  }, [id, loading, user?.id, mutate]);
 }
 
 export function useForumPost(id: string) {

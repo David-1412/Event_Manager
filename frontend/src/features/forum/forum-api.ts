@@ -3,6 +3,7 @@ import type {
   CreateForumPost,
   ForumInterestResult,
   ForumPost,
+  ForumViewResult,
   ForumQuery,
   TrendingItem,
   TrendingWindow,
@@ -45,6 +46,11 @@ export const isForumPostsKey = (key: unknown) =>
 
 export const createForumPost = (body: CreateForumPost) =>
   request<ForumPost>("/api/forum/posts", { method: "POST", body });
+
+/** Record that the post page was opened. On a signed-in reader's first ever view the
+ * server also marks them Interested; the result says so. */
+export const recordForumView = (id: string) =>
+  request<ForumViewResult>(`/api/forum/posts/${id}/view`, { method: "POST" });
 
 /** PUT marks, DELETE clears; both are idempotent and return the settled state. */
 export const setForumInterest = (id: string, interested: boolean) =>

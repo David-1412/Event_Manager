@@ -1,6 +1,7 @@
 import type { Viewport } from "next";
 import localFont from "next/font/local";
 import { SiteHeader } from "@/components/layout/site-header";
+import { MessagesProvider } from "@/features/messages/messages-provider";
 import { AuthProvider } from "@/lib/auth/auth-provider";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { Toaster } from "@/components/ui/toast";
@@ -48,10 +49,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             >
               Skip to content
             </a>
-            <SiteHeader />
-            <main id="main" className="flex flex-1 flex-col">
-              {children}
-            </main>
+            {/* Inside AuthProvider (it connects as the signed-in user) and around
+                the header, whose unread badge listens to it. */}
+            <MessagesProvider>
+              <SiteHeader />
+              <main id="main" className="flex flex-1 flex-col">
+                {children}
+              </main>
+            </MessagesProvider>
             <Toaster />
           </AuthProvider>
         </ThemeProvider>

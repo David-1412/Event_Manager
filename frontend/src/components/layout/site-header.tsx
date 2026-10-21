@@ -9,7 +9,6 @@ import {
   CalendarPlus,
   ChevronDown,
   LogOut,
-  MessageCircle,
   Moon,
   Settings,
   Shield,
@@ -18,9 +17,19 @@ import {
   Users,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { HeaderSearch } from "@/components/layout/global-search";
 import { Floating } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { NotificationBell } from "@/components/layout/notification-bell";
+import { useNotificationCounts, useUnreadCount } from "@/features/messages/use-messages";
+
+/**
+ * Everything waiting in the Messages center: unread messages plus unread Comments,
+ * Likes, Events and Social notifications. With the bell gone, this one number is how
+ * the header says "something happened".
+ */
+function useCenterUnread(): number {
+  return useUnreadCount() + useNotificationCounts().total;
+}
 import { useAuth } from "@/lib/auth/auth-provider";
 import { cn } from "@/lib/cn";
 
@@ -30,6 +39,7 @@ import { cn } from "@/lib/cn";
 const links = [
   { href: "/", label: "Events" },
   { href: "/forum", label: "Forum" },
+  { href: "/messages", label: "Messages" },
 ] as const;
 
 /** A section stays highlighted on its sub-pages (`/forum/abc` lights "Forum"), but
@@ -48,12 +58,14 @@ export function isActiveLink(pathname: string | null, href: string): boolean {
 }
 
 /**
- * The global navbar: brand, Events and Forum, then notifications, messages and the
- * account menu.
+ * The global navbar: brand and Events | Forum | Messages on the left, the search in
+ * the middle, the account menu on the right.
+ * Messages is the one place unread things are counted (messages and notifications
+ * together); there is no separate bell or chat icon to disagree with it.
  */
 export function SiteHeader() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const unread = useCenterUnread();
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface shadow-raise">
@@ -70,25 +82,32 @@ export function SiteHeader() {
         <nav aria-label="Primary" className="flex items-center gap-1">
           {links.map((l) => {
             const active = isActiveLink(pathname, l.href);
+            const badge = l.href === "/messages" && unread > 0 ? unread : 0;
             return (
               <Link
                 key={l.href}
                 href={l.href}
                 aria-current={active ? "page" : undefined}
+                aria-label={badge ? `${l.label}, ${badge} unread` : undefined}
                 className={cn(
-                  "press rounded-md px-3 py-2 text-meta font-semibold no-underline hover:bg-surface-2 hover:text-fg",
+                  "press inline-flex items-center gap-1.5 rounded-md px-2 py-2 text-meta font-semibold no-underline hover:bg-surface-2 hover:text-fg sm:px-3",
                   active ? "bg-surface-2 text-fg" : "text-fg-muted",
                 )}
               >
                 {l.label}
+                {badge > 0 && <UnreadBadge count={badge} />}
               </Link>
             );
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1 sm:gap-2">
-          <NotificationBell enabled={Boolean(user)} />
-          <MessagesButton />
+        {/* Center: the search, inline from lg; below that its magnifying glass sits
+            at the right, beside the account menu. */}
+        <div className="flex min-w-0 flex-1 items-center justify-end lg:justify-center">
+          <HeaderSearch />
+        </div>
+
+        <div className="flex items-center gap-1 sm:gap-2">
           <AccountMenu />
         </div>
       </div>
@@ -96,22 +115,20 @@ export function SiteHeader() {
   );
 }
 
-/**
- * The chat inbox. MonaHub has no messaging yet, so the icon is shown disabled with a
- * "coming soon" label rather than as a button that opens nothing - a control that
- * looks live and does nothing reads as broken.
- */
-function MessagesButton() {
+
+/** The red unread count used on both the Messages link and the chat icon. Its
+ * number is decorative here; the link's accessible name carries the count. */
+function UnreadBadge({ count, className }: { count: number; className?: string }) {
   return (
-    <button
-      type="button"
-      disabled
-      aria-label="Messages (coming soon)"
-      title="Messages - coming soon"
-      className="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-md text-fg-muted opacity-60"
+    <span
+      aria-hidden
+      className={cn(
+        "min-w-[18px] rounded-full bg-danger px-1 text-center text-[11px] font-bold leading-[18px] text-white tabular-nums",
+        className,
+      )}
     >
-      <MessageCircle aria-hidden size={20} />
-    </button>
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
 

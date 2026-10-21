@@ -56,6 +56,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ForumCategory> ForumCategories => Set<ForumCategory>();
     public DbSet<ForumPost> ForumPosts => Set<ForumPost>();
     public DbSet<ForumPostLike> ForumPostLikes => Set<ForumPostLike>();
+    public DbSet<ForumComment> ForumComments => Set<ForumComment>();
+    public DbSet<ForumPostView> ForumPostViews => Set<ForumPostView>();
+    public DbSet<ActivityRead> ActivityReads => Set<ActivityRead>();
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<DirectMessage> DirectMessages => Set<DirectMessage>();
 
 
     /// <summary>Read-only projection over v_event_feed. Never in SaveChanges -

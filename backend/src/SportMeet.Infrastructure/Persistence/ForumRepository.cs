@@ -99,17 +99,68 @@ public sealed class ForumRepository(AppDbContext db) : IForumRepository
         // post scored at creation and one re-scored here sort on the same scale.
         var counts = await db.Database.SqlQuery<int>($"""
             UPDATE sportsmeet.forum_posts p
-            SET like_count = c.n,
+            SET like_count = c.likes,
+                comment_count = c.comments,
                 hot_score = round(
-                    log(greatest(c.n + 2 * p.comment_count, 1)::numeric)
+                    log(greatest(c.likes + 2 * c.comments, 1)::numeric)
                     + floor(extract(epoch FROM p.created_at))::numeric / {ForumRanking.DecaySeconds}::numeric,
                     7)::double precision
-            FROM (SELECT count(*)::int AS n FROM sportsmeet.forum_post_likes WHERE post_id = {postId}) c
+            FROM (SELECT
+                    (SELECT count(*)::int FROM sportsmeet.forum_post_likes WHERE post_id = {postId}) AS likes,
+                    (SELECT count(*)::int FROM sportsmeet.forum_comments
+                     WHERE post_id = {postId} AND deleted_at IS NULL) AS comments) c
             WHERE p.id = {postId}
             RETURNING p.like_count AS "Value"
             """).ToListAsync(ct);
         return counts.SingleOrDefault();
     }
+
+    public async Task<(int ViewCount, bool IsNew)> RecordViewAsync(
+        Guid postId, Guid? userId, DateTimeOffset viewedAt, CancellationToken ct = default)
+    {
+        // The row and the counter move together or not at all, so view_count always
+        // equals the rows that were counted - and nothing else ever lowers it.
+        //
+        // Inside the execution strategy: the API enables EnableRetryOnFailure, which
+        // refuses a hand-opened transaction outside its ExecuteAsync (see
+        // EventRepository.RunInTransactionAsync). A retry re-runs the whole unit, so
+        // each attempt starts from a fresh entity and a clean change tracker.
+        var isNew = true;
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            isNew = true;
+            db.ChangeTracker.Clear();
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            db.ForumPostViews.Add(new ForumPostView
+            {
+                Id = Guid.NewGuid(),
+                PostId = postId,
+                UserId = userId,
+                ViewedAt = viewedAt,
+                ViewedOn = DateOnly.FromDateTime(viewedAt.UtcDateTime),
+            });
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                await db.ForumPosts.Where(p => p.Id == postId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.ViewCount, p => p.ViewCount + 1), ct);
+                await tx.CommitAsync(ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
+            {
+                // Already counted today for this reader: the daily index decided.
+                isNew = false;
+                db.ChangeTracker.Clear();
+                await tx.RollbackAsync(ct);
+            }
+        });
+
+        var count = await db.ForumPosts.AsNoTracking().Where(p => p.Id == postId).Select(p => p.ViewCount).FirstAsync(ct);
+        return (count, isNew);
+    }
+
+    public Task<int> CountViewsByUserAsync(Guid postId, Guid userId, CancellationToken ct = default) =>
+        db.ForumPostViews.CountAsync(v => v.PostId == postId && v.UserId == userId, ct);
 
     public async Task<IReadOnlySet<Guid>> ListLikedPostIdsAsync(
         Guid userId, IReadOnlyCollection<Guid> postIds, CancellationToken ct = default)
@@ -147,5 +198,6 @@ public sealed class ForumRepository(AppDbContext db) : IForumRepository
         p.CommentCount,
         p.HotScore,
         p.IsPinned,
-        p.CreatedAt);
+        p.CreatedAt,
+        p.ViewCount);
 }

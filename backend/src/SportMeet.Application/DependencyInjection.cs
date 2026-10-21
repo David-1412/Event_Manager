@@ -19,6 +19,9 @@ public static class DependencyInjection
         // privacy boundary is IProfileRepository, which does have one.
         services.AddScoped<Profiles.ProfileService>();
         services.AddScoped<Forum.ForumService>();
+        services.AddScoped<Forum.ForumCommentService>();
+        services.AddScoped<Messaging.MessagingService>();
+        services.AddScoped<Activity.ActivityService>();
         services.AddScoped<Trending.TrendingService>();
 
         // The follow fan-out. Its own service rather than more methods on

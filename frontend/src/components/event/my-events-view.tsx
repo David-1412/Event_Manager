@@ -1,6 +1,5 @@
 "use client";
 
-import { GlobalSearch } from "@/components/layout/global-search";
 import { SectionSubnav } from "@/components/layout/section-subnav";
 import { useMemo, useState } from "react";
 import { EventCard } from "@/components/event/event-card";
@@ -64,12 +63,11 @@ export function MyEventsView() {
   return (
     <div className="mx-auto w-full max-w-[680px] px-4 py-4">
       {my.slots}
-      {/* The same search and Events sub-navigation as the Events page, with My
-          Events selected - this page is that tab. */}
-      <GlobalSearch context="other" />
+      {/* The same Events sub-navigation as the Events page, with My Events
+          selected - this page is that tab. */}
       <SectionSubnav
         label="Events"
-        className="mb-5 mt-4"
+        className="mb-5"
         createFirst="event"
         items={[
           { label: "All", active: false, href: "/" },

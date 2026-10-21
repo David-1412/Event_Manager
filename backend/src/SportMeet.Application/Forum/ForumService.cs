@@ -104,6 +104,36 @@ public sealed class ForumService(IForumRepository forum, ICurrentUser? currentUs
         return new ForumInterestResultDto(interested, count);
     }
 
+    /// <summary>
+    /// Record that the post page was opened, and - on a signed-in reader's first ever
+    /// view of someone else's post - mark them Interested.
+    ///
+    /// Views and Interested are kept apart on purpose: the view total only ever goes
+    /// up (it is the Monash Pulse score), while Interested can be turned off at any
+    /// time and only moves the post's interested count. "First ever" rather than "not
+    /// interested yet" is what makes turning it off stick when they come back.
+    /// </summary>
+    public async Task<ForumViewResultDto> RecordViewAsync(Guid id, CancellationToken ct = default)
+    {
+        var row = await forum.GetPostAsync(id, ct) ?? throw new NotFoundException("Forum post", id, id);
+        var viewer = currentUser?.UserId;
+        var now = DateTimeOffset.UtcNow;
+
+        var (viewCount, isNew) = await forum.RecordViewAsync(id, viewer, now, ct);
+        if (viewer is not { } me) return new ForumViewResultDto(viewCount, false, row.LikeCount);
+
+        var interested = (await forum.ListLikedPostIdsAsync(me, [id], ct)).Contains(id);
+        var likeCount = row.LikeCount;
+        if (!interested && isNew && row.AuthorUserId != me && await forum.CountViewsByUserAsync(id, me, ct) == 1)
+        {
+            await forum.AddLikeAsync(id, me, now, ct);
+            likeCount = await forum.RefreshEngagementAsync(id, ct);
+            interested = true;
+        }
+
+        return new ForumViewResultDto(viewCount, interested, likeCount);
+    }
+
     private async Task<IReadOnlySet<Guid>> LikedAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
         currentUser?.UserId is { } viewer && ids.Count > 0
             ? await forum.ListLikedPostIdsAsync(viewer, ids, ct)
@@ -170,7 +200,8 @@ public sealed class ForumService(IForumRepository forum, ICurrentUser? currentUs
             row.LikeCount,
             row.CommentCount,
             row.IsPinned,
-            row.CreatedAt);
+            row.CreatedAt,
+            row.ViewCount);
     }
 
     private static ForumTab ParseTab(string? tab) => tab?.ToLowerInvariant() switch

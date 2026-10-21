@@ -12,20 +12,25 @@ public sealed class TrendingRepository(AppDbContext db) : ITrendingRepository
     public async Task<IReadOnlyList<TrendingItemDto>> ListTopEventsAsync(
         DateTimeOffset since, DateTimeOffset now, int take, CancellationToken ct = default)
     {
+        // Candidates: events opened at least once inside the window. Score: every view
+        // they have ever had, so the number shown never goes down.
+        //
         // The same public rule as profiles: the feed view (no soft-deleted rows), not
-        // cancelled, not awaiting or denied review, Public visibility. A private
-        // event's interest count must not leak its title onto a campus-wide list.
-        var top = await (
-                from i in db.EventInterests.AsNoTracking()
-                where i.CreatedAt >= since
-                join v in db.EventFeed.AsNoTracking() on i.EventId equals v.Id
-                where v.Visibility == nameof(EventVisibility.Public)
-                      && v.Status != nameof(EventStatus.Cancelled)
-                      && !ProfileRepository.UnpublishedStatuses.Contains(v.Status)
-                      && v.EndAt >= now
-                group i by new { v.Id, v.Title } into g
-                orderby g.Count() descending
-                select new { g.Key.Id, g.Key.Title, Score = g.Count() })
+        // cancelled, not awaiting or denied review, Public visibility, not over. A
+        // private event's view count must not put its title on a campus-wide list.
+        var viewedInWindow = db.EventViews.AsNoTracking()
+            .Where(x => x.ViewedAt >= since)
+            .Select(x => x.EventId)
+            .Distinct();
+
+        var top = await db.EventFeed.AsNoTracking()
+            .Where(v => viewedInWindow.Contains(v.Id)
+                        && v.Visibility == nameof(EventVisibility.Public)
+                        && v.Status != nameof(EventStatus.Cancelled)
+                        && !ProfileRepository.UnpublishedStatuses.Contains(v.Status)
+                        && v.EndAt >= now)
+            .Select(v => new { v.Id, v.Title, Score = db.EventViews.Count(x => x.EventId == v.Id) })
+            .OrderByDescending(t => t.Score)
             .Take(take)
             .ToListAsync(ct);
 
@@ -35,27 +40,18 @@ public sealed class TrendingRepository(AppDbContext db) : ITrendingRepository
     public async Task<IReadOnlyList<TrendingItemDto>> ListTopPostsAsync(
         DateTimeOffset since, int take, CancellationToken ct = default)
     {
-        var top = await (
-                from l in db.ForumPostLikes.AsNoTracking()
-                where l.CreatedAt >= since && l.Post.DeletedAt == null
-                group l by l.PostId into g
-                orderby g.Count() descending
-                select new { PostId = g.Key, Score = g.Count() })
+        // Same shape as events: opened inside the window, ranked by the stored total,
+        // which only rises (forum_posts.view_count).
+        var top = await db.ForumPosts.AsNoTracking()
+            .Where(p => p.DeletedAt == null && db.ForumPostViews.Any(v => v.PostId == p.Id && v.ViewedAt >= since))
+            .OrderByDescending(p => p.ViewCount)
             .Take(take)
+            .Select(p => new { p.Id, p.Title, p.Content, p.ViewCount })
             .ToListAsync(ct);
 
-        if (top.Count == 0) return [];
-
-        var ids = top.Select(t => t.PostId).ToList();
-        var titles = await db.ForumPosts.AsNoTracking()
-            .Where(p => ids.Contains(p.Id))
-            .Select(p => new { p.Id, p.Title, p.Content })
-            .ToDictionaryAsync(p => p.Id, ct);
-
         return top
-            .Where(t => titles.ContainsKey(t.PostId))
-            .Select(t => new TrendingItemDto(
-                TrendingKinds.Post, t.PostId, TitleOf(titles[t.PostId].Title, titles[t.PostId].Content), t.Score))
+            .Where(t => t.ViewCount > 0)
+            .Select(t => new TrendingItemDto(TrendingKinds.Post, t.Id, TitleOf(t.Title, t.Content), t.ViewCount))
             .ToList();
     }
 

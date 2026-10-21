@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { CardError } from "@/components/account/card-error";
+import { CommentsSection } from "@/components/forum/comments-section";
 import { PostAuthor, PostInterestButton, PostMeta } from "@/components/forum/post-card";
+import { MessageButton } from "@/components/messages/message-button";
 import { Card } from "@/components/ui/card";
 import { SkeletonBlock } from "@/components/ui/skeleton";
-import { useForumPost } from "@/features/forum/use-forum";
+import { useForumPost, useRecordPostView } from "@/features/forum/use-forum";
 
 /**
  * `/forum/[id]`: one post in full.
@@ -19,6 +21,7 @@ export function ForumPostView() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
   const { post, error, isLoading, retry } = useForumPost(id);
+  useRecordPostView(id);
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6">
@@ -40,8 +43,17 @@ export function ForumPostView() {
             <article>
               <PostMeta post={post} />
               {post.title && <h1 className="mt-3 text-h1 text-fg">{post.title}</h1>}
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-3">
                 <PostAuthor post={post} size="md" />
+                {/* Named posts only: an anonymous post never reveals who to message,
+                    and an admin who can see the author should not use it to reach them. */}
+                {!post.isAnonymous && (
+                  <MessageButton
+                    userId={post.author?.id}
+                    label="Message author"
+                    draft={`Hi! About your post "${post.title ?? "in the forum"}": `}
+                  />
+                )}
               </div>
               <p className="mt-4 whitespace-pre-wrap break-words text-body text-fg">{post.content}</p>
               <div className="mt-5 flex items-center gap-3 border-t border-border pt-3 text-meta text-fg-muted">
@@ -49,10 +61,14 @@ export function ForumPostView() {
                 <span className="tabular-nums">
                   {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
                 </span>
+                <span className="tabular-nums">
+                  {post.viewCount.toLocaleString("en-AU")} {post.viewCount === 1 ? "view" : "views"}
+                </span>
               </div>
             </article>
           </Card>
         )}
+        {post && <CommentsSection post={post} />}
       </div>
     </div>
   );

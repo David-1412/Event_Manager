@@ -9,7 +9,8 @@ public static class TrendingKinds
     public const string Post = "post";
 }
 
-/// <param name="Score">How many people marked it Interested inside the window.</param>
+/// <param name="Score">Total page views, all time. Only ever rises - un-marking Interested
+/// never lowers it.</param>
 public sealed record TrendingItemDto(string Kind, Guid Id, string Title, int Score);
 
 public enum TrendingWindow
@@ -21,28 +22,30 @@ public enum TrendingWindow
 
 public interface ITrendingRepository
 {
-    /// <summary>Public, live, not-yet-ended events ranked by interests created since
-    /// <paramref name="since"/>. Only events with at least one such interest.</summary>
+    /// <summary>Public, live, not-yet-ended events viewed since <paramref name="since"/>,
+    /// ranked by their total views.</summary>
     Task<IReadOnlyList<TrendingItemDto>> ListTopEventsAsync(
         DateTimeOffset since, DateTimeOffset now, int take, CancellationToken ct = default);
 
-    /// <summary>Visible forum posts ranked by interests created since
-    /// <paramref name="since"/>. Titles never name an author.</summary>
+    /// <summary>Visible forum posts viewed since <paramref name="since"/>, ranked by their
+    /// total views. Titles never name an author.</summary>
     Task<IReadOnlyList<TrendingItemDto>> ListTopPostsAsync(
         DateTimeOffset since, int take, CancellationToken ct = default);
 }
 
 /// <summary>
-/// "Monash Pulse": the ten things campus is most interested in right now, events and
-/// forum posts on one list.
+/// "Monash Pulse": the ten most-viewed things on campus right now, events and forum
+/// posts on one list.
 ///
-/// Ranked by interest *gained inside the window*, not by total interest: a post with
-/// 200 interests from last month is not news today, while one that picked up 15 this
-/// morning is. Windows are rolling (the last 24 hours, 72 hours, 7 days) rather than
-/// calendar days, so "Today" is never nearly empty at 12:05am.
+/// The score is total page views, and it never goes down: views are counted, never
+/// removed, and they are a separate table from Interested, which people can turn off.
+/// A window cannot shrink a total, so the windows choose *which* items compete
+/// instead: Today lists what was opened in the last 24 hours (Past 3 Days: 72 hours,
+/// This Week: 7 days), ranked by everything those items have ever been viewed. A
+/// post nobody has opened this week drops off This Week, but its number never falls.
 ///
-/// One "Interested" counts the same whether it was on an event or a post. That is a
-/// deliberate simplification - the two are one action in the UI, with one word.
+/// Signed-in readers count once per item per day; anonymous openings count each time
+/// (rate-limited for posts). One view counts the same on an event as on a post.
 /// </summary>
 public sealed class TrendingService(ITrendingRepository trending)
 {

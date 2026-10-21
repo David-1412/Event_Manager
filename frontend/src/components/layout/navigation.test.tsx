@@ -3,12 +3,16 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SectionSubnav } from "@/components/layout/section-subnav";
 import { SiteHeader } from "@/components/layout/site-header";
+import { useNotificationCounts, useUnreadCount } from "@/features/messages/use-messages";
 import { useAuth } from "@/lib/auth/auth-provider";
 
 vi.mock("@/lib/auth/auth-provider", () => ({ useAuth: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => "/" }));
 vi.mock("next-themes", () => ({ useTheme: () => ({ resolvedTheme: "light", setTheme: vi.fn() }) }));
-vi.mock("@/components/layout/notification-bell", () => ({ NotificationBell: () => null }));
+vi.mock("@/features/messages/use-messages", () => ({
+  useUnreadCount: vi.fn(() => 0),
+  useNotificationCounts: vi.fn(() => ({ comments: 0, likes: 0, events: 0, social: 0, total: 0 })),
+}));
 
 const member = { id: "u-1", uid: "f-1", displayName: "Sam Rivera", email: "sam@student.monash.edu", photoURL: null };
 
@@ -23,11 +27,12 @@ function signedIn(isAdmin: boolean) {
 describe("SiteHeader", () => {
   beforeEach(() => vi.mocked(useAuth).mockReset());
 
-  it("keeps the top bar to Events and Forum", () => {
+  it("keeps the top bar to Events, Forum and Messages", () => {
     signedIn(false);
+    vi.mocked(useUnreadCount).mockReturnValue(0);
     render(<SiteHeader />);
     const nav = screen.getByRole("navigation", { name: "Primary" });
-    expect(within(nav).getAllByRole("link").map((l) => l.textContent)).toEqual(["Events", "Forum"]);
+    expect(within(nav).getAllByRole("link").map((l) => l.textContent)).toEqual(["Events", "Forum", "Messages"]);
     expect(screen.queryByRole("link", { name: "My events" })).toBeNull();
   });
 
@@ -63,10 +68,42 @@ describe("SiteHeader", () => {
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
   });
 
-  it("shows messages as coming soon rather than a live button", () => {
+  it("shows the unread count on the Messages tab and the chat icon", () => {
     signedIn(false);
+    vi.mocked(useUnreadCount).mockReturnValue(3);
     render(<SiteHeader />);
-    expect(screen.getByRole("button", { name: /Messages/ })).toBeDisabled();
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    const tab = within(nav).getByRole("link", { name: "Messages, 3 unread" });
+    expect(tab).toHaveAttribute("href", "/messages");
+    expect(tab).toHaveTextContent("Messages3");
+    // The tab is the only Messages control: no separate chat-bubble icon.
+    expect(screen.getAllByRole("link", { name: /Messages/ })).toHaveLength(1);
+  });
+
+  it("has no separate notification bell, and counts notifications into the Messages badge", () => {
+    signedIn(false);
+    vi.mocked(useUnreadCount).mockReturnValue(2);
+    vi.mocked(useNotificationCounts).mockReturnValue({ comments: 1, likes: 2, events: 0, social: 0, total: 3 });
+    render(<SiteHeader />);
+    expect(screen.queryByRole("button", { name: /notification/i })).toBeNull();
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    expect(within(nav).getByRole("link", { name: "Messages, 5 unread" })).toBeInTheDocument();
+    vi.mocked(useNotificationCounts).mockReturnValue({ comments: 0, likes: 0, events: 0, social: 0, total: 0 });
+  });
+
+  it("caps a large unread count", () => {
+    signedIn(false);
+    vi.mocked(useUnreadCount).mockReturnValue(250);
+    render(<SiteHeader />);
+    const nav = screen.getByRole("navigation", { name: "Primary" });
+    expect(within(nav).getByRole("link", { name: "Messages, 250 unread" })).toHaveTextContent("99+");
+  });
+
+  it("keeps the Messages tab for signed-out visitors (the page asks them to sign in)", () => {
+    vi.mocked(useUnreadCount).mockReturnValue(0);
+    vi.mocked(useAuth).mockReturnValue({ user: null, loading: false, isAdmin: false } as never);
+    render(<SiteHeader />);
+    expect(screen.getByRole("link", { name: "Messages" })).toHaveAttribute("href", "/messages");
   });
 });
 
@@ -94,5 +131,22 @@ describe("SectionSubnav", () => {
     await userEvent.click(screen.getByRole("button", { name: /Create/ }));
     const choices = screen.getAllByRole("link").map((l) => l.getAttribute("href"));
     expect(choices).toEqual(["/forum/new", "/create"]);
+  });
+});
+
+describe("ViewModeToggle in the Events sub-nav", () => {
+  it("offers List View and Grid View and reports the choice", async () => {
+    const { ViewModeToggle } = await import("@/components/event/view-mode-toggle");
+    const onMode = vi.fn();
+    render(<ViewModeToggle mode="list" onMode={onMode} />);
+    expect(screen.getByRole("button", { name: "List View" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Grid View" }));
+    expect(onMode).toHaveBeenCalledWith("grid");
+  });
+
+  it("is shown in the sub-nav row beside Create", () => {
+    render(<SectionSubnav label="Events" items={[]} actions={<button type="button">Toggle</button>} />);
+    expect(screen.getByRole("button", { name: "Toggle" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();
   });
 });

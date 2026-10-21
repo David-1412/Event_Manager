@@ -5,7 +5,6 @@ import { useTransition } from "react";
 import { Flame } from "lucide-react";
 import { PostCard } from "@/components/forum/post-card";
 import { TrendingBanner } from "@/components/forum/TrendingBanner";
-import { GlobalSearch } from "@/components/layout/global-search";
 import { SectionSubnav } from "@/components/layout/section-subnav";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { signInReturnTo } from "@/lib/auth/types";
@@ -51,11 +50,8 @@ export function ForumFeedView() {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6">
       <h1 className="sr-only">Forum</h1>
-      <GlobalSearch context="forum" />
-
       <SectionSubnav
         label="Forum"
-        className="mt-4"
         createFirst="post"
         items={[
           { label: "All", active: query.tab === "all", onSelect: () => patch({ tab: "all" }) },

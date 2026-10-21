@@ -22,6 +22,11 @@ public sealed record EventAnalyticsDto(int Views, int JoinedCount, int Intereste
 /// with it - no view, no feed row, no DTO - and a second implementation seam keeps
 /// the analytics path from being reachable by, or coupled to, a feed change.
 /// </summary>
+/// <param name="Count">The event's view total afterwards.</param>
+/// <param name="IsNew">A row was inserted - false for a repeat view by the same
+/// signed-in person on the same day.</param>
+public sealed record EventViewRecord(int Count, bool IsNew);
+
 public interface IEventViewRepository
 {
     /// <summary>Record that <paramref name="userId"/> opened <paramref name="eventId"/>,
@@ -34,8 +39,13 @@ public interface IEventViewRepository
     /// A null <paramref name="userId"/> is an anonymous opening. It is recorded and
     /// counted but deduplicates against nothing - see
     /// <see cref="EventView.UserId"/>.</summary>
-    Task<int> RecordViewAsync(
+    Task<EventViewRecord> RecordViewAsync(
         Guid eventId, Guid? userId, DateTimeOffset viewedAt, CancellationToken ct = default);
+
+    /// <summary>How many view rows this signed-in user has for the event, across all
+    /// days. One, straight after a view that was <see cref="EventViewRecord.IsNew"/>,
+    /// means that view was their first ever.</summary>
+    Task<int> CountViewsByUserAsync(Guid eventId, Guid userId, CancellationToken ct = default);
 
     /// <summary>Every recorded view of one event. Not host-scoped: authorization is
     /// the caller's, and this is only ever reached behind it.</summary>

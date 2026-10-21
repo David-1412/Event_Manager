@@ -26,9 +26,21 @@ public interface IForumRepository
     /// <summary>False when there was nothing to remove.</summary>
     Task<bool> RemoveLikeAsync(Guid postId, Guid userId, CancellationToken ct = default);
 
-    /// <summary>Recounts the post's likes from the likes table and recomputes its hot
+    /// <summary>Recounts the post's likes and (non-deleted) comments from their tables
+    /// and recomputes its hot
     /// score in one statement; returns the new like count.</summary>
     Task<int> RefreshEngagementAsync(Guid postId, CancellationToken ct = default);
+
+    /// <summary>Record one opening of the post. A signed-in reader counts once per post
+    /// per day; the post's view_count goes up only when a row is actually inserted,
+    /// so it never decreases. Returns the total afterwards and whether this view was new.</summary>
+    Task<(int ViewCount, bool IsNew)> RecordViewAsync(
+        Guid postId, Guid? userId, DateTimeOffset viewedAt, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>How many view rows this signed-in user has for the post, across all days.</summary>
+    Task<int> CountViewsByUserAsync(Guid postId, Guid userId, CancellationToken ct = default) =>
+        throw new NotSupportedException();
 
     /// <summary>Which of <paramref name="postIds"/> the user is interested in.</summary>
     Task<IReadOnlySet<Guid>> ListLikedPostIdsAsync(

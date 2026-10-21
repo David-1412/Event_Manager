@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { EventCard } from "@/components/event/event-card";
 import { PostCard } from "@/components/forum/post-card";
-import { GlobalSearch, searchHref } from "@/components/layout/global-search";
+import { searchHref } from "@/components/layout/global-search";
 import { EmptyState, ErrorState } from "@/components/state/empty-error";
 import { Button } from "@/components/ui/button";
 import { SkeletonBlock } from "@/components/ui/skeleton";
@@ -31,11 +31,22 @@ export function SearchResultsView() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6">
-      <h1 className="sr-only">Search</h1>
-      <GlobalSearch context="search" />
+      {/* The search box and its All / Events / Posts scope live in the header. */}
+      <h1 className="text-h2 text-fg">
+        {q ? (
+          <>
+            Results for &ldquo;{q}&rdquo;
+            <span className="ml-2 text-meta font-normal text-fg-muted">
+              in {type === "all" ? "events and posts" : type}
+            </span>
+          </>
+        ) : (
+          "Search"
+        )}
+      </h1>
 
       {!q ? (
-        <EmptyState className="mt-6 px-0" title="Search MonaHub for events and forum posts." />
+        <EmptyState className="mt-6 px-0" title="Use the search in the header to find events and forum posts." />
       ) : (
         <div className="mt-6 flex flex-col gap-8">
           {type !== "posts" && <EventResults q={q} preview={type === "all"} />}

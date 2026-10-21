@@ -16,6 +16,7 @@ public sealed class EventInterestConfiguration : IEntityTypeConfiguration<EventI
         b.HasKey(x => new { x.EventId, x.UserId });
 
         b.Property(x => x.CreatedAt).IsRequired().HasColumnName("interested_at");
+        b.Property(x => x.IsAuto).HasDefaultValue(false);
 
         b.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);

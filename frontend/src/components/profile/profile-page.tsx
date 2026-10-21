@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { EventCard } from "@/components/event/event-card";
 import { FollowButton } from "@/components/profile/follow-button";
+import { MessageButton } from "@/components/messages/message-button";
 import { ErrorState } from "@/components/state/empty-error";
 import { CardError } from "@/components/account/card-error";
 import { Avatar } from "@/components/ui/avatar";
@@ -188,7 +189,10 @@ function Overview({ summary }: { summary: ProfileSummary }) {
             action column of the header rather than part of the identity block, and
             stacked so the count sits under the button it belongs to. */}
         <div className="flex shrink-0 flex-col items-end gap-2">
-          <FollowButton userId={summary.userId} isFollowing={summary.isFollowing} />
+          <div className="flex items-center gap-2">
+            <MessageButton userId={summary.userId} />
+            <FollowButton userId={summary.userId} isFollowing={summary.isFollowing} />
+          </div>
           <p className="text-meta text-fg-muted">
             <span className="font-semibold text-fg tabular-nums">
               {summary.followersCount.toLocaleString("en-AU")}

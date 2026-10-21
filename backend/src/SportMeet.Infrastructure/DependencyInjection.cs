@@ -41,6 +41,9 @@ public static class DependencyInjection
         // IEventRepository method remember to filter?" a question with a short answer.
         services.AddScoped<SportMeet.Application.Profiles.IProfileRepository, ProfileRepository>();
         services.AddScoped<SportMeet.Application.Forum.IForumRepository, ForumRepository>();
+        services.AddScoped<SportMeet.Application.Forum.IForumCommentRepository, ForumCommentRepository>();
+        services.AddScoped<SportMeet.Application.Messaging.IMessagingRepository, MessagingRepository>();
+        services.AddScoped<SportMeet.Application.Activity.IActivityRepository, ActivityRepository>();
         services.AddScoped<SportMeet.Application.Trending.ITrendingRepository, TrendingRepository>();
 
         // View tracking, its own seam and its own repository: the analytics path

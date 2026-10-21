@@ -29,7 +29,7 @@ public sealed class EventViewRepository(AppDbContext db) : IEventViewRepository
     /// compare against; the number is the wire contract.</summary>
     private const string UniqueViolation = "23505";
 
-    public async Task<int> RecordViewAsync(
+    public async Task<EventViewRecord> RecordViewAsync(
         Guid eventId, Guid? userId, DateTimeOffset viewedAt, CancellationToken ct = default)
     {
         // UtcDateTime converts first, so a value carrying a non-zero offset lands on
@@ -52,17 +52,22 @@ public sealed class EventViewRepository(AppDbContext db) : IEventViewRepository
             ViewedOn = viewedOn,
         });
 
+        var isNew = true;
         try
         {
             await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
+            isNew = false;
             db.ChangeTracker.Clear();
         }
 
-        return await CountViewsAsync(eventId, ct);
+        return new EventViewRecord(await CountViewsAsync(eventId, ct), isNew);
     }
+
+    public Task<int> CountViewsByUserAsync(Guid eventId, Guid userId, CancellationToken ct = default) =>
+        db.EventViews.CountAsync(v => v.EventId == eventId && v.UserId == userId, ct);
 
     public async Task<int> CountViewsAsync(Guid eventId, CancellationToken ct = default)
         => await db.EventViews.CountAsync(v => v.EventId == eventId, ct);

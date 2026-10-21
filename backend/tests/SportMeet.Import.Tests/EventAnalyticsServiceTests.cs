@@ -80,6 +80,46 @@ public sealed class EventAnalyticsServiceTests
         await Assert.ThrowsAsync<NotFoundException>(() => service.GetAsync(Guid.NewGuid()));
     }
 
+    // ---- First view: the moment Interested is marked automatically ----
+
+    [Fact]
+    public async Task Only_a_signed_in_viewers_first_ever_view_counts_as_first()
+    {
+        var viewer = Guid.NewGuid();
+        var entity = Event(Guid.NewGuid());
+        var views = new FakeViews(1);
+        var service = new EventAnalyticsService(
+            views, new FakeAnalyticsRepo(new FeedRow(entity, [], null, "Host", null, 0, 0)), User(viewer), new TestLogger());
+
+        Assert.True(await service.TryRecordViewAsync(entity.Id));
+        // Same day again: not new, so someone who un-marked Interested stays un-marked.
+        Assert.False(await service.TryRecordViewAsync(entity.Id));
+    }
+
+    [Fact]
+    public async Task A_return_visit_on_a_later_day_is_not_a_first_view()
+    {
+        var entity = Event(Guid.NewGuid());
+        var views = new FakeViews(1) { EarlierDays = 1 };
+        var service = new EventAnalyticsService(
+            views, new FakeAnalyticsRepo(new FeedRow(entity, [], null, "Host", null, 0, 0)), User(Guid.NewGuid()), new TestLogger());
+
+        Assert.False(await service.TryRecordViewAsync(entity.Id));
+    }
+
+    [Fact]
+    public async Task Anonymous_views_and_failures_are_never_first_views()
+    {
+        var entity = Event(Guid.NewGuid());
+        var feed = new FakeAnalyticsRepo(new FeedRow(entity, [], null, "Host", null, 0, 0));
+
+        Assert.False(await new EventAnalyticsService(new FakeViews(1), feed, User(null), new TestLogger())
+            .TryRecordViewAsync(entity.Id));
+        Assert.False(await new EventAnalyticsService(
+                new ThrowingViews(() => new InvalidOperationException("down")), feed, User(Guid.NewGuid()), new TestLogger())
+            .TryRecordViewAsync(entity.Id));
+    }
+
     // ---- Recording a view never costs the visitor the page ----
 
     [Fact]
@@ -267,11 +307,14 @@ public sealed class EventAnalyticsServiceTests
         public readonly List<(Guid EventId, Guid? UserId)> Recorded = [];
         public int CountCalls;
 
-        public Task<int> RecordViewAsync(
+        public Task<EventViewRecord> RecordViewAsync(
             Guid eventId, Guid? userId, DateTimeOffset viewedAt, CancellationToken ct = default)
         {
+            // Mimics the daily unique index for the one day a test spans: a signed-in
+            // repeat is not new; anonymous openings always are.
+            var isNew = userId is null || !Recorded.Contains((eventId, userId));
             Recorded.Add((eventId, userId));
-            return Task.FromResult(count);
+            return Task.FromResult(new EventViewRecord(count, isNew));
         }
 
         public Task<int> CountViewsAsync(Guid eventId, CancellationToken ct = default)
@@ -279,15 +322,24 @@ public sealed class EventAnalyticsServiceTests
             CountCalls++;
             return Task.FromResult(count);
         }
+
+        /// <summary>Views from earlier days, which the daily index would have kept.</summary>
+        public int EarlierDays { get; init; }
+
+        public Task<int> CountViewsByUserAsync(Guid eventId, Guid userId, CancellationToken ct = default) =>
+            Task.FromResult(EarlierDays + Recorded.Where(r => r == (eventId, userId)).Distinct().Count());
     }
 
     private sealed class ThrowingViews(Func<Exception> error) : IEventViewRepository
     {
-        public Task<int> RecordViewAsync(
+        public Task<EventViewRecord> RecordViewAsync(
             Guid eventId, Guid? userId, DateTimeOffset viewedAt, CancellationToken ct = default)
-            => Task.FromException<int>(error());
+            => Task.FromException<EventViewRecord>(error());
 
         public Task<int> CountViewsAsync(Guid eventId, CancellationToken ct = default)
+            => throw new InvalidOperationException("database unavailable");
+
+        public Task<int> CountViewsByUserAsync(Guid eventId, Guid userId, CancellationToken ct = default)
             => throw new InvalidOperationException("database unavailable");
     }
 

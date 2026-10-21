@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { CalendarPlus, ChevronRight, MessageSquarePlus, Plus } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/cn";
@@ -28,6 +28,7 @@ export function SectionSubnav({
   items,
   label,
   createFirst = "event",
+  actions,
   className,
 }: {
   items: SubnavItem[];
@@ -35,6 +36,9 @@ export function SectionSubnav({
   label: string;
   /** Which choice the Create dialog lists first - the one this page is about. */
   createFirst?: "event" | "post";
+  /** Extra controls before Create, e.g. the List / Grid toggle. Shown from `md` up:
+   * on a phone there is one column whatever the mode. */
+  actions?: ReactNode;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -64,6 +68,8 @@ export function SectionSubnav({
           );
         })}
       </nav>
+
+      {actions && <div className="mb-1 hidden shrink-0 md:block">{actions}</div>}
 
       <button
         type="button"

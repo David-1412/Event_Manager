@@ -34,6 +34,15 @@ export interface ForumPost {
   commentCount: number;
   isPinned: boolean;
   createdAt: string;
+  /** Total page views. Only ever rises - it is the Monash Pulse score. */
+  viewCount: number;
+}
+
+/** Mirrors `ForumViewResultDto`: after opening a post. */
+export interface ForumViewResult {
+  viewCount: number;
+  isInterested: boolean;
+  likeCount: number;
 }
 
 /** Mirrors `ForumInterestResultDto`: the settled state after a toggle. */
@@ -47,7 +56,7 @@ export interface TrendingItem {
   kind: "event" | "post";
   id: string;
   title: string;
-  /** People who marked it Interested inside the window. */
+  /** Total page views, all time. Never decreases. */
   score: number;
 }
 

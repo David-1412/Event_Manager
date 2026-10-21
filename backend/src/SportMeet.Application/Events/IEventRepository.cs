@@ -155,6 +155,12 @@ public interface IEventRepository
     /// tap converges on "interested" instead of throwing on the composite key.</summary>
     Task AddInterestAsync(Guid eventId, Guid userId, DateTimeOffset createdAt, CancellationToken ct = default);
 
+    /// <summary>Adds an interest marked automatically by a first view (IsAuto), so the
+    /// public profile feed can leave it out. No-op when an interest already exists.
+    /// Default-implemented so read-side test fakes need not know about it.</summary>
+    Task AddAutoInterestAsync(Guid eventId, Guid userId, DateTimeOffset createdAt, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
     /// <summary>Removes the interest row; no-op when absent.</summary>
     Task RemoveInterestAsync(Guid eventId, Guid userId, CancellationToken ct = default);
 

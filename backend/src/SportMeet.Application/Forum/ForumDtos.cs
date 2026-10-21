@@ -28,7 +28,12 @@ public sealed record ForumPostDto(
     int LikeCount,
     int CommentCount,
     bool IsPinned,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    int ViewCount = 0);
+
+/// <summary>The settled state after opening a post: its view total (never decreases) and
+/// the caller's Interested state, which a first view may just have set.</summary>
+public sealed record ForumViewResultDto(int ViewCount, bool IsInterested, int LikeCount);
 
 /// <summary>The settled state after marking or clearing "Interested" on a post.</summary>
 public sealed record ForumInterestResultDto(bool IsInterested, int LikeCount);
@@ -68,7 +73,8 @@ public sealed record ForumPostRow(
     int CommentCount,
     double HotScore,
     bool IsPinned,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    int ViewCount = 0);
 
 /// <param name="Search">Text to find in titles and bodies; null for no search.</param>
 /// <param name="AuthorUserId">Only this author's posts, anonymous ones included (My Posts).</param>
