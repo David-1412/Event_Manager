@@ -40,6 +40,16 @@ public interface IEventRepository
     /// page and the "N events" header cannot disagree mid-request.</summary>
     Task<(List<FeedRow> Rows, int TotalCount)> QueryAsync(EventQueryModel query, CancellationToken ct = default);
 
+    /// <summary>For each series, how many of its live (Scheduled/Published) sessions
+    /// start at or after <paramref name="now"/>. Series with none are absent.</summary>
+    Task<Dictionary<Guid, int>> CountUpcomingSessionsAsync(
+        IReadOnlyCollection<Guid> seriesIds, DateTimeOffset now, CancellationToken ct = default) =>
+        Task.FromResult(new Dictionary<Guid, int>());
+
+    /// <summary>Every (not deleted) session of a series, earliest first, any status.</summary>
+    Task<List<FeedRow>> ListSeriesSessionsAsync(Guid seriesId, CancellationToken ct = default) =>
+        Task.FromResult(new List<FeedRow>());
+
     Task<FeedRow?> FindAsync(Guid id, CancellationToken ct = default);
 
     // ---- Join requests -------------------------------------------------------

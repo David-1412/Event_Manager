@@ -37,7 +37,57 @@ public sealed class EventService(
             .Select(row => ToListItem(row.Event, row, ComputeDistanceKm(row.Event, query)))
             .ToList();
 
+        // The repository collapsed each recurring series to one card; say how many
+        // sessions that card stands for. One grouped count for the whole page.
+        var seriesIds = items.Where(i => i.SeriesId is not null).Select(i => i.SeriesId!.Value).Distinct().ToList();
+        if (seriesIds.Count > 0)
+        {
+            var counts = await events.CountUpcomingSessionsAsync(seriesIds, DateTimeOffset.UtcNow, ct);
+            foreach (var item in items)
+            {
+                if (item.SeriesId is { } sid) item.SeriesUpcomingCount = counts.GetValueOrDefault(sid, 1);
+            }
+        }
+
         return new PagedResult<EventListItemDto>(items, query.Page, query.PageSize, totalCount);
+    }
+
+    /// <summary>
+    /// The upcoming sessions of the series <paramref name="eventId"/> belongs to,
+    /// earliest first - for the card's "View all sessions" drawer and the detail
+    /// page's session picker. Each session is its own event, so joining or marking
+    /// Interested is done on the chosen session's page.
+    ///
+    /// Readable on the same terms as the event itself: an unpublished session is
+    /// listed only for its creator or an admin. A one-off event answers with itself.
+    /// </summary>
+    public async Task<IReadOnlyList<EventSessionDto>> ListSessionsAsync(Guid eventId, CancellationToken ct = default)
+    {
+        var row = await events.FindAsync(eventId, ct) ?? throw new NotFoundException("Event", eventId);
+        if (!row.Event.Status.IsPublished() && !CanManage(row)) throw new NotFoundException("Event", eventId);
+
+        var now = DateTimeOffset.UtcNow;
+        var sessions = row.Event.SeriesId is { } seriesId
+            ? await events.ListSeriesSessionsAsync(seriesId, ct)
+            : [row];
+
+        var joined = currentUser.UserId is { } viewer
+            ? (await events.ListJoinedEventIdsAsync(viewer, ct)).ToHashSet()
+            : [];
+
+        return sessions
+            .Where(s => s.Event.EndAt > now || s.Event.Id == eventId)
+            .Where(s => s.Event.Status.IsPublished() || CanManage(s))
+            .OrderBy(s => s.Event.StartAt)
+            .Select(s => new EventSessionDto(
+                s.Event.Id,
+                s.Event.StartAt,
+                s.Event.EndAt,
+                s.ParticipantCount,
+                s.Event.MaxParticipants,
+                s.Event.Status == EventStatus.Cancelled,
+                joined.Contains(s.Event.Id)))
+            .ToList();
     }
 
     /// <summary>
@@ -125,6 +175,7 @@ public sealed class EventService(
             IsRecurring = row.Event.IsRecurring,
             SeriesId = row.Event.SeriesId,
             RecurrenceSummary = EventSeries.Summary(row.Event),
+            RecurrenceFrequency = row.Event.IsRecurring ? row.Event.RecurrenceFrequency?.ToString().ToUpperInvariant() : null,
             DistanceKm = null,
             Description = row.Event.Description,
             Host = new ParticipantDto(row.Event.HostId, row.HostName, row.HostPhotoUrl),
@@ -1031,6 +1082,7 @@ public sealed class EventService(
         IsRecurring = e.IsRecurring,
         SeriesId = e.SeriesId,
         RecurrenceSummary = EventSeries.Summary(e),
+        RecurrenceFrequency = e.IsRecurring ? e.RecurrenceFrequency?.ToString().ToUpperInvariant() : null,
         DistanceKm = distanceKm,
     };
 

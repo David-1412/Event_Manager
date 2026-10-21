@@ -128,6 +128,11 @@ export interface EventListItem {
   seriesId?: string | null;
   /** "Weekly on Tue, Thu · until 15 Dec 2026", or null for a one-off. */
   recurrenceSummary?: string | null;
+  /** "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY" for a series session. */
+  recurrenceFrequency?: string | null;
+  /** Browse only: a series shows as one card (its next session); this is how many
+   *  sessions are still to come, that one included. */
+  seriesUpcomingCount?: number | null;
   distanceKm: number | null;
 }
 
@@ -376,3 +381,16 @@ export interface ProblemDetails {
 
 /** Every failure path JoinButton distinguishes (spec §7). */
 export type JoinFailure = "full" | "network" | "server";
+
+/** Mirrors `EventSessionDto`: one session of a recurring series. Each session is its
+ *  own event, so `id` is the page to open, join or mark Interested on. */
+export interface EventSession {
+  id: string;
+  startAt: string;
+  endAt: string;
+  joinedCount: number;
+  maxParticipants: number | null;
+  isCancelled: boolean;
+  /** The viewer is going to this session. */
+  isJoined: boolean;
+}

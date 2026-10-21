@@ -105,7 +105,16 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
     public async Task<(List<FeedRow> Rows, int TotalCount)> QueryAsync(EventQueryModel query, CancellationToken ct = default)
 
     {
-        var filtered = ApplyFilters(db.EventFeed.AsNoTracking(), query);
+        var matching = ApplyFilters(db.EventFeed.AsNoTracking(), query);
+
+        // One card per recurring series: its earliest session that passes every
+        // filter. ApplyFilters already bounds start_at below by now, so that is the
+        // next upcoming session - and inside a date filter ("this week") it is the
+        // series' session in that window, never one outside it. A correlated NOT
+        // EXISTS over the same filtered set, so the count, paging and ordering below
+        // all see the collapsed feed. A one-off event (no series) always passes.
+        var filtered = matching.Where(v => v.SeriesId == null
+            || !matching.Any(o => o.SeriesId == v.SeriesId && o.StartAt < v.StartAt));
 
         var totalCount = await filtered.CountAsync(ct);
 
@@ -121,6 +130,29 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
             .ToListAsync(ct);
 
         return (page.Select(ToRow).ToList(), totalCount);
+    }
+
+    public async Task<Dictionary<Guid, int>> CountUpcomingSessionsAsync(
+        IReadOnlyCollection<Guid> seriesIds, DateTimeOffset now, CancellationToken ct = default)
+    {
+        if (seriesIds.Count == 0) return [];
+        var ids = seriesIds.ToArray();
+        var live = new[] { nameof(EventStatus.Scheduled), nameof(EventStatus.Published) };
+        return await db.EventFeed.AsNoTracking()
+            .Where(v => v.SeriesId != null && ids.Contains(v.SeriesId.Value)
+                && v.StartAt >= now && live.Contains(v.Status))
+            .GroupBy(v => v.SeriesId!.Value)
+            .Select(g => new { SeriesId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.SeriesId, x => x.Count, ct);
+    }
+
+    public async Task<List<FeedRow>> ListSeriesSessionsAsync(Guid seriesId, CancellationToken ct = default)
+    {
+        var rows = await db.EventFeed.AsNoTracking()
+            .Where(v => v.SeriesId == seriesId)
+            .OrderBy(v => v.StartAt)
+            .ToListAsync(ct);
+        return rows.Select(ToRow).ToList();
     }
 
     public async Task<FeedRow?> FindAsync(Guid id, CancellationToken ct = default)

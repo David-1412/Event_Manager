@@ -96,6 +96,10 @@ public interface IEventService
 
     Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default);
 
+    /// <summary>The upcoming sessions of the event's recurring series.</summary>
+    Task<IReadOnlyList<EventSessionDto>> ListSessionsAsync(Guid eventId, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
     /// <summary>Delete one of your own events once it has been cancelled. Soft: the row
     /// keeps its history but disappears from every list and link.</summary>
     Task DeleteCancelledAsync(Guid eventId, CancellationToken ct = default) =>

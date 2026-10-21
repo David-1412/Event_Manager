@@ -22,6 +22,7 @@ import { useNow } from "@/lib/use-now";
 import { StickyFooter } from "@/components/layout/site-header";
 import { useToggleInterest } from "@/features/events/use-interests";
 import { useEventDetail, useJoinEvent } from "@/features/events/use-events";
+import { sessionDay, sessionTime, useEventSessions } from "@/features/events/use-sessions";
 import { deleteCancelledEvent, refreshEventCaches, setEventStatus } from "@/features/events/host-actions";
 import { cn } from "@/lib/cn";
 import { availabilityOf, countTextClass } from "@/lib/cn";
@@ -349,6 +350,8 @@ function ActionCard({ event, joinSlot }: { event: EventDetail; joinSlot: React.R
           />
         </div>
 
+        {event.isRecurring && <SessionPicker event={event} />}
+
         <div className="rounded-md bg-surface-2 px-3 py-2">
           <span className="text-micro uppercase text-fg-muted">Spots remaining</span>
           <p className={cn("text-count", countTextClass[availability])} data-count>
@@ -414,6 +417,45 @@ function Row({ icon, label, value }: { icon: string; label: string; value: strin
         <span className="text-micro uppercase text-fg-muted">{label}</span>
         <span className="text-body text-fg">{value}</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Select session date" for a session of a recurring series. Every session is its
+ * own event with its own spots, so picking a date opens that session's page, and
+ * Join / Interested on it apply to that date only. The current session is selected;
+ * dates you are going to say so.
+ */
+function SessionPicker({ event }: { event: EventDetail }) {
+  const router = useRouter();
+  const { sessions } = useEventSessions(event.id);
+  const id = `session-picker-${event.id}`;
+  if (!sessions || sessions.length < 2) return null;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-micro uppercase text-fg-muted">
+        Select session date
+      </label>
+      <select
+        id={id}
+        value={event.id}
+        onChange={(e) => router.push(`/events/${e.target.value}`)}
+        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body text-fg focus:border-brand-600 focus:outline-none"
+      >
+        {sessions.map((s) => {
+          const full = s.maxParticipants !== null && s.joinedCount >= s.maxParticipants;
+          const note = s.isCancelled ? " (cancelled)" : s.isJoined ? " (going)" : full ? " (full)" : "";
+          return (
+            <option key={s.id} value={s.id}>
+              {sessionDay(s.startAt, event.timezone)}, {sessionTime(s.startAt, event.timezone)}
+              {note}
+            </option>
+          );
+        })}
+      </select>
+      <p className="text-micro text-fg-muted">Joining and Interested apply to the selected date.</p>
     </div>
   );
 }

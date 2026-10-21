@@ -141,6 +141,16 @@ public class EventListItemDto
     /// <summary>"Weekly on Tue, Thu · until 15 Dec" - null for a one-off event.</summary>
     public string? RecurrenceSummary { get; init; }
 
+    /// <summary>"DAILY", "WEEKLY", "BIWEEKLY" or "MONTHLY" for a series session (the
+    /// card's "Repeats weekly" badge); null for a one-off event.</summary>
+    public string? RecurrenceFrequency { get; init; }
+
+    /// <summary>On browse, where a series collapses to one card: how many of its
+    /// sessions are still to come, this one included ("View all 12 sessions"). Null
+    /// elsewhere and for one-off events. Settable because it is filled in after the
+    /// page is read, from one grouped count rather than a query per card.</summary>
+    public int? SeriesUpcomingCount { get; set; }
+
     /// <summary>null when no origin coordinates were supplied or the sort is not
     /// distance-based; the client then hides the distance row.</summary>
     public double? DistanceKm { get; init; }

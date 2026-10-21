@@ -146,7 +146,19 @@ public class EventReviewWorkflowTests
             return Task.FromResult(true);
         }
 
-        public Task<(List<FeedRow> Rows, int TotalCount)> QueryAsync(EventQueryModel query, CancellationToken ct = default) => throw new NotImplementedException();
+        /// <summary>What the (already collapsed) browse query returns.</summary>
+        public List<FeedRow> Page = [];
+        public List<FeedRow> SeriesSessions = [];
+        public Dictionary<Guid, int> UpcomingCounts = [];
+
+        public Task<(List<FeedRow> Rows, int TotalCount)> QueryAsync(EventQueryModel query, CancellationToken ct = default) =>
+            Task.FromResult((Page, Page.Count));
+
+        public Task<Dictionary<Guid, int>> CountUpcomingSessionsAsync(IReadOnlyCollection<Guid> seriesIds, DateTimeOffset now, CancellationToken ct = default) =>
+            Task.FromResult(UpcomingCounts.Where(kv => seriesIds.Contains(kv.Key)).ToDictionary());
+
+        public Task<List<FeedRow>> ListSeriesSessionsAsync(Guid seriesId, CancellationToken ct = default) =>
+            Task.FromResult(SeriesSessions.Where(s => s.Event.SeriesId == seriesId).ToList());
         public Task<List<FeedRow>> ListHostedAsync(Guid hostId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<Sport?> FindSportBySlugAsync(string slug, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<Dictionary<string, Tag>> FindTagsByNamesAsync(IReadOnlyList<string> names, CancellationToken ct = default) => throw new NotImplementedException();
@@ -647,6 +659,70 @@ public class EventReviewWorkflowTests
 
         Assert.Equal(2, queue.Count);
         Assert.Equal(sessions[2].Event.Id, queue[0].Id);
+    }
+
+    // ---- Series in the feed -------------------------------------------------------
+
+    private static List<FeedRow> SeriesRows(EventStatus status, int count)
+    {
+        var rows = Enumerable.Range(0, count).Select(_ => Row(status, HostId)).ToList();
+        for (var i = 0; i < rows.Count; i++)
+        {
+            rows[i].Event.IsRecurring = true;
+            rows[i].Event.SeriesId = rows[0].Event.Id;
+            rows[i].Event.RecurrenceFrequency = RecurrenceFrequency.Weekly;
+            rows[i].Event.StartAt = DateTimeOffset.UtcNow.AddDays(1 + 7 * i);
+            rows[i].Event.EndAt = rows[i].Event.StartAt.AddHours(2);
+        }
+        return rows;
+    }
+
+    [Fact]
+    public async Task A_series_card_on_browse_says_how_many_sessions_it_stands_for()
+    {
+        var rig = new Rig();
+        var series = SeriesRows(EventStatus.Scheduled, 12);
+        var oneOff = Row(EventStatus.Scheduled, OtherId);
+        rig.Repo.Page = [series[0], oneOff];
+        rig.Repo.UpcomingCounts = new() { [series[0].Event.Id] = 12 };
+
+        var page = await rig.Service.ListAsync(new EventQueryModel());
+
+        var card = page.Items.Single(i => i.Id == series[0].Event.Id);
+        Assert.Equal(12, card.SeriesUpcomingCount);
+        Assert.Equal("WEEKLY", card.RecurrenceFrequency);
+        Assert.Null(page.Items.Single(i => i.Id == oneOff.Event.Id).SeriesUpcomingCount);
+    }
+
+    [Fact]
+    public async Task Sessions_list_the_series_upcoming_dates_and_mark_the_ones_you_joined()
+    {
+        var rig = new Rig { CurrentUser = OtherId };
+        var series = SeriesRows(EventStatus.Scheduled, 3);
+        series[1].Event.StartAt = DateTimeOffset.UtcNow.AddDays(-8); // already over
+        series[1].Event.EndAt = DateTimeOffset.UtcNow.AddDays(-8).AddHours(2);
+        rig.Repo.Found = series[2];
+        rig.Repo.SeriesSessions = series;
+
+        var sessions = await rig.Service.ListSessionsAsync(series[2].Event.Id);
+
+        Assert.Equal([series[0].Event.Id, series[2].Event.Id], sessions.Select(s => s.Id));
+        Assert.All(sessions, s => Assert.False(s.IsJoined));
+    }
+
+    [Fact]
+    public async Task Sessions_of_a_series_still_in_review_are_hidden_from_strangers()
+    {
+        var series = SeriesRows(EventStatus.PendingReview, 2);
+        var stranger = new Rig { CurrentUser = OtherId };
+        stranger.Repo.Found = series[0];
+        stranger.Repo.SeriesSessions = series;
+        await Assert.ThrowsAsync<NotFoundException>(() => stranger.Service.ListSessionsAsync(series[0].Event.Id));
+
+        var host = new Rig();
+        host.Repo.Found = series[0];
+        host.Repo.SeriesSessions = series;
+        Assert.Equal(2, (await host.Service.ListSessionsAsync(series[0].Event.Id)).Count);
     }
 
     [Fact]

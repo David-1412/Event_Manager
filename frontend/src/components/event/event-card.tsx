@@ -16,6 +16,8 @@ import {
   formatTagLine,
   spotsTakenSentence,
 } from "@/lib/format";
+import { ChevronDown } from "lucide-react";
+import { repeatsLabel, sessionDay, sessionTime, useEventSessions } from "@/features/events/use-sessions";
 import type { EventListItem } from "@/types/events";
 import { isPendingReviewStatus } from "@/types/events";
 
@@ -276,6 +278,7 @@ export function EventCard({
             {formatCardWhen(event)}
             <RepeatMark event={event} />
           </p>
+          <SeriesSessions event={event} />
           <p className="truncate text-meta text-fg-muted">
             <span aria-hidden>{"\u{1F4CD}"}</span> {event.venueName}
           </p>
@@ -293,6 +296,7 @@ export function EventCard({
             {formatCardWhen(event)}
             <RepeatMark event={event} />
           </p>
+          <SeriesSessions event={event} />
           <p className="text-meta text-fg-muted">{meta}</p>
         </>
       )}
@@ -545,15 +549,94 @@ function SocialProof({
  * interested as a standalone tally. Interest reserves no spot, so it is shown
  * beside — never summed into — the joined number.
  */
-/** The repeat mark beside a session's date: this event is one of a series. The
- *  series line ("Weekly on Tue, Thu · until 15 Dec") is its tooltip and label. */
+/** "\u{1F502} Repeats weekly" beside a session's date: this event is one of a series.
+ *  The full series line ("Weekly on Tue, Thu · until 15 Dec") is the tooltip. */
 function RepeatMark({ event }: { event: EventListItem }) {
   if (!event.isRecurring) return null;
   const label = event.recurrenceSummary ? `Repeats: ${event.recurrenceSummary}` : "Repeating event";
   return (
-    <span role="img" aria-label={label} title={label} className="ml-1.5 font-normal">
-      {"\u{1F502}"}
+    <span
+      title={label}
+      className="ml-2 inline-flex items-center gap-1 rounded-full bg-brand-tint px-2 py-0.5 align-middle text-micro font-medium text-brand-600"
+    >
+      <span role="img" aria-label={label}>
+        {"\u{1F502}"}
+      </span>
+      <span aria-hidden>{repeatsLabel(event.recurrenceFrequency)}</span>
     </span>
+  );
+}
+
+/**
+ * "Next: Fri 23 Oct · View all 12 sessions" under a series card's date. Browse shows
+ * a series once - its next session - and this opens a drawer of the rest without
+ * leaving the page; each date links to that session, where joining applies to it.
+ * Shown only where the server counted the series (browse), and only when there is
+ * more than this one session to see. Sits above the card's link overlay and stops
+ * the click there, so opening it neither navigates nor selects the card on the map.
+ */
+function SeriesSessions({ event }: { event: EventListItem }) {
+  const [open, setOpen] = useState(false);
+  const count = event.seriesUpcomingCount ?? 0;
+  const drawerId = `sessions-${event.id}`;
+  if (!event.isRecurring || count < 2) return null;
+
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  return (
+    <div className="relative z-10" onClick={stop} onKeyDown={stop}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={drawerId}
+        onClick={() => setOpen((v) => !v)}
+        className="press mt-1 inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-micro font-medium text-fg hover:border-brand-600"
+      >
+        <span className="truncate">
+          Next: {sessionDay(event.startAt, event.timezone)} {"\u00b7"} View all {count} sessions
+        </span>
+        <ChevronDown aria-hidden size={14} className={cn("shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <SessionDrawer id={drawerId} event={event} />}
+    </div>
+  );
+}
+
+/** The opened drawer. Its own component so the sessions request (and the viewer
+ *  lookup it needs) only happens once someone opens it. */
+function SessionDrawer({ id, event }: { id: string; event: EventListItem }) {
+  const { sessions, isLoading, error } = useEventSessions(event.id);
+  return (
+    <div id={id} className="mt-2 rounded-md border border-border bg-surface p-2">
+      {error ? (
+        <p className="px-1 text-micro text-fg-muted">Couldn&apos;t load the sessions.</p>
+      ) : isLoading || !sessions ? (
+        <p className="px-1 text-micro text-fg-muted">Loading sessions{"\u2026"}</p>
+      ) : (
+        <ul className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+          {sessions.map((s) => {
+            const full = s.maxParticipants !== null && s.joinedCount >= s.maxParticipants;
+            return (
+              <li key={s.id}>
+                <Link
+                  href={`/events/${s.id}`}
+                  className={cn(
+                    "flex items-center gap-2 rounded px-2 py-1 text-micro text-fg no-underline hover:bg-surface-2",
+                    s.id === event.id && "font-semibold",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    {sessionDay(s.startAt, event.timezone)}, {sessionTime(s.startAt, event.timezone)}
+                  </span>
+                  {s.isJoined && <span className="text-brand-600">Going</span>}
+                  {!s.isJoined && full && <span className="text-danger">Full</span>}
+                  {s.isCancelled && <span className="text-fg-muted">Cancelled</span>}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 

@@ -189,6 +189,7 @@ public sealed class ProfileService(
         IsRecurring = row.Event.IsRecurring,
         SeriesId = row.Event.SeriesId,
         RecurrenceSummary = EventSeries.Summary(row.Event),
+        RecurrenceFrequency = row.Event.IsRecurring ? row.Event.RecurrenceFrequency?.ToString().ToUpperInvariant() : null,
         DistanceKm = null,
     };
 }

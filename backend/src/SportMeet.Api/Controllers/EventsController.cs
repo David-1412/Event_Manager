@@ -103,6 +103,15 @@ public class EventsController(
         return Ok(detail);
     }
 
+    /// <summary>The upcoming sessions of this event's recurring series, earliest
+    /// first (a one-off event answers with itself). Each session is its own event:
+    /// join or mark Interested on the session's own page.</summary>
+    [HttpGet("{id:guid}/sessions")]
+    [ProducesResponseType(typeof(IReadOnlyList<EventSessionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<EventSessionDto>>> Sessions(Guid id, CancellationToken ct)
+        => Ok(await events.ListSessionsAsync(id, ct));
+
     /// <summary>
     /// The current viewer's joined event ids, for My events. Anonymous-tolerant:
     /// with no identity configured it returns an empty list rather than 401, so the
