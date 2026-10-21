@@ -131,6 +131,16 @@ public class EventListItemDto
     /// keeps the immediate Join flow. Serializes as `requiresJoinApproval`.</summary>
     public bool RequiresJoinApproval { get; init; }
 
+    /// <summary>One session of a repeating series. The card shows the repeat icon.</summary>
+    public bool IsRecurring { get; init; }
+
+    /// <summary>The series' first session's id, shared by every session; null for a
+    /// one-off event.</summary>
+    public Guid? SeriesId { get; init; }
+
+    /// <summary>"Weekly on Tue, Thu · until 15 Dec" - null for a one-off event.</summary>
+    public string? RecurrenceSummary { get; init; }
+
     /// <summary>null when no origin coordinates were supplied or the sort is not
     /// distance-based; the client then hides the distance row.</summary>
     public double? DistanceKm { get; init; }

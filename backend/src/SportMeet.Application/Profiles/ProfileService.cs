@@ -186,6 +186,9 @@ public sealed class ProfileService(
         IsPublished = row.Event.Status.IsPublished(),
         Visibility = row.Event.Visibility.ToString(),
         RequiresJoinApproval = row.Event.RequiresJoinApproval,
+        IsRecurring = row.Event.IsRecurring,
+        SeriesId = row.Event.SeriesId,
+        RecurrenceSummary = EventSeries.Summary(row.Event),
         DistanceKm = null,
     };
 }

@@ -50,6 +50,16 @@ public sealed class AdminEventService(
             await events.SaveChangesAsync(inner);
             await events.ReplaceEventTagsAsync(id, TagNormalizer.NormalizeMany(request.Tags), now, inner);
 
+            // Approving or rejecting one pending session of a series decides the rest
+            // of it too, the same as the review queue (EventService.DecideAsync).
+            if (previousStatus == EventStatus.PendingReview
+                && entity.Status is EventStatus.Published or EventStatus.Rejected
+                && entity.SeriesId is { } seriesId)
+            {
+                await events.SetSeriesReviewStatusAsync(
+                    seriesId, entity.Id, EventStatus.PendingReview, entity.Status, now, inner);
+            }
+
             if (previousStatus == EventStatus.PendingReview
                 && entity.Status == EventStatus.Published
                 && entity.Visibility == EventVisibility.Public)

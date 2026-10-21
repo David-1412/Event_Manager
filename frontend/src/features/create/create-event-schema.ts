@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TAG_MAX_PER_EVENT, normalizeTags } from "@/lib/sports";
 import type { Tag } from "@/types/events";
+import { repeatProblem, type RepeatRule } from "@/features/create/recurrence";
 
 
 /**
@@ -108,8 +109,30 @@ export const createEventSchema = z
   /** Opt-in moderation. Defaults false so a form that never shows the control —
    *  or a draft saved before it existed — produces an open event. */
   requiresJoinApproval: z.boolean().optional(),
+
+  /** "Repeat event". Off by default; when on, the API creates one event per
+   *  session (see features/create/recurrence.ts). Flat fields rather than a nested
+   *  object so each control registers like every other field on the form. */
+  repeat: z.boolean().optional(),
+  repeatFrequency: z.enum(["WEEKLY", "BIWEEKLY", "MONTHLY"]).optional(),
+  repeatDays: z.array(z.string()).optional(),
+  repeatEnd: z.enum(["date", "count"]).optional(),
+  repeatUntil: z.string().optional(),
+  /** Text, as the number input reports it; parsed by repeatRuleOf. */
+  repeatCount: z.string().optional(),
   })
   .superRefine((values, ctx) => {
+    if (values.repeat) {
+      const rule = repeatRuleOf(values);
+      const problem = repeatProblem(values.date, rule);
+      if (problem) {
+        ctx.addIssue({
+          code: "custom",
+          path: [rule.end === "date" ? "repeatUntil" : "repeatCount"],
+          message: problem,
+        });
+      }
+    }
     const start = new Date(`${values.date}T${values.startTime}`);
     const end = new Date(`${values.date}T${values.endTime}`);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
@@ -159,7 +182,26 @@ export const CREATE_EVENT_DEFAULTS: CreateEventValues = {
   // rule the host has to choose, and a default of true would make an event nobody
   // thought about impossible to join without anyone telling them why.
   requiresJoinApproval: false,
+
+  repeat: false,
+  repeatFrequency: "WEEKLY",
+  repeatDays: [],
+  repeatEnd: "date",
+  repeatUntil: "",
+  repeatCount: "12",
 };
+
+/** The repeat controls as one rule, for the preview, validation and payload. */
+export function repeatRuleOf(values: Partial<CreateEventValues>): RepeatRule {
+  const count = values.repeatCount?.trim() ? Number(values.repeatCount) : undefined;
+  return {
+    frequency: values.repeatFrequency ?? "WEEKLY",
+    days: values.repeatDays ?? [],
+    end: values.repeatEnd ?? "date",
+    until: values.repeatUntil,
+    count,
+  };
+}
 
 /**
  * What the API expects: `cost` null when empty, dates as ISO UTC, tags normalized.
@@ -194,6 +236,18 @@ export function toCreateEventPayload(values: z.output<typeof createEventSchema>)
     description: values.description?.trim() ? values.description.trim() : null,
     visibility: values.visibility,
     requiresJoinApproval: values.requiresJoinApproval ?? false,
+    recurrence: values.repeat ? toRecurrencePayload(repeatRuleOf(values)) : null,
+  };
+}
+
+/** The API's `recurrence` object: exactly one of endDate and count; days only for
+ *  the weekly kinds (monthly repeats on the first session's day of the month). */
+function toRecurrencePayload(rule: RepeatRule) {
+  return {
+    frequency: rule.frequency,
+    days: rule.frequency === "MONTHLY" ? [] : rule.days,
+    endDate: rule.end === "date" ? (rule.until ?? null) : null,
+    count: rule.end === "count" ? (rule.count ?? null) : null,
   };
 }
 

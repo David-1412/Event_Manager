@@ -296,6 +296,15 @@ function ActionCard({ event, joinSlot }: { event: EventDetail; joinSlot: React.R
             label="Time"
             value={formatTimeRange(event.startAt, event.endAt)}
           />
+          {/* One session of a series: joining here takes a spot in this session
+              only, which the label says so nobody expects the whole term. */}
+          {event.isRecurring && (
+            <Row
+              icon={"\u{1F502}"}
+              label="Repeats (each session joined separately)"
+              value={event.recurrenceSummary ?? "Repeating event"}
+            />
+          )}
           <Row icon={"\u{1F4CD}"} label="Venue" value={event.venueName} />
           <Row
             icon={"\u{1F4B0}"}

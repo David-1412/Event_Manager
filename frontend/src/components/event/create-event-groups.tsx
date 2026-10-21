@@ -1,11 +1,28 @@
 "use client";
 
+import { Repeat } from "lucide-react";
+import { Chip } from "@/components/ui/chip";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { TagInput } from "@/components/event/tag-input";
 import { ThumbnailInput } from "@/components/event/thumbnail-input";
 import { VenueChips, VenuePicker } from "@/components/event/venue-picker";
 import type { VenueSelection } from "@/components/event/venue-picker";
-import type { CreateEventValues } from "@/features/create/create-event-schema";
+import { repeatRuleOf, type CreateEventValues } from "@/features/create/create-event-schema";
+import {
+  DAY_CODES,
+  DAY_LETTERS,
+  DAY_NAMES,
+  FREQUENCY_LABELS,
+  MAX_SESSIONS,
+  SEMESTER_WEEKS,
+  dayCodeOf,
+  expandDates,
+  parseDay,
+  repeatProblem,
+  semesterEnd,
+  type RepeatFrequency,
+} from "@/features/create/recurrence";
+import { cn } from "@/lib/cn";
 import type { ImportFlagField, Tag } from "@/types/events";
 
 /**
@@ -26,6 +43,9 @@ export interface CreateGroupsProps {
   onVenue: (venue: VenueSelection | null) => void;
   /** Uploaded thumbnail URL (or null). Controlled like tags, not a native input. */
   onThumbnail: (url: string | null) => void;
+  /** The repeat controls that are buttons rather than native inputs (the toggle,
+   *  day pills and semester preset) set several fields at once through this. */
+  onRepeat: (patch: Partial<CreateEventValues>) => void;
 }
 
 export function CreateEventGroups(props: CreateGroupsProps) {
@@ -83,7 +103,8 @@ function WhatGroup({ values, errorFor, flagFor, register, onTags, onThumbnail }:
 }
 
 
-function WhenGroup({ errorFor, flagFor, register }: CreateGroupsProps) {
+function WhenGroup(props: CreateGroupsProps) {
+  const { errorFor, flagFor, register } = props;
   const pair = { sm: "grid-cols-1 gap-4 sm:grid-cols-3" };
   return (
     <fieldset className="flex flex-col gap-4">
@@ -123,7 +144,250 @@ function WhenGroup({ errorFor, flagFor, register }: CreateGroupsProps) {
           )}
         </Field>
       </div>
+      <RepeatSection {...props} />
     </fieldset>
+  );
+}
+
+const shortDay = (d: Date) =>
+  d.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+/** How many session dates the preview lists before "+N more". */
+const PREVIEW_DATES = 8;
+
+/**
+ * "Repeat event": off by default, and when on, the controls that decide the series -
+ * frequency, the days (for weekly and fortnightly), and when it ends - with a
+ * semester preset and a live list of the sessions it will create. The server makes
+ * one event per session, so what this lists is exactly what appears on Browse.
+ */
+function RepeatSection({ values, errorFor, register, onRepeat }: CreateGroupsProps) {
+  const on = values.repeat === true;
+  const frequency: RepeatFrequency = values.repeatFrequency ?? "WEEKLY";
+  const first = parseDay(values.date);
+  const firstDay = first ? dayCodeOf(first) : null;
+  const chosen = new Set(values.repeatDays ?? []);
+  const rule = repeatRuleOf(values);
+  const sessions = on && first ? expandDates(values.date, rule) : [];
+  const problem = on && first ? repeatProblem(values.date, rule) : null;
+  const semester = semesterEnd(values.date);
+  const semesterOn =
+    frequency === "WEEKLY" && values.repeatEnd === "date" && !!semester && values.repeatUntil === semester;
+
+  const toggle = () =>
+    onRepeat({
+      repeat: !on,
+      // Turning it on with no end yet starts from the semester preset, the case
+      // this exists for, rather than an empty date the host has to go and find.
+      ...(!on && !values.repeatUntil && semester ? { repeatUntil: semester } : {}),
+    });
+
+  const toggleDay = (code: string) => {
+    const next = new Set(chosen);
+    if (next.has(code)) next.delete(code);
+    else next.add(code);
+    onRepeat({ repeatDays: DAY_CODES.filter((c) => next.has(c)) });
+  };
+
+  return (
+    <div className={cn("rounded-md border border-border", on && "bg-surface-2")}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={toggle}
+        className="press flex w-full items-center gap-3 rounded-md p-3 text-left"
+      >
+        <Repeat aria-hidden="true" className="size-5 shrink-0 text-brand-600" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-body-strong text-fg">Repeat event</span>
+          <span className="block text-meta text-fg-muted">
+            A weekly training, a class, a club night - one event per session, each with
+            its own spots.
+          </span>
+        </span>
+        <span
+          aria-hidden="true"
+          className={cn(
+            "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+            on ? "bg-brand-600" : "bg-border",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute top-0.5 size-5 rounded-full bg-surface shadow transition-transform",
+              on ? "translate-x-[22px]" : "translate-x-0.5",
+            )}
+          />
+        </span>
+      </button>
+
+      {on && (
+        <div className="flex flex-col gap-4 border-t border-border p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip
+              selected={semesterOn}
+              disabled={!semester}
+              title={semester ? undefined : "Pick the first date above first"}
+              onClick={() =>
+                semester &&
+                onRepeat({ repeatFrequency: "WEEKLY", repeatEnd: "date", repeatUntil: semester })
+              }
+            >
+              Semester 1 ({SEMESTER_WEEKS} weeks)
+            </Chip>
+          </div>
+
+          <Field label="Repeats">
+            {({ id }) => (
+              <Select id={id} {...register("repeatFrequency")}>
+                {(Object.keys(FREQUENCY_LABELS) as RepeatFrequency[]).map((f) => (
+                  <option key={f} value={f}>
+                    {FREQUENCY_LABELS[f]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+
+          {frequency !== "MONTHLY" ? (
+            <div role="group" aria-labelledby="repeat-days-label" className="flex flex-col gap-2">
+              <span id="repeat-days-label" className="text-meta font-medium text-fg">
+                On
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {DAY_CODES.map((code) => {
+                  // The first session's own day is always part of the series (the
+                  // server adds it too), so its pill is on and cannot be turned off.
+                  const locked = code === firstDay;
+                  const pressed = locked || chosen.has(code);
+                  return (
+                    <button
+                      key={code}
+                      type="button"
+                      aria-pressed={pressed}
+                      aria-label={DAY_NAMES[code]}
+                      aria-disabled={locked || undefined}
+                      title={locked ? "The first session is on a " + DAY_NAMES[code] : DAY_NAMES[code]}
+                      onClick={() => !locked && toggleDay(code)}
+                      className={cn(
+                        "press size-9 rounded-full border text-meta font-semibold transition-colors",
+                        pressed
+                          ? "border-brand-600 bg-brand-600 text-brand-fg"
+                          : "border-border bg-surface text-fg hover:border-fg-muted",
+                        locked && "cursor-default",
+                      )}
+                    >
+                      {DAY_LETTERS[code]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="text-meta text-fg-muted">
+              {first
+                ? "On day " + first.getUTCDate() + " of each month. Months without that day are skipped."
+                : "On the same day of each month as the first session."}
+            </p>
+          )}
+
+          <div role="radiogroup" aria-labelledby="repeat-end-label" className="flex flex-col gap-2">
+            <span id="repeat-end-label" className="text-meta font-medium text-fg">
+              Ends
+            </span>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex cursor-pointer items-center gap-2 text-body text-fg">
+                <input type="radio" value="date" className="size-4 accent-brand-600" {...register("repeatEnd")} />
+                On date
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-body text-fg">
+                <input type="radio" value="count" className="size-4 accent-brand-600" {...register("repeatEnd")} />
+                After a number of sessions
+              </label>
+            </div>
+            {values.repeatEnd === "count" ? (
+              <Field label="Sessions" hint={"2 to " + MAX_SESSIONS + ", counting the first"} error={errorFor("repeatCount")}>
+                {({ id, describedBy, invalid }) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    inputMode="numeric"
+                    min={2}
+                    max={MAX_SESSIONS}
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid || undefined}
+                    {...register("repeatCount")}
+                  />
+                )}
+              </Field>
+            ) : (
+              <Field label="Last day" error={errorFor("repeatUntil")}>
+                {({ id, describedBy, invalid }) => (
+                  <Input
+                    id={id}
+                    type="date"
+                    min={values.date || undefined}
+                    aria-describedby={describedBy}
+                    aria-invalid={invalid || undefined}
+                    {...register("repeatUntil")}
+                  />
+                )}
+              </Field>
+            )}
+          </div>
+
+          <SessionPreview sessions={sessions} problem={problem} hasDate={!!first} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The sessions the series will create, or why it cannot be created yet. */
+function SessionPreview({
+  sessions,
+  problem,
+  hasDate,
+}: {
+  sessions: Date[];
+  problem: string | null;
+  hasDate: boolean;
+}) {
+  if (!hasDate) {
+    return <p className="text-meta text-fg-muted">Pick the first date above to see the sessions.</p>;
+  }
+  if (problem) {
+    return (
+      <p role="status" className="rounded-md bg-warn-tint px-3 py-2 text-meta text-fg">
+        {problem}
+      </p>
+    );
+  }
+  const shown = sessions.slice(0, PREVIEW_DATES);
+  return (
+    <div role="status" className="flex flex-col gap-2">
+      <p className="text-meta text-fg">
+        <span className="font-semibold">{sessions.length} sessions</span>
+        <span className="text-fg-muted">
+          {" \u00b7 "}
+          {shortDay(sessions[0])} to {shortDay(sessions[sessions.length - 1])}
+        </span>
+      </p>
+      <ul className="flex flex-wrap gap-1.5">
+        {shown.map((d) => (
+          <li
+            key={d.toISOString()}
+            className="rounded-full bg-surface px-2 py-0.5 text-micro text-fg-muted ring-1 ring-border"
+          >
+            {shortDay(d)}
+          </li>
+        ))}
+        {sessions.length > shown.length && (
+          <li className="px-1 py-0.5 text-micro text-fg-muted">+{sessions.length - shown.length} more</li>
+        )}
+      </ul>
+    </div>
   );
 }
 

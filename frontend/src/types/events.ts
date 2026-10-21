@@ -121,6 +121,13 @@ export interface EventListItem {
    *  before the field existed lack it, and absent must mean the ordinary
    *  immediate-join flow — never "assume gated". */
   requiresJoinApproval?: boolean;
+  /** One session of a repeating series (each session is its own event). Optional
+   *  for the same reason as requiresJoinApproval: absent means a one-off. */
+  isRecurring?: boolean;
+  /** The first session's id, shared by the whole series. */
+  seriesId?: string | null;
+  /** "Weekly on Tue, Thu · until 15 Dec 2026", or null for a one-off. */
+  recurrenceSummary?: string | null;
   distanceKm: number | null;
 }
 

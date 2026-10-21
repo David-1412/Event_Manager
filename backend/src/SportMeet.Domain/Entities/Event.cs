@@ -110,6 +110,30 @@ public class Event
     /// actually taken, at approval.</summary>
     public bool RequiresJoinApproval { get; set; }
 
+    /// <summary>
+    /// Part of a repeating series. Every session of a series is its own event row
+    /// (its own joins, capacity, reminders and Interested), linked by
+    /// <see cref="SeriesId"/>; the rule below is copied onto each so any session can
+    /// say how the series repeats.
+    /// </summary>
+    public bool IsRecurring { get; set; }
+
+    /// <summary>The first session's id, shared by every session of the series (the
+    /// first session's own SeriesId is its Id). Null for a one-off event.</summary>
+    public Guid? SeriesId { get; set; }
+
+    public RecurrenceFrequency? RecurrenceFrequency { get; set; }
+
+    /// <summary>Weekdays for weekly/fortnightly series, comma-separated from Monday,
+    /// e.g. "TUE" or "MON,WED". Null for daily and monthly.</summary>
+    public string? RecurrenceDays { get; set; }
+
+    /// <summary>The series' last day (inclusive), when it ends on a date.</summary>
+    public DateTimeOffset? RecurrenceEndDate { get; set; }
+
+    /// <summary>The number of sessions, when the series ends after a count.</summary>
+    public int? RecurrenceCount { get; set; }
+
     /// <summary>When the "starts tomorrow" reminder batch was sent for this event,
     /// or null while it is owed.
     ///

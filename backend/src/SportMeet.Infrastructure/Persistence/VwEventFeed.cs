@@ -96,4 +96,13 @@ public class VwEventFeed
     /// <c>UserRole</c> enum for the reason documented on <see cref="Visibility"/>.
     /// Never a query predicate, so no value conversion is configured for it.</summary>
     public string HostRole { get; set; } = string.Empty;
+
+    // Recurring series (Add_Recurring_Events). The frequency is the view's text column
+    // ("WEEKLY"), parsed in ToEvent for the reason documented on Visibility.
+    public bool IsRecurring { get; set; }
+    public string? RecurrenceFrequency { get; set; }
+    public string? RecurrenceDays { get; set; }
+    public DateTimeOffset? RecurrenceEndDate { get; set; }
+    public int? RecurrenceCount { get; set; }
+    public Guid? SeriesId { get; set; }
 }

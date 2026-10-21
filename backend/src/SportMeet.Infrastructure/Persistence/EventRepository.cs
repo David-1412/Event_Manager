@@ -414,6 +414,19 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
                 .SetProperty(e => e.Status, status)
                 .SetProperty(e => e.UpdatedAt, now), ct) == 1;
 
+    public async Task<int> SetSeriesReviewStatusAsync(
+        Guid seriesId,
+        Guid exceptEventId,
+        EventStatus expectedStatus,
+        EventStatus status,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+        => await db.Events
+            .Where(e => e.SeriesId == seriesId && e.Id != exceptEventId && e.Status == expectedStatus)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(e => e.Status, status)
+                .SetProperty(e => e.UpdatedAt, now), ct);
+
     public async Task<bool> RemoveParticipantAsync(Guid eventId, Guid userId, DateTimeOffset cancelledAt, CancellationToken ct = default)
     {
         var row = await db.EventParticipants
@@ -752,6 +765,14 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
             ? visibility
             : EventVisibility.Public,
         RequiresJoinApproval = v.RequiresJoinApproval,
+        IsRecurring = v.IsRecurring,
+        SeriesId = v.SeriesId,
+        RecurrenceFrequency = Enum.TryParse<RecurrenceFrequency>(v.RecurrenceFrequency, true, out var frequency)
+            ? frequency
+            : null,
+        RecurrenceDays = v.RecurrenceDays,
+        RecurrenceEndDate = v.RecurrenceEndDate,
+        RecurrenceCount = v.RecurrenceCount,
         CancelledAt = v.CancelledAt,
         CreatedAt = v.CreatedAt,
         UpdatedAt = v.UpdatedAt,
