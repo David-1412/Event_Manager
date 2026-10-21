@@ -96,6 +96,11 @@ public interface IEventService
 
     Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default);
 
+    /// <summary>Delete one of your own events once it has been cancelled. Soft: the row
+    /// keeps its history but disappears from every list and link.</summary>
+    Task DeleteCancelledAsync(Guid eventId, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
     /// <summary>The review queue: every public event awaiting an administrator's
     /// decision, oldest submission first. Throws <see cref="DomainRuleException"/>
     /// when nobody is signed in and <see cref="NotFoundException"/> for a caller

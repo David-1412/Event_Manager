@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { mutate as globalMutate } from "swr";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { detailKey, eventsKey, hostedKey } from "@/features/events/use-events";
-import { request } from "@/lib/api";
+import {
+  DELETE_EVENT_CONFIRM,
+  deleteCancelledEvent,
+  refreshEventCaches,
+  setEventStatus,
+} from "@/features/events/host-actions";
 
 export function HostingActions({
   eventId,
@@ -21,22 +24,31 @@ export function HostingActions({
    * is the only place it can be moved on from. */
   awaitingReview?: boolean;
 }) {
-  const [isSaving, setIsSaving] = useState(false);
+  const [busy, setBusy] = useState<"cancel" | "reopen" | "delete" | null>(null);
 
   async function changeStatus(action: "cancel" | "reopen") {
-    setIsSaving(true);
+    setBusy(action);
     try {
-      await request(`/api/events/${eventId}/${action}`, { method: "PATCH" });
-      await Promise.all([
-        globalMutate(hostedKey()),
-        globalMutate(detailKey(eventId)),
-        globalMutate(eventsKey()),
-      ]);
+      await setEventStatus(eventId, action);
+      await refreshEventCaches();
       toast(action === "cancel" ? "Event cancelled" : "Event reopened");
     } catch (error) {
       toast(error instanceof Error ? error.message : "Could not update this event", "info");
     } finally {
-      setIsSaving(false);
+      setBusy(null);
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm(DELETE_EVENT_CONFIRM)) return;
+    setBusy("delete");
+    try {
+      await deleteCancelledEvent(eventId);
+      await refreshEventCaches();
+      toast("Event deleted", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not delete this event", "info");
+      setBusy(null);
     }
   }
 
@@ -50,6 +62,36 @@ export function HostingActions({
     );
   }
 
+  // A cancelled event can be deleted whenever - including after its date, so old
+  // cancellations can be cleared out of the list - and reopened while it is still
+  // ahead.
+  if (isCancelled) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-2">
+        {!isEnded && (
+          <Button
+            size="sm"
+            variant="primary"
+            loading={busy === "reopen"}
+            disabled={busy !== null}
+            onClick={() => void changeStatus("reopen")}
+          >
+            Reopen
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="danger"
+          loading={busy === "delete"}
+          disabled={busy !== null}
+          onClick={() => void remove()}
+        >
+          Delete
+        </Button>
+      </span>
+    );
+  }
+
   if (isEnded) {
     return (
       <Button size="sm" variant="secondary" disabled>
@@ -58,12 +100,8 @@ export function HostingActions({
     );
   }
 
-  return isCancelled ? (
-    <Button size="sm" variant="primary" loading={isSaving} onClick={() => void changeStatus("reopen")}>
-      Reopen
-    </Button>
-  ) : (
-    <Button size="sm" variant="danger" loading={isSaving} onClick={() => void changeStatus("cancel")}>
+  return (
+    <Button size="sm" variant="danger" loading={busy === "cancel"} onClick={() => void changeStatus("cancel")}>
       Cancel event
     </Button>
   );

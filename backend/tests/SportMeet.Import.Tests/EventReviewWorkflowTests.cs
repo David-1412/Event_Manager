@@ -122,6 +122,17 @@ public class EventReviewWorkflowTests
             return Task.FromResult(ReviewCallSucceeds);
         }
 
+        public Guid? Deleted;
+
+        public Task<bool> TryDeleteCancelledAsync(Guid eventId, Guid hostId, DateTimeOffset now, CancellationToken ct = default)
+        {
+            if (Found is not { } f || f.Event.Id != eventId || f.Event.HostId != hostId || f.Event.Status != EventStatus.Cancelled)
+                return Task.FromResult(false);
+            Deleted = eventId;
+            Found = null; // gone from every read, as the query filter makes it
+            return Task.FromResult(true);
+        }
+
         public Task<(List<FeedRow> Rows, int TotalCount)> QueryAsync(EventQueryModel query, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<List<FeedRow>> ListHostedAsync(Guid hostId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<Sport?> FindSportBySlugAsync(string slug, CancellationToken ct = default) => throw new NotImplementedException();
@@ -457,6 +468,45 @@ public class EventReviewWorkflowTests
                 Assert.Equal("InterestMilestone", notification.Type);
                 Assert.Contains("5 interests", notification.Message);
             });
+    }
+
+    // ---- Host delete ------------------------------------------------------------
+
+    [Fact]
+    public async Task Host_can_delete_their_event_once_it_is_cancelled()
+    {
+        var rig = new Rig();
+        rig.Repo.Found = Row(EventStatus.Cancelled, HostId);
+        var id = rig.Repo.Found.Event.Id;
+
+        await rig.Service.DeleteCancelledAsync(id);
+
+        Assert.Equal(id, rig.Repo.Deleted);
+        await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.GetAsync(id));
+    }
+
+    [Theory]
+    [InlineData(EventStatus.Scheduled)]
+    [InlineData(EventStatus.Published)]
+    [InlineData(EventStatus.PendingReview)]
+    public async Task A_live_event_has_to_be_cancelled_before_it_can_be_deleted(EventStatus status)
+    {
+        var rig = new Rig();
+        rig.Repo.Found = Row(status, HostId);
+
+        var error = await Assert.ThrowsAsync<DomainRuleException>(() => rig.Service.DeleteCancelledAsync(rig.Repo.Found.Event.Id));
+        Assert.Contains("Cancel the event", error.Message);
+        Assert.Null(rig.Repo.Deleted);
+    }
+
+    [Fact]
+    public async Task Someone_elses_cancelled_event_is_a_404_not_a_delete()
+    {
+        var rig = new Rig { CurrentUser = OtherId };
+        rig.Repo.Found = Row(EventStatus.Cancelled, HostId);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => rig.Service.DeleteCancelledAsync(rig.Repo.Found.Event.Id));
+        Assert.Null(rig.Repo.Deleted);
     }
 
     [Fact]

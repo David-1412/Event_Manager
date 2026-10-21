@@ -356,6 +356,18 @@ public class EventsController(
     public async Task<ActionResult<EventDetailDto>> Reopen(Guid id, CancellationToken ct)
         => Ok(await events.ReopenAsync(id, ct));
 
+    /// <summary>Delete one of your own events after cancelling it (422 while it is still
+    /// live). Soft: it disappears from every list and its link.</summary>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        await events.DeleteCancelledAsync(id, ct);
+        return NoContent();
+    }
+
     private static string? FirstOf(string? first, string? second) => TrimToNull(first) ?? TrimToNull(second);
 
     private static string? TrimToNull(string? value)

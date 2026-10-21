@@ -22,6 +22,7 @@ import { useNow } from "@/lib/use-now";
 import { StickyFooter } from "@/components/layout/site-header";
 import { useToggleInterest } from "@/features/events/use-interests";
 import { useEventDetail, useJoinEvent } from "@/features/events/use-events";
+import { deleteCancelledEvent, refreshEventCaches, setEventStatus } from "@/features/events/host-actions";
 import { cn } from "@/lib/cn";
 import { availabilityOf, countTextClass } from "@/lib/cn";
 import { mediaUrl } from "@/lib/api";
@@ -86,7 +87,27 @@ function DetailBody({ event }: { event: EventDetail }) {
   const router = useRouter();
   const pathname = usePathname();
   const now = useNow();
-  const [confirmCancel, setConfirmCancel] = useState(false);
+  // Which host confirmation is open. Cancel and delete both ask first; reopen
+  // does not, because it is the undo.
+  const [confirm, setConfirm] = useState<"cancel" | "delete" | null>(null);
+
+  async function runHostAction(action: "cancel" | "reopen" | "delete") {
+    setConfirm(null);
+    try {
+      if (action === "delete") {
+        await deleteCancelledEvent(event.id);
+        toast("Event deleted", "success");
+        router.push("/my-events");
+        void refreshEventCaches();
+        return;
+      }
+      await setEventStatus(event.id, action);
+      await refreshEventCaches();
+      toast(action === "cancel" ? "Event cancelled" : "Event reopened", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not update this event", "info");
+    }
+  }
 
   useEffect(() => {
     const limit = capacityLimit(event.maxParticipants);
@@ -185,7 +206,13 @@ function DetailBody({ event }: { event: EventDetail }) {
           event={event}
           menu={
             event.isHost ? (
-              <HostMenu eventId={event.id} onCancelRequest={() => setConfirmCancel(true)} />
+              <HostMenu
+                eventId={event.id}
+                isCancelled={event.isCancelled}
+                onCancel={() => setConfirm("cancel")}
+                onReopen={() => void runHostAction("reopen")}
+                onDelete={() => setConfirm("delete")}
+              />
             ) : null
           }
           joinSlot={joinButton(false)}
@@ -263,16 +290,22 @@ function DetailBody({ event }: { event: EventDetail }) {
       </div>
 
       <ConfirmDialog
-        open={confirmCancel}
+        open={confirm === "cancel"}
         titleId="cancel-event-title"
         title={`Cancel "${event.title}"?`}
         body={`${event.joinedCount} ${event.joinedCount === 1 ? "person has" : "people have"} joined.`}
         confirmLabel="Cancel event"
-        onClose={() => setConfirmCancel(false)}
-        onConfirm={() => {
-          setConfirmCancel(false);
-          toast("Event cancelled", "success");
-        }}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => void runHostAction("cancel")}
+      />
+      <ConfirmDialog
+        open={confirm === "delete"}
+        titleId="delete-event-title"
+        title={`Delete "${event.title}"?`}
+        body="It will be removed from your events and its link will stop working. This can't be undone."
+        confirmLabel="Delete event"
+        onClose={() => setConfirm(null)}
+        onConfirm={() => void runHostAction("delete")}
       />
     </>
   );
@@ -574,13 +607,21 @@ function DetailHeader({
   );
 }
 
-/** `...` menu, destructive action last (spec §8). */
+/** `...` menu, destructive action last (spec §8). A live event offers Edit and
+ *  Cancel; a cancelled one offers Reopen and Delete - deleting is only possible once
+ *  the event is cancelled, the step that tells the people who joined. */
 function HostMenu({
   eventId,
-  onCancelRequest,
+  isCancelled,
+  onCancel,
+  onReopen,
+  onDelete,
 }: {
   eventId: string;
-  onCancelRequest: () => void;
+  isCancelled: boolean;
+  onCancel: () => void;
+  onReopen: () => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -601,24 +642,39 @@ function HostMenu({
           aria-label="Host actions"
           className="absolute right-0 z-10 mt-1 w-44 overflow-hidden rounded-md border border-border bg-surface shadow-float"
         >
-          <Link
-            href={`/create?edit=${eventId}`}
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-3 py-2 text-meta text-fg no-underline hover:bg-surface-2"
-          >
-            Edit
-          </Link>
+          {isCancelled ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onReopen();
+              }}
+              className="block w-full px-3 py-2 text-left text-meta text-fg hover:bg-surface-2"
+            >
+              Reopen event
+            </button>
+          ) : (
+            <Link
+              href={`/create?edit=${eventId}`}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 text-meta text-fg no-underline hover:bg-surface-2"
+            >
+              Edit
+            </Link>
+          )}
           <button
             type="button"
             role="menuitem"
             onClick={() => {
               setOpen(false);
-              onCancelRequest();
+              if (isCancelled) onDelete();
+              else onCancel();
             }}
             className="block w-full px-3 py-2 text-left text-meta text-danger hover:bg-surface-2"
           >
-            Cancel event
+            {isCancelled ? "Delete event" : "Cancel event"}
           </button>
         </div>
       )}

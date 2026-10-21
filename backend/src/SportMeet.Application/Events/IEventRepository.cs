@@ -172,6 +172,12 @@ public interface IEventRepository
     /// <summary>Changes status only for the owning host, expected current status, and not-yet-started events.</summary>
     Task<bool> TrySetStatusAsync(Guid eventId, Guid hostId, EventStatus expectedStatus, EventStatus status, DateTimeOffset now, CancellationToken ct = default);
 
+    /// <summary>Soft-deletes the event (sets deleted_at) only if <paramref name="hostId"/>
+    /// hosts it and it is Cancelled - the guard is the WHERE clause, so a reopen racing
+    /// the delete cannot have a live event vanish. False when nothing matched.</summary>
+    Task<bool> TryDeleteCancelledAsync(Guid eventId, Guid hostId, DateTimeOffset now, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
     /// <summary>The review queue: every event waiting for an administrator's decision,
     /// oldest submission first. Not host-scoped - that is the point - so the caller is
     /// expected to have been checked for the admin role before asking.</summary>

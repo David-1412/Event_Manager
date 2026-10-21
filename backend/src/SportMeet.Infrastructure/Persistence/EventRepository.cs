@@ -398,6 +398,14 @@ public sealed class EventRepository(AppDbContext db) : IEventRepository, IAdminE
                 .SetProperty(e => e.CancelledAt, status == EventStatus.Cancelled ? now : (DateTimeOffset?)null)
                 .SetProperty(e => e.UpdatedAt, now), ct) == 1;
 
+    public async Task<bool> TryDeleteCancelledAsync(
+        Guid eventId, Guid hostId, DateTimeOffset now, CancellationToken ct = default)
+        => await db.Events
+            .Where(e => e.Id == eventId && e.HostId == hostId && e.Status == EventStatus.Cancelled)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(e => e.DeletedAt, now)
+                .SetProperty(e => e.UpdatedAt, now), ct) == 1;
+
     /// <summary>The reviewer's decision, guarded on the status the event held when the
     /// admin opened it. No host predicate: the authorization is the caller's admin role,
     /// which this repository cannot see. No start_at bound either - refusing to record a

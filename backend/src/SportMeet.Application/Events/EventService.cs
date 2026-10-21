@@ -690,6 +690,26 @@ public sealed class EventService(
     public Task<EventDetailDto> ReopenAsync(Guid eventId, CancellationToken ct = default)
         => ChangeStatusAsync(eventId, EventStatus.Cancelled, EventStatus.Scheduled, ct);
 
+    /// <summary>
+    /// The host removes an event they have cancelled. Only a cancelled event: a live one
+    /// has to be cancelled first, which is the step that tells the people who joined.
+    /// Unlike cancel and reopen this is allowed after the start time, so a host can
+    /// clear old cancelled events out of their list. A soft delete, like the admin's.
+    /// </summary>
+    public async Task DeleteCancelledAsync(Guid eventId, CancellationToken ct = default)
+    {
+        var userId = currentUser.UserId
+            ?? throw new DomainRuleException("You must be signed in to manage an event.");
+
+        if (await events.TryDeleteCancelledAsync(eventId, userId, DateTimeOffset.UtcNow, ct)) return;
+
+        // Nothing matched: say why, without telling a stranger the event exists.
+        var row = await events.FindAsync(eventId, ct)
+            ?? throw new NotFoundException("Event", eventId, eventId);
+        if (row.Event.HostId != userId) throw new NotFoundException("Event", eventId, eventId);
+        throw new DomainRuleException("Cancel the event before deleting it.");
+    }
+
     /// <summary>The queue, in the shape the review page renders. The rows come from
     /// the same view browse reads, so a card here is the same card the creator sees -
     /// which is the point of reviewing in the product rather than in a database.</summary>
