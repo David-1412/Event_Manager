@@ -50,7 +50,7 @@ public sealed class ActivityRepository(AppDbContext db) : IActivityRepository
     private async Task<List<ActivityRow>> LikesAsync(Guid me, DateTimeOffset since, int take, CancellationToken ct)
     {
         var posts = await db.ForumPostLikes.AsNoTracking()
-            .Where(l => l.Post.AuthorUserId == me && l.UserId != me && l.Post.DeletedAt == null && l.CreatedAt >= since)
+            .Where(l => l.Post.AuthorUserId == me && l.UserId != me && !l.User.IsDemo && l.Post.DeletedAt == null && l.CreatedAt >= since)
             .OrderByDescending(l => l.CreatedAt)
             .Take(take)
             .Select(l => new
@@ -61,7 +61,7 @@ public sealed class ActivityRepository(AppDbContext db) : IActivityRepository
             .ToListAsync(ct);
 
         var events = await db.EventInterests.AsNoTracking()
-            .Where(i => i.Event.HostId == me && i.UserId != me && !i.IsAuto && i.CreatedAt >= since)
+            .Where(i => i.Event.HostId == me && i.UserId != me && !i.IsAuto && !i.User.IsDemo && i.CreatedAt >= since)
             .OrderByDescending(i => i.CreatedAt)
             .Take(take)
             .Select(i => new
@@ -87,7 +87,7 @@ public sealed class ActivityRepository(AppDbContext db) : IActivityRepository
     private async Task<List<ActivityRow>> FollowsAsync(Guid me, DateTimeOffset since, int take, CancellationToken ct)
     {
         var follows = await db.UserFollows.AsNoTracking()
-            .Where(f => f.FollowedUserId == me && f.CreatedAt >= since)
+            .Where(f => f.FollowedUserId == me && !f.FollowerUser.IsDemo && f.CreatedAt >= since)
             .OrderByDescending(f => f.CreatedAt)
             .Take(take)
             .Select(f => new

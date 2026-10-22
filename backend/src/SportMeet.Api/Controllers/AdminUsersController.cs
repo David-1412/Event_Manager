@@ -24,8 +24,26 @@ namespace SportMeet.Api.Controllers;
 [ApiController]
 [Route("api/admin/users")]
 [RequireAdmin]
-public class AdminUsersController(IUserAdminService users) : ControllerBase
+public class AdminUsersController(IUserAdminService users, DemoEngagementService demo) : ControllerBase
 {
+    /// <summary>Demo engagement: give every live event and forum post 1-9 anonymous
+    /// views and 1-3 Interested marks from the placeholder accounts demo1..demo20
+    /// (created on first use, never visible to other users). Each press adds more;
+    /// everything it adds is tagged so the DELETE takes exactly that back.</summary>
+    [HttpPost("demo-engagement")]
+    [ProducesResponseType(typeof(DemoEngagementResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DemoEngagementResultDto>> AddDemoEngagement(CancellationToken ct)
+        => Ok(await demo.AddAsync(ct));
+
+    /// <summary>Remove every demo view and Interested mark, restoring the counters.
+    /// The demo accounts stay (hidden) for next time.</summary>
+    [HttpDelete("demo-engagement")]
+    [ProducesResponseType(typeof(DemoEngagementResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DemoEngagementResultDto>> RemoveDemoEngagement(CancellationToken ct)
+        => Ok(await demo.RemoveAsync(ct));
+
     public sealed record SetRoleRequest(SportMeet.Domain.Enums.UserRole Role);
 
     /// <summary>Every account, newest first, with the role and signup date the table

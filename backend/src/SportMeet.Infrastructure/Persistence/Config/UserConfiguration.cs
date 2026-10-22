@@ -33,6 +33,10 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         // INSERTs that omit the column.
         b.Property(x => x.Role).HasConversion<string>().HasMaxLength(20).IsRequired();
 
+        // Placeholder accounts the admin demo-engagement tool creates (demo1..demo20).
+        // Never shown to other users: profiles, activity and messaging skip them.
+        b.Property(x => x.IsDemo).HasColumnName("is_demo").HasDefaultValue(false).IsRequired();
+
         b.HasIndex(x => x.AuthUid).IsUnique();
         b.HasIndex(x => x.Email).IsUnique();
 

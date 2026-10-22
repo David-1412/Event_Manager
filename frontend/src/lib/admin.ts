@@ -61,3 +61,26 @@ export function approveEvent(id: string): Promise<void> {
 export function rejectEvent(id: string): Promise<void> {
   return request<void>(`/api/events/${id}/reject`, { method: "POST" });
 }
+
+/** Mirrors `DemoEngagementResultDto`: what one press added or removed. */
+export interface DemoEngagementResult {
+  demoAccounts: number;
+  events: number;
+  posts: number;
+  views: number;
+  interests: number;
+}
+
+/**
+ * Give every live event and forum post 1-9 anonymous views and 1-3 Interested
+ * marks from the hidden placeholder accounts demo1..demo20. Each call adds more.
+ * Set-based on the server but touches every row, so it gets a longer timeout.
+ */
+export function addDemoEngagement(): Promise<DemoEngagementResult> {
+  return request<DemoEngagementResult>("/api/admin/users/demo-engagement", { method: "POST", timeoutMs: 60_000 });
+}
+
+/** Remove everything the demo tool ever added, restoring the real counts. */
+export function removeDemoEngagement(): Promise<DemoEngagementResult> {
+  return request<DemoEngagementResult>("/api/admin/users/demo-engagement", { method: "DELETE", timeoutMs: 60_000 });
+}

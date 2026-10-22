@@ -48,7 +48,7 @@ public sealed class ProfileRepository(AppDbContext db) : IProfileRepository
         // selecting only the columns a profile may show means a future property on User
         // cannot quietly widen what an anonymous endpoint knows about someone.
         await db.Users.AsNoTracking()
-            .Where(u => u.Id == userId)
+            .Where(u => u.Id == userId && !u.IsDemo) // demo accounts have no public profile
             .Select(u => new ProfileSubject(
                 u.Id, u.Name, u.PhotoUrl, u.Role.ToString(), u.CreatedAt))
             .FirstOrDefaultAsync(ct);

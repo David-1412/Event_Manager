@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import { RoleBadge } from "@/components/admin/role-badge";
 import { PendingEventsPanel } from "@/components/admin/pending-events-panel";
+import { DemoEngagementPanel } from "@/components/admin/demo-engagement-panel";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { ApiError, usingFixtures } from "@/lib/api";
 import { listAdminUsers, setUserRole } from "@/lib/admin";
@@ -147,6 +148,7 @@ export function AdminUsersPage() {
       </div>
 
       <PendingEventsPanel />
+      <DemoEngagementPanel />
       <UserTable
         users={users}
         adminCount={adminCount}

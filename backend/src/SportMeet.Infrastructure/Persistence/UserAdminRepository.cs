@@ -19,7 +19,7 @@ namespace SportMeet.Infrastructure.Persistence;
 public sealed class UserAdminRepository(AppDbContext db) : IUserAdminRepository
 {
     public async Task<List<AdminUserDto>> ListAsync(int limit, CancellationToken ct = default)
-        => await db.Users.AsNoTracking()
+        => await db.Users.AsNoTracking().Where(u => !u.IsDemo)
             .OrderByDescending(u => u.CreatedAt)
             .ThenBy(u => u.Id)
             .Take(limit)
@@ -27,11 +27,11 @@ public sealed class UserAdminRepository(AppDbContext db) : IUserAdminRepository
             .ToListAsync(ct);
 
     public async Task<int> CountAdminsAsync(CancellationToken ct = default)
-        => await db.Users.AsNoTracking()
+        => await db.Users.AsNoTracking().Where(u => !u.IsDemo)
             .CountAsync(u => u.Role == UserRole.Admin, ct);
 
     public async Task<AdminUserDto?> FindAsync(Guid userId, CancellationToken ct = default)
-        => await db.Users.AsNoTracking()
+        => await db.Users.AsNoTracking().Where(u => !u.IsDemo)
             .Where(u => u.Id == userId)
             .Select(u => new AdminUserDto(u.Id, u.Name, u.Email, u.Role, u.CreatedAt))
             .FirstOrDefaultAsync(ct);

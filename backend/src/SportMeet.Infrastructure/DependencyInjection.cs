@@ -57,6 +57,7 @@ public static class DependencyInjection
         // AddApplication; the two FKs on user_role_audit are RESTRICT, so this
         // repository is the only writer the audit table has.
         services.AddScoped<SportMeet.Application.Admin.IUserAdminRepository, UserAdminRepository>();
+        services.AddScoped<SportMeet.Application.Admin.IDemoEngagementRepository, DemoEngagementRepository>();
 
         // Maps mailbox addresses (the polled mailbox's owner) to users rows,
         // creating the row on first sight so a polled invitation always has an

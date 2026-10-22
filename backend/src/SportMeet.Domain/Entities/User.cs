@@ -27,6 +27,12 @@ public class User
     /// is an explicit write rather than an accident of insertion order.</summary>
     public UserRole Role { get; set; } = UserRole.Member;
 
+    /// <summary>A placeholder account (demo1..demo20) created by the admin
+    /// demo-engagement tool to supply sample Interested marks. It never signs in, and
+    /// it is invisible to everyone else: its profile is a 404, it is left out of
+    /// activity feeds and the admin user list, and it cannot be messaged.</summary>
+    public bool IsDemo { get; set; }
+
     /// <summary>When this row first appeared, i.e. when the person first signed in
     /// (the token-mapping path creates the row on sight, so there is no separate
     /// sign-up moment to date). The admin user table lists it, and the audit trail

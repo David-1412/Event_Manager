@@ -49,6 +49,7 @@ public static class DependencyInjection
         // Administrator user management. The last-admin guard is the reason this is
         // a service rather than the controller calling its repository directly.
         services.AddScoped<Admin.IUserAdminService, Admin.UserAdminService>();
+        services.AddScoped<Admin.DemoEngagementService>();
         services.AddScoped<Notifications.INotificationService, Notifications.NotificationService>();
         return services;
     }

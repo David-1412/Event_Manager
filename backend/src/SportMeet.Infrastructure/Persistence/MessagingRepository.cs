@@ -84,7 +84,7 @@ public sealed class MessagingRepository(AppDbContext db) : IMessagingRepository
     }
 
     public Task<bool> UserExistsAsync(Guid userId, CancellationToken ct = default) =>
-        db.Users.AsNoTracking().AnyAsync(u => u.Id == userId, ct);
+        db.Users.AsNoTracking().AnyAsync(u => u.Id == userId && !u.IsDemo, ct);
 
     public async Task<IReadOnlyList<(DirectMessage Message, long Seq)>> ListMessagesAsync(
         Guid conversationId, Guid userId, long? before, int take, CancellationToken ct = default)
